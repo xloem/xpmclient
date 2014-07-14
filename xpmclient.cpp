@@ -16,8 +16,11 @@ extern "C" {
 
 #include <fstream>
 #include <set>
-
-
+#include <memory>
+#include <chrono>
+#if defined(__GXX_EXPERIMENTAL_CXX0X__) && (__cplusplus < 201103L)
+#define steady_clock monotonic_clock
+#endif  
 
 
 XPMClient* gClient = 0;
@@ -29,7 +32,30 @@ cl_program gProgram = 0;
 std::vector<unsigned> gPrimes2;
 
 
+uint32_t divisorsNum = 17;
 
+uint32_t divisors24[] = {
+  3, 5, 7, 13, 17,
+//   3,
+//   5,
+//   7,
+  11,
+//   13,
+//   17,
+  19,
+  23,
+  29,
+  31,
+  37,
+  41,
+  43,
+  47,
+  //   53,
+  59,
+  61,
+  //   67,
+  71
+};
 
 
 PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned depth) {
@@ -111,7 +137,7 @@ bool PrimeMiner::Initialize(cl_device_id dev) {
 	
 	cl_uint numCU;
 	OCLR(clGetDeviceInfo(dev, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &numCU, 0), false);
-	mBlockSize = numCU * 4 * 64;
+	mBlockSize = numCU * 4 * 128;
 	printf("GPU %d: has %d CUs\n", mID, numCU);
 	
 	return true;
@@ -126,7 +152,6 @@ void PrimeMiner::InvokeMining(void *args, zctx_t *ctx, void *pipe) {
 }
 
 void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
-	
 	void* blocksub = zsocket_new(ctx, ZMQ_SUB);
 	void* worksub = zsocket_new(ctx, ZMQ_SUB);
 	void* statspush = zsocket_new(ctx, ZMQ_PUSH);
@@ -169,12 +194,11 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	uint64 testCount = 0;
 	
 #define PW 128			// Pipeline width (number of hashes to store)
-#define SW 4			// number of sieves in one iteration
-#define MSO 64*1024		// max sieve output
+#define SW 2			// number of sieves in one iteration
+#define MSO 128*1024		// max sieve output
 #define MFS 2*SW*MSO	// max fermat size
 	
 	unsigned iteration = 0;
-	unsigned hashprimorial;
 	mpz_class primorial;
 	block_t blockheader;
 	search_t hashmod;
@@ -198,26 +222,22 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 										mConfig.PCOUNT*2*sizeof(cl_uint), &gPrimes2[2*mPrimorial+2], &error);
 	OCL(error);
 	
-	hashprimorial = 1;
-	for(unsigned i = 0; i <= mHashPrimorial; ++i)
-		hashprimorial *= gPrimes[i];
-	
 	primorial = 1;
-	for(unsigned i = mHashPrimorial+1; i <= mPrimorial; ++i)
+  for(unsigned i = 0; i <= mPrimorial; ++i)
 		primorial *= gPrimes[i];
 	
 	{
 		unsigned primorialbits = mpz_sizeinbase(primorial.get_mpz_t(), 2);
 		mpz_class sievesize = mConfig.SIZE*32*mConfig.STRIPES;
 		unsigned sievebits = mpz_sizeinbase(sievesize.get_mpz_t(), 2);
-		printf("GPU %d: hash primorial = %u (%d bits)\n", mID, hashprimorial, (int)log2(hashprimorial));
-		printf("GPU %d: sieve primorial = %s (%d bits)\n", mID, primorial.get_str(10).c_str(), primorialbits);
+		printf("GPU %d: primorial = %s (%d bits)\n", mID, primorial.get_str(10).c_str(), primorialbits);
 		printf("GPU %d: sieve size = %s (%d bits)\n", mID, sievesize.get_str(10).c_str(), sievebits);
 		printf("GPU %d: max bits used %d/%d\n", mID, 256+primorialbits+sievebits+mConfig.WIDTH, mConfig.N*32);
 	}
 	
 	hashmod.midstate.init(8*sizeof(cl_uint), CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY);
-	hashmod.found.init(256, CL_MEM_ALLOC_HOST_PTR);
+	hashmod.found.init(2048, CL_MEM_ALLOC_HOST_PTR);
+  hashmod.primorialBitField.init(2048, CL_MEM_ALLOC_HOST_PTR);
 	hashmod.count.init(1, CL_MEM_ALLOC_HOST_PTR);
 	hashBuf.init(PW*mConfig.N, CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY);
 	
@@ -244,7 +264,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	
 	OCL(clSetKernelArg(mHashMod, 0, sizeof(cl_mem), &hashmod.found.DeviceData));
 	OCL(clSetKernelArg(mHashMod, 1, sizeof(cl_mem), &hashmod.count.DeviceData));
-	OCL(clSetKernelArg(mHashMod, 2, sizeof(unsigned), &hashprimorial));
+	OCL(clSetKernelArg(mHashMod, 2, sizeof(cl_mem), &hashmod.primorialBitField.DeviceData));
 	OCL(clSetKernelArg(mHashMod, 3, sizeof(cl_mem), &hashmod.midstate.DeviceData));
 	OCL(clSetKernelArg(mSieveSetup, 0, sizeof(cl_mem), &sieveOff[0].DeviceData));
 	OCL(clSetKernelArg(mSieveSetup, 1, sizeof(cl_mem), &sieveOff[1].DeviceData));
@@ -283,7 +303,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 			}
 			
 			elapsed = currtime - time2;
-			if(elapsed > 59){
+			if(elapsed > 15){
 				stats.fps = testCount / elapsed;
 				time2 = currtime;
 				testCount = 0;
@@ -354,13 +374,21 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 		
 		// hashmod fetch & dispatch
 		{
-			//printf("got %d new hashes\n", hashmod.count[0]);
+// 			printf("/*got %*/d new hashes\n", hashmod.count[0]);
 			for(unsigned i = 0; i < hashmod.count[0]; ++i) {
-				
 				hash_t hash;
 				hash.iter = iteration;
 				hash.time = blockheader.time;
 				hash.nonce = hashmod.found[i];
+        uint32_t primorialBitField = hashmod.primorialBitField[i];
+        uint64_t realPrimorial = 2;
+        for (unsigned i = 0; i < divisorsNum; i++) {
+          if (primorialBitField & (1 << i))
+            realPrimorial *= divisors24[i];
+        }
+        
+        mpz_class mpzRealPrimorial;        
+        mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);        
 				
 				block_t b = blockheader;
 				b.nonce = hash.nonce;
@@ -381,21 +409,22 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				
 				mpz_class mpzHash;
 				mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
-				if(!mpz_divisible_ui_p(mpzHash.get_mpz_t(), hashprimorial)){
+        if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
 					printf("error: mpz_divisible_ui_p failed.\n");
 					stats.errors++;
 					continue;
 				}
 				
-				hash.shash = mpzHash * primorial;
+        hash.primorial = primorial / mpzRealPrimorial;
+        hash.shash = mpzHash * hash.primorial;       
 				hashlist.push_back(hash);
-				
 			}
 			
 			//printf("hashlist.size() = %d\n", (int)hashlist.size());
 			hashmod.count[0] = 0;
 			
-			int numhash = ((4*SW) - hashlist.size()) * hashprimorial * 2;
+      int numhash = ((16*SW) - hashlist.size()) * 96000;
+
 			if(numhash > 0){
 				
 				numhash += mBlockSize - numhash % mBlockSize;
@@ -404,7 +433,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 					blockheader.nonce = 1;
 				}
 				
-				//printf("hashmod: numhash=%d time=%d nonce=%d\n", numhash, blockheader.time, blockheader.nonce);
+//  				printf("hashmod: numhash=%d time=%d nonce=%d\n", numhash, blockheader.time, blockheader.nonce);
 				cl_uint msg_merkle = blockheader.hashMerkleRoot.Get64(3) >> 32;
 				cl_uint msg_time = blockheader.time;
 				cl_uint msg_bits = blockheader.bits;
@@ -419,17 +448,18 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				hashmod.count.copyToDevice(mBig, false);
 				OCL(clEnqueueNDRangeKernel(mBig, mHashMod, 1, globalOffset, globalSize, 0, 0, 0, 0));
 				hashmod.found.copyToHost(mBig, false);
+        hashmod.primorialBitField.copyToHost(mBig, false);
 				hashmod.count.copyToHost(mBig, false);
 				blockheader.nonce += numhash;
 				
 			}
 			
 		}
-		
+
 		int ridx = iteration % 2;
 		int widx = ridx xor 1;
 		
-		// sieve dispatch
+		// sieve dispatch    
 		{
 			std::vector<int> newhashes;
 			for(int i = 0; i < SW; ++i){
@@ -453,7 +483,10 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				
 			}
 			
-			//printf("dispatching %d sieves\n", (int)newhashes.size());
+// 			printf("dispatching %d sieves\n", (int)newhashes.size());
+//       clFinish(mSmall);
+//       clFinish(mBig);
+//       auto sieveBegin = std::chrono::steady_clock::now();             			
 			hashBuf.copyToDevice(mSmall, false);
 			
 			for(unsigned i = 0; i < newhashes.size(); ++i){
@@ -462,22 +495,23 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				cl_int hid = newhashes[i] >> 16;
 				
 				//printf("sieve %d: hashid = %d\n", si, hid);
+    
 				{
 					OCL(clSetKernelArg(mSieveSetup, 4, sizeof(cl_int), &hid));
 					size_t globalSize[] = { mConfig.PCOUNT, 1, 1 };
 					OCL(clEnqueueNDRangeKernel(mSmall, mSieveSetup, 1, 0, globalSize, 0, 0, 0, 0));
 				}
-				
-				for(int k = 0; k < 2; ++k){
-					
+
+
+				for(int k = 0; k < 2; ++k){			
 					OCL(clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[k].DeviceData));
 					OCL(clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[k].DeviceData));
 					size_t globalSize[] = { 256*mConfig.STRIPES/2, mConfig.WIDTH, 1 };
 					OCL(clEnqueueNDRangeKernel(mSmall, mSieve, 2, 0, globalSize, 0, 0, 0, 0));
-					
 				}
-				
+
 				sieveBuffers[si][widx].count.copyToDevice(mSmall, false);
+         
 				{
 					OCL(clSetKernelArg(mSieveSearch, 2, sizeof(cl_mem), &sieveBuffers[si][widx].info.DeviceData));
 					OCL(clSetKernelArg(mSieveSearch, 3, sizeof(cl_mem), &sieveBuffers[si][widx].count.DeviceData));
@@ -486,17 +520,18 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 					OCL(clEnqueueNDRangeKernel(mSmall, mSieveSearch, 1, 0, globalSize, 0, 0, 0, 0));
 					sieveBuffers[si][widx].count.copyToHost(mSmall, false);
 				}
-				
+    				
+       				
 			}
-			
 		}
 		
+
+    
 		// get candis
 		int numcandis = fermat.final.count[0];
 		numcandis = std::min(numcandis, fermat.final.info.Size);
 		numcandis = std::max(numcandis, 0);
-		fermat.final.count[0] = 0;
-		//printf("got %d new candis\n", numcandis);
+// 		printf("got %d new candis\n", numcandis);
 		candis.resize(numcandis);
 		primeCount += numcandis;
 		if(numcandis)
@@ -521,7 +556,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				
 				cl_uint& avail = sieveBuffers[i][ridx].count[0];
 				if(avail){
-					//printf("sieve %d has %d infos available\n", i, avail);
+// 					printf("sieve %d has %d infos available\n", i, avail);
 					OCL(clEnqueueCopyBuffer(mBig,
 											sieveBuffers[i][ridx].info.DeviceData,
 											fermat.buffer[ridx].info.DeviceData,
@@ -538,26 +573,28 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 			fermat.buffer[widx].count.copyToDevice(mBig, false);
 			
 			fermat.bsize = 0;
-			if(count > mBlockSize){
-				
+			if(count > mBlockSize){           
+
 				fermat.bsize = count - (count % mBlockSize);
+				fermat.final.count[0] = 0;
 				fermat.final.count.copyToDevice(mBig, false);
-				
+        
 				size_t globalSize[] = { fermat.bsize, 1, 1 };
 				OCL(clSetKernelArg(mFermatSetup, 1, sizeof(cl_mem), &fermat.buffer[ridx].info.DeviceData));
 				OCL(clEnqueueNDRangeKernel(mBig, mFermatSetup, 1, 0, globalSize, 0, 0, 0, 0));
-				OCL(clEnqueueNDRangeKernel(mBig, mFermatKernel, 1, 0, globalSize, 0, 0, 0, 0));
+        OCL(clEnqueueNDRangeKernel(mBig, mFermatKernel, 1, 0, globalSize, 0, 0, 0, 0));
 				OCL(clSetKernelArg(mFermatCheck, 0, sizeof(cl_mem), &fermat.buffer[widx].info.DeviceData));
 				OCL(clSetKernelArg(mFermatCheck, 1, sizeof(cl_mem), &fermat.buffer[widx].count.DeviceData));
 				OCL(clSetKernelArg(mFermatCheck, 5, sizeof(cl_mem), &fermat.buffer[ridx].info.DeviceData));
 				OCL(clEnqueueNDRangeKernel(mBig, mFermatCheck, 1, 0, globalSize, 0, 0, 0, 0));
 				fermat.buffer[widx].count.copyToHost(mBig, false);
 				fermat.final.info.copyToHost(mBig, false);
-				fermat.final.count.copyToHost(mBig, false);
-				
-			}else{
-				fermat.buffer[widx].count[0] = 0;
-			}
+				fermat.final.count.copyToHost(mBig, false);     
+			} else {
+        printf(" * warning: no enough candidates available\n");
+        fermat.final.count[0] = 0;
+        fermat.buffer[widx].count[0] = 0;
+      }
 			//printf("fermat: total of %d infos, bsize = %d\n", count, fermat.bsize);
 		}
 		
@@ -595,7 +632,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 						i, candi.hashid, candi.index, candi.origin, candi.type, chainlength);*/
 				if(chainlength >= block.minshare()){
 					
-					mpz_class sharemulti = primorial * multi;
+					mpz_class sharemulti = hash.primorial * multi;
 					share.set_hash(hash.hash.GetHex());
 					share.set_merkle(work.merkle());
 					share.set_time(hash.time);
@@ -614,7 +651,8 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 					Send(share, sharepush);
 					
 				}else if(chainlength < mDepth){
-					printf("error: ProbablePrimeChainTestFast %d/%d\n", chainlength, mDepth);
+          
+					printf("error: ProbablePrimeChainTestFast %ubits %d/%d\n", (unsigned)mpz_sizeinbase(chainorg.get_mpz_t(), 2), chainlength, mDepth);
 					stats.errors++;
 				}
 			}
@@ -744,6 +782,7 @@ bool XPMClient::Initialize(Configuration* cfg) {
 	mCoreFreq = std::vector<int>(mNumDevices, -1);
 	mMemFreq = std::vector<int>(mNumDevices, -1);
 	mPowertune = std::vector<int>(mNumDevices, 42);
+        mFanSpeed = std::vector<int>(mNumDevices, 70);
 	
 	{
 		StringVector cdevices;
@@ -752,6 +791,7 @@ bool XPMClient::Initialize(Configuration* cfg) {
 		StringVector ccorespeed;
 		StringVector cmemspeed;
 		StringVector cpowertune;
+                StringVector cfanspeed;
 		try {
 			cfg->lookupList("", "devices", cdevices);
 			cfg->lookupList("", "hashprimorial", chashprim);
@@ -759,6 +799,7 @@ bool XPMClient::Initialize(Configuration* cfg) {
 			cfg->lookupList("", "corefreq", ccorespeed);
 			cfg->lookupList("", "memfreq", cmemspeed);
 			cfg->lookupList("", "powertune", cpowertune);
+                        cfg->lookupList("", "fanspeed", cfanspeed);
 		}catch(const ConfigurationException& ex) {}
 		for(int i = 0; i < (int)mNumDevices; ++i){
 			
@@ -780,6 +821,8 @@ bool XPMClient::Initialize(Configuration* cfg) {
 			if(i < cpowertune.length())
 				mPowertune[i] = atoi(cpowertune[i]);
 			
+                        if(i < cfanspeed.length())
+                                mFanSpeed[i] = atoi(cfanspeed[i]);                        
 		}
 	}
 	
@@ -837,8 +880,18 @@ bool XPMClient::Initialize(Configuration* cfg) {
 		cl_int error;
 		const char* sources[] = { sourcefile.c_str(), 0 };
 		gProgram = clCreateProgramWithSource(gContext, 1, sources, 0, &error);
-		OCLR(error, false);
-		OCLR(clBuildProgram(gProgram, gpus.size(), &gpus[0], 0, 0, 0), false);
+		OCLR(error, false);   
+    
+    if (clBuildProgram(gProgram, gpus.size(), &gpus[0], "-save-temps", 0, 0) != CL_SUCCESS) {    
+      size_t logSize;
+      clGetProgramBuildInfo(gProgram, devices[0], CL_PROGRAM_BUILD_LOG, 0, 0, &logSize);
+      
+      std::unique_ptr<char[]> log(new char[logSize]);
+      clGetProgramBuildInfo(gProgram, devices[0], CL_PROGRAM_BUILD_LOG, logSize, log.get(), 0);
+      printf("%s\n", log.get());
+      
+      exit(1);
+    }    
 		
 		size_t binsizes[10];
 		OCLR(clGetProgramInfo(gProgram, CL_PROGRAM_BINARY_SIZES, sizeof(binsizes), binsizes, 0), false);
@@ -850,7 +903,7 @@ bool XPMClient::Initialize(Configuration* cfg) {
 		
 		printf("binsize = %d bytes\n", (int)binsize);
 		char* binary = new char[binsize+1];
-		unsigned char* binaries[] = { (unsigned char*)binary };
+    unsigned char* binaries[] = { (unsigned char*)binary, (unsigned char*)binary,(unsigned char*)binary,(unsigned char*)binary, (unsigned char*)binary};
 		OCLR(clGetProgramInfo(gProgram, CL_PROGRAM_BINARIES, sizeof(binaries), binaries, 0), false);
 		{
 			std::ofstream bin("kernel.bin", std::ofstream::binary | std::ofstream::trunc);
@@ -993,8 +1046,8 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 		for(unsigned i = 0; i < mNumDevices; ++i){
 			int gpuid = mDeviceMap[i];
 			if(gpuid >= 0)
-				printf("GPU %d: core=%dMHz mem=%dMHz powertune=%d\n",
-						gpuid, gpu_engineclock(i), gpu_memclock(i), gpu_powertune(i));
+				printf("GPU %d: core=%dMHz mem=%dMHz powertune=%d fanspeed=%d\n",
+						gpuid, gpu_engineclock(i), gpu_memclock(i), gpu_powertune(i), gpu_fanspeed(i));
 		}
 	
 	stats.set_cpd(cpd);
@@ -1035,6 +1088,8 @@ void XPMClient::setup_adl(){
 		if(mPowertune[i] >= -20 && mPowertune[i] <= 20)
 			if(set_powertune(i, mPowertune[i]))
 				printf("set_powertune(%d, %d) failed.\n", i, mPowertune[i]);
+                if(set_fanspeed(i, mFanSpeed[i]))
+                        printf("set_fanspeed(%d, %d) failed.\n", i, mFanSpeed[i]);
 		
 	}
 	

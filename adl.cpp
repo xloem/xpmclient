@@ -8,6 +8,7 @@
  */
 
 //#include "config.h"
+#define LINUX
 #define HAVE_ADL
 
 #ifdef _WIN32
@@ -267,6 +268,8 @@ void init_adl(int nDevs)
 
 	if (!prepare_adl())
 		return;
+        
+        printf("prepare_adl success\n");
 
 	// Obtain the number of adapters for the system
 	result = ADL_Adapter_NumberOfAdapters_Get (&iNumberAdapters);
@@ -279,11 +282,11 @@ void init_adl(int nDevs)
 		lpInfo = (LPAdapterInfo)malloc ( sizeof (AdapterInfo) * iNumberAdapters );
 		memset ( lpInfo,'\0', sizeof (AdapterInfo) * iNumberAdapters );
 
-		lpInfo->iSize = sizeof(lpInfo);
+ 		lpInfo->iSize = sizeof(lpInfo);
 		// Get the AdapterInfo structure for all adapters in the system
 		result = ADL_Adapter_AdapterInfo_Get (lpInfo, sizeof (AdapterInfo) * iNumberAdapters);
 		if (result != ADL_OK) {
-			printf("ADL_Adapter_AdapterInfo_Get Error! Error %d", result);
+			printf("ADL_Adapter_AdapterInfo_Get Error! Error %d\n", result);
 			return ;
 		}
 	} else {
@@ -305,29 +308,29 @@ void init_adl(int nDevs)
 				printf("This error says the device is not enabled");
 			continue;
 		}
-
+		
 		/* Each adapter may have multiple entries */
 		if (lpAdapterID == last_adapter)
 			continue;
 
-		/*printf("GPU %d "
-		       "iAdapterIndex %d "
-		       "strUDID %s "
-		       "iBusNumber %d "
-		       "iDeviceNumber %d "
-		       "iFunctionNumber %d "
-		       "iVendorID %d "
-		       "strAdapterName  %s ",
-		       devices,
-		       iAdapterIndex,
-		       lpInfo[i].strUDID,
-		       lpInfo[i].iBusNumber,
-		       lpInfo[i].iDeviceNumber,
-		       lpInfo[i].iFunctionNumber,
-		       lpInfo[i].iVendorID,
-		       lpInfo[i].strAdapterName);
-		
-		printf("\n");*/
+                printf("GPU %d "
+                       "iAdapterIndex %d "
+                       "strUDID %s "
+                       "iBusNumber %d "
+                       "iDeviceNumber %d "
+                       "iFunctionNumber %d "
+                       "iVendorID %d "
+                       "strAdapterName  %s ",
+                       devices,
+                       iAdapterIndex,
+                       lpInfo[i].strUDID,
+                       lpInfo[i].iBusNumber,
+                       lpInfo[i].iDeviceNumber,
+                       lpInfo[i].iFunctionNumber,
+                       lpInfo[i].iVendorID,
+                       lpInfo[i].strAdapterName);
+                
+                printf("\n");   
 
 		adapters[devices].iAdapterIndex = iAdapterIndex;
 		adapters[devices].iBusNumber = lpInfo[i].iBusNumber;
@@ -433,7 +436,7 @@ void init_adl(int nDevs)
 			continue;
 		}
 
-		//printf("GPU %d %s hardware monitoring enabled\n", gpu, lpInfo[i].strAdapterName);
+		printf("GPU %d %s hardware monitoring enabled\n", gpu, lpInfo[i].strAdapterName);
 		if (gpus[gpu].name)
 			free(gpus[gpu].name);
 		gpus[gpu].name = lpInfo[i].strAdapterName;
@@ -723,9 +726,9 @@ static inline int __gpu_fanspeed(struct gpu_adl *ga)
 	if (!ga->has_fanspeed && ga->twin)
 		return __gpu_fanspeed(ga->twin);
 
-	if (!(ga->lpFanSpeedInfo.iFlags & ADL_DL_FANCTRL_SUPPORTS_RPM_READ))
-		return -1;
-	ga->lpFanSpeedValue.iSpeedType = ADL_DL_FANCTRL_SPEED_TYPE_RPM;
+// 	if (!(ga->lpFanSpeedInfo.iFlags & ADL_DL_FANCTRL_SUPPORTS_RPM_READ))
+// 		return -1;
+	ga->lpFanSpeedValue.iSpeedType = ADL_DL_FANCTRL_SPEED_TYPE_PERCENT;
 	if (ADL_Overdrive5_FanSpeed_Get(ga->iAdapterIndex, 0, &ga->lpFanSpeedValue) != ADL_OK)
 		return -1;
 	return ga->lpFanSpeedValue.iFanSpeed;
@@ -1075,8 +1078,12 @@ int set_fanspeed(int gpu, int iFanSpeed)
 	ga->targetfan = iFanSpeed;
 
 	lock_adl();
-	if (ADL_Overdrive5_FanSpeed_Get(ga->iAdapterIndex, 0, &ga->lpFanSpeedValue) != ADL_OK) {
-		printf("GPU %d call to fanspeed get failed", gpu);
+        ga->lpFanSpeedValue.iSize = sizeof(ADLFanSpeedValue);
+        ga->lpFanSpeedValue.iSpeedType = ADL_DL_FANCTRL_SPEED_TYPE_PERCENT;
+        ga->lpFanSpeedValue.iFlags = ADL_DL_FANCTRL_FLAG_USER_DEFINED_SPEED;        
+        int result = ADL_Overdrive5_FanSpeed_Get(ga->iAdapterIndex, 0, &ga->lpFanSpeedValue);
+	if (result != ADL_OK) {
+		printf("GPU %d call to fanspeed get failed (error %i)\n", gpu, result);
 	}
 	if (!(ga->lpFanSpeedInfo.iFlags & ADL_DL_FANCTRL_SUPPORTS_PERCENT_WRITE)) {
 		/* Must convert speed to an RPM */
@@ -1111,6 +1118,7 @@ int set_powertune(int gpu, int iPercentage)
 	ga = &gpus[gpu].adl;
 
 	lock_adl();
+        
 	ADL_Overdrive5_PowerControl_Set(ga->iAdapterIndex, iPercentage);
 	ADL_Overdrive5_PowerControl_Get(ga->iAdapterIndex, &ga->iPercentage, &dummy);
 	if (ga->iPercentage == iPercentage)

@@ -82,6 +82,7 @@ public:
 		
 		clBuffer<cl_uint> midstate;
 		clBuffer<cl_uint> found;
+    clBuffer<cl_uint> primorialBitField;
 		clBuffer<cl_uint> count;
 		
 	};
@@ -93,7 +94,7 @@ public:
 		unsigned time;
 		uint256 hash;
 		mpz_class shash;
-		
+    mpz_class primorial;
 	};
 	
 	struct fermat_t {
@@ -201,6 +202,7 @@ private:
 	std::vector<int> mCoreFreq;
 	std::vector<int> mMemFreq;
 	std::vector<int> mPowertune;
+        std::vector<int> mFanSpeed;        
 	
 	
 	

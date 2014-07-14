@@ -3,10 +3,11 @@
 #define HAVE_ADL
 #ifdef HAVE_ADL
 
+#define LINUX
 #include "adl_sdk.h"
 #include <ctime>
 
-#define MAX_GPUDEVICES 16
+#define MAX_GPUDEVICES 32
 #define MAX_DEVICES 4096
 
 
