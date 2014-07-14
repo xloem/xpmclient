@@ -6,18 +6,34 @@ See: https://bitcointalk.org/index.php?topic=598542.0
 
 The miner works with:
 - OpenCL (AMD only)
-- ZEROMQ message system
-- Google protobuf protocol
+- ZEROMQ message system & CZMQ library (+ libsodium on Linux)
+- Google protobuf protocol (2.4 required)
 - GMP
-- Config4Cpp
+- CMake build system
 
 How to compile:
 - Build dependencies
-- Open the Eclipse C++ Project
-- Configure include paths etc.
-- Compile
+- Create directory for build client
+- Run cmake and make:
 
-Can be compiled for Windows with mingw32, or for Linux with gcc.
+cmake ../xpmclient -DOPENCL_LIBRARY=/opt/AMDAPP/lib/x86_64/libOpenCL.so
+make -j5
 
-See xpmpool repo. for protocol definitions.
+"../xpmclient" - directory with client source;
+/opt/AMDAPP/lib/x86_64/libOpenCL.so - path to OpenCL library in AMD APP SDK directory
 
+For static build on linux (without additional dependencies) run:
+
+cmake ../xpmclient -DInstallPrefix=/opt/x86_64-Linux-static -DSTATIC_BUILD=1 -DOPENCL_LIBRARY=/opt/AMDAPP/lib/x86_64/libOpenCL.so
+
+/opt/x86_64-Linux-static - directory with static builds of ZMQ, CZMQ, GMP, protobuf
+
+For cross-compiling for Windows using mingw:
+
+cmake ../xpmclient -DCMAKE_TOOLCHAIN_FILE=../xpmclient/cmake/Toolchain-cross-mingw32-linux.cmake -DInstallPrefix=/opt/mingw32 -DOPENCL_LIBRARY=/opt/mingw32/lib/x86/OpenCL.lib
+
+/opt/mingw32 - install directory for mingw builds of libraries ZMQ, CZMQ, GMP, protobuf
+/opt/mingw32/lib/x86/OpenCL.lib - path to OpenCL library for Win32
+
+
+See xpmpool repo. for protocol definitions (if you need use another protobuf version).
