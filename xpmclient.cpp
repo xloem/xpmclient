@@ -58,6 +58,7 @@ uint32_t divisors24[] = {
 };
 
 
+
 PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned depth) {
 	
 	mID = id;
@@ -77,7 +78,8 @@ PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigne
 	mSieve = 0;
 	mSieveSearch = 0;
 	mFermatSetup = 0;
-	mFermatKernel = 0;
+	mFermatKernel352 = 0;
+  mFermatKernel320 = 0;  
 	mFermatCheck = 0;
 	
 	MakeExit = false;
@@ -94,7 +96,8 @@ PrimeMiner::~PrimeMiner() {
 	if(mSieve) OCL(clReleaseKernel(mSieve));
 	if(mSieveSearch) OCL(clReleaseKernel(mSieveSearch));
 	if(mFermatSetup) OCL(clReleaseKernel(mFermatSetup));
-	if(mFermatKernel) OCL(clReleaseKernel(mFermatKernel));
+	if(mFermatKernel352) OCL(clReleaseKernel(mFermatKernel352));
+  if(mFermatKernel320) OCL(clReleaseKernel(mFermatKernel320));  
 	if(mFermatCheck) OCL(clReleaseKernel(mFermatCheck));
 	
 }
@@ -108,7 +111,8 @@ bool PrimeMiner::Initialize(cl_device_id dev) {
 	mSieve = clCreateKernel(gProgram, "sieve", &error);
 	mSieveSearch = clCreateKernel(gProgram, "s_sieve", &error);
 	mFermatSetup = clCreateKernel(gProgram, "setup_fermat", &error);
-	mFermatKernel = clCreateKernel(gProgram, "fermat_kernel", &error);
+	mFermatKernel352 = clCreateKernel(gProgram, "fermat_kernel", &error);
+  mFermatKernel320 = clCreateKernel(gProgram, "fermat_kernel320", &error);  
 	mFermatCheck = clCreateKernel(gProgram, "check_fermat", &error);
 	OCLR(error, false);
 	
@@ -144,11 +148,91 @@ bool PrimeMiner::Initialize(cl_device_id dev) {
 	
 }
 
-
 void PrimeMiner::InvokeMining(void *args, zctx_t *ctx, void *pipe) {
 	
 	((PrimeMiner*)args)->Mining(ctx, pipe);
 	
+}
+
+void PrimeMiner::FermatInit(pipeline_t &fermat, unsigned mfs)
+{
+  fermat.current = 0;
+  fermat.bsize = 0;
+  fermat.input.init(mfs*mConfig.N, CL_MEM_HOST_NO_ACCESS);
+  fermat.output.init(mfs, CL_MEM_HOST_NO_ACCESS);
+
+  for(int i = 0; i < 2; ++i){
+    fermat.buffer[i].info.init(mfs, CL_MEM_HOST_NO_ACCESS);
+    fermat.buffer[i].count.init(1, CL_MEM_ALLOC_HOST_PTR);
+  }
+}
+
+void PrimeMiner::FermatDispatch(pipeline_t &fermat,
+                                clBuffer<fermat_t> sieveBuffers[SW][FERMAT_PIPELINES][2],
+                                clBuffer<cl_uint> candidatesCountBuffers[SW][2],
+                                unsigned pipelineIdx,
+                                int ridx,
+                                int widx,
+                                uint64_t &testCount,
+                                uint64_t &fermatCount,
+                                cl_kernel fermatKernel)
+{ 
+  // fermat dispatch
+  {
+    cl_uint& count = fermat.buffer[ridx].count[0];
+    
+    cl_uint left = fermat.buffer[widx].count[0] - fermat.bsize;
+    //printf("fermat: %d passed + %d leftover\n", count, left);
+    if(left > 0){
+      OCL(clEnqueueCopyBuffer(  mBig,
+                                fermat.buffer[widx].info.DeviceData,
+                                fermat.buffer[ridx].info.DeviceData,
+                                fermat.bsize*sizeof(fermat_t), count*sizeof(fermat_t),
+                                left*sizeof(fermat_t), 0, 0, 0));
+      count += left;
+    }
+    
+    for(int i = 0; i < SW; ++i){
+      
+      cl_uint& avail = (candidatesCountBuffers[i][ridx])[pipelineIdx];
+//       printf("[%u] sieve %d has %d infos available\n", pipelineIdx, i, avail);      
+      if(avail){
+        OCL(clEnqueueCopyBuffer(mBig,
+                                sieveBuffers[i][pipelineIdx][ridx].DeviceData,
+                                fermat.buffer[ridx].info.DeviceData,
+                                0, count*sizeof(fermat_t),
+                                avail*sizeof(fermat_t), 0, 0, 0));
+        count += avail;
+        testCount += avail;
+        fermatCount += avail;
+        avail = 0;
+      }
+    }
+    
+    fermat.buffer[widx].count[0] = 0;
+    fermat.buffer[widx].count.copyToDevice(mBig, false);
+    
+    fermat.bsize = 0;
+    if(count > mBlockSize){                 
+      fermat.bsize = count - (count % mBlockSize);
+      size_t globalSize[] = { fermat.bsize, 1, 1 };
+      OCL(clSetKernelArg(mFermatSetup, 0, sizeof(cl_mem), &fermat.input.DeviceData));      
+      OCL(clSetKernelArg(mFermatSetup, 1, sizeof(cl_mem), &fermat.buffer[ridx].info.DeviceData));
+      OCL(clEnqueueNDRangeKernel(mBig, mFermatSetup, 1, 0, globalSize, 0, 0, 0, 0));
+      OCL(clSetKernelArg(fermatKernel, 0, sizeof(cl_mem), &fermat.output.DeviceData));
+      OCL(clSetKernelArg(fermatKernel, 1, sizeof(cl_mem), &fermat.input.DeviceData));      
+      OCL(clEnqueueNDRangeKernel(mBig, fermatKernel, 1, 0, globalSize, 0, 0, 0, 0));
+      OCL(clSetKernelArg(mFermatCheck, 0, sizeof(cl_mem), &fermat.buffer[widx].info.DeviceData));
+      OCL(clSetKernelArg(mFermatCheck, 1, sizeof(cl_mem), &fermat.buffer[widx].count.DeviceData));
+      OCL(clSetKernelArg(mFermatCheck, 4, sizeof(cl_mem), &fermat.output.DeviceData));      
+      OCL(clSetKernelArg(mFermatCheck, 5, sizeof(cl_mem), &fermat.buffer[ridx].info.DeviceData));
+      OCL(clEnqueueNDRangeKernel(mBig, mFermatCheck, 1, 0, globalSize, 0, 0, 0, 0));
+      fermat.buffer[widx].count.copyToHost(mBig, false);
+    } else {
+//       printf(" * warning: no enough candidates available\n");
+    }
+    //printf("fermat: total of %d infos, bsize = %d\n", count, fermat.bsize);
+  }
 }
 
 void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
@@ -186,17 +270,12 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	stats.primeprob = 0;
 	stats.cpd = 0;
 	
-	uint64 fermatCount = 1;
-	uint64 primeCount = 1;
+	uint64_t fermatCount = 1;
+	uint64_t primeCount = 1;
 	
 	time_t time1 = time(0);
 	time_t time2 = time(0);
-	uint64 testCount = 0;
-	
-#define PW 128			// Pipeline width (number of hashes to store)
-#define SW 2			// number of sieves in one iteration
-#define MSO 128*1024		// max sieve output
-#define MFS 2*SW*MSO	// max fermat size
+	uint64_t testCount = 0;
 	
 	unsigned iteration = 0;
 	mpz_class primorial;
@@ -208,8 +287,10 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	clBuffer<cl_uint> hashBuf;
 	clBuffer<cl_uint> sieveBuf[2];
 	clBuffer<cl_uint> sieveOff[2];
-	info_t sieveBuffers[SW][2];
-	pipeline_t fermat;
+  clBuffer<fermat_t> sieveBuffers[SW][FERMAT_PIPELINES][2];
+  clBuffer<cl_uint> candidatesCountBuffers[SW][2];
+	pipeline_t fermat320;
+  pipeline_t fermat352;
 	CPrimalityTestParams testParams;
 	std::vector<fermat_t> candis;
 	//std::set<unsigned> allmultis;
@@ -241,27 +322,26 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	hashmod.count.init(1, CL_MEM_ALLOC_HOST_PTR);
 	hashBuf.init(PW*mConfig.N, CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY);
 	
-	for(int i = 0; i < SW; ++i)
-		for(int k = 0; k < 2; ++k){
-			sieveBuffers[i][k].info.init(MSO, CL_MEM_HOST_NO_ACCESS);
-			sieveBuffers[i][k].count.init(1, CL_MEM_ALLOC_HOST_PTR);
-		}
+	for(int sieveIdx = 0; sieveIdx < SW; ++sieveIdx) {
+    for(int instIdx = 0; instIdx < 2; ++instIdx){    
+      for (int pipelineIdx = 0; pipelineIdx < FERMAT_PIPELINES; pipelineIdx++)
+        sieveBuffers[sieveIdx][pipelineIdx][instIdx].init(MSO, CL_MEM_HOST_NO_ACCESS);
+      
+      candidatesCountBuffers[sieveIdx][instIdx].init(FERMAT_PIPELINES, CL_MEM_ALLOC_HOST_PTR);
+    }
+  }
 	
 	for(int k = 0; k < 2; ++k){
 		sieveBuf[k].init(mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, CL_MEM_HOST_NO_ACCESS);
 		sieveOff[k].init(mConfig.PCOUNT*mConfig.WIDTH, CL_MEM_HOST_NO_ACCESS);
 	}
 	
-	fermat.bsize = 0;
-	fermat.input.init(MFS*mConfig.N, CL_MEM_HOST_NO_ACCESS);
-	fermat.output.init(MFS, CL_MEM_HOST_NO_ACCESS);
-	fermat.final.info.init(MFS/(4*mDepth), CL_MEM_ALLOC_HOST_PTR);
-	fermat.final.count.init(1, CL_MEM_ALLOC_HOST_PTR);
-	for(int i = 0; i < 2; ++i){
-		fermat.buffer[i].info.init(MFS, CL_MEM_HOST_NO_ACCESS);
-		fermat.buffer[i].count.init(1, CL_MEM_ALLOC_HOST_PTR);
-	}
+	final.info.init(MFS/(4*mDepth), CL_MEM_ALLOC_HOST_PTR);
+  final.count.init(1, CL_MEM_ALLOC_HOST_PTR);	
 	
+	FermatInit(fermat320, MFS);
+  FermatInit(fermat352, MFS);  
+
 	OCL(clSetKernelArg(mHashMod, 0, sizeof(cl_mem), &hashmod.found.DeviceData));
 	OCL(clSetKernelArg(mHashMod, 1, sizeof(cl_mem), &hashmod.count.DeviceData));
 	OCL(clSetKernelArg(mHashMod, 2, sizeof(cl_mem), &hashmod.primorialBitField.DeviceData));
@@ -273,13 +353,10 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	OCL(clSetKernelArg(mSieve, 2, sizeof(cl_mem), &primeBuf2));
 	OCL(clSetKernelArg(mSieveSearch, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData));
 	OCL(clSetKernelArg(mSieveSearch, 1, sizeof(cl_mem), &sieveBuf[1].DeviceData));
-	OCL(clSetKernelArg(mFermatSetup, 0, sizeof(cl_mem), &fermat.input.DeviceData));
+  OCL(clSetKernelArg(mSieveSearch, 7, sizeof(cl_uint), &mDepth));  
 	OCL(clSetKernelArg(mFermatSetup, 2, sizeof(cl_mem), &hashBuf.DeviceData));
-	OCL(clSetKernelArg(mFermatKernel, 0, sizeof(cl_mem), &fermat.output.DeviceData));
-	OCL(clSetKernelArg(mFermatKernel, 1, sizeof(cl_mem), &fermat.input.DeviceData));
-	OCL(clSetKernelArg(mFermatCheck, 2, sizeof(cl_mem), &fermat.final.info.DeviceData));
-	OCL(clSetKernelArg(mFermatCheck, 3, sizeof(cl_mem), &fermat.final.count.DeviceData));
-	OCL(clSetKernelArg(mFermatCheck, 4, sizeof(cl_mem), &fermat.output.DeviceData));
+	OCL(clSetKernelArg(mFermatCheck, 2, sizeof(cl_mem), &final.info.DeviceData));
+	OCL(clSetKernelArg(mFermatCheck, 3, sizeof(cl_mem), &final.count.DeviceData));
 	OCL(clSetKernelArg(mFermatCheck, 6, sizeof(unsigned), &mDepth));
 	
 	zsocket_signal(pipe);
@@ -341,13 +418,20 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 			//printf("new work received\n");
 			hashlist.clear();
 			hashmod.count[0] = 0;
-			fermat.bsize = 0;
-			fermat.buffer[0].count[0] = 0;
-			fermat.buffer[1].count[0] = 0;
-			fermat.final.count[0] = 0;
-			for(int i = 0; i < SW; ++i)
-				for(int k = 0; k < 2; ++k)
-					sieveBuffers[i][k].count[0] = 0;
+			fermat320.bsize = 0;
+			fermat320.buffer[0].count[0] = 0;
+			fermat320.buffer[1].count[0] = 0;
+      fermat352.bsize = 0;
+      fermat352.buffer[0].count[0] = 0;
+      fermat352.buffer[1].count[0] = 0;      
+			final.count[0] = 0;
+      
+      for(int sieveIdx = 0; sieveIdx < SW; ++sieveIdx) {
+        for(int instIdx = 0; instIdx < 2; ++instIdx) {
+          for (int pipelineIdx = 0; pipelineIdx < FERMAT_PIPELINES; pipelineIdx++)
+            (candidatesCountBuffers[sieveIdx][instIdx])[pipelineIdx] = 0;
+        }
+      }      
 			
 			blockheader.version = block_t::CURRENT_VERSION;
 			blockheader.hashPrevBlock.SetHex(block.hash());
@@ -401,19 +485,19 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				sha.update((const unsigned char*)&hash.hash, sizeof(uint256));
 				sha.final((unsigned char*)&hash.hash);
 				
-				if(hash.hash < (uint256(1) << 255)){
-					printf("error: hash does not meet minimum.\n");
-					stats.errors++;
-					continue;
-				}
+// 				if(hash.hash < (uint256(1) << 255)){
+// 					printf("error: hash does not meet minimum.\n");
+// 					stats.errors++;
+// 					continue;
+// 				}
 				
 				mpz_class mpzHash;
 				mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
-        if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
-					printf("error: mpz_divisible_ui_p failed.\n");
-					stats.errors++;
-					continue;
-				}
+//         if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
+// 					printf("error: mpz_divisible_ui_p failed.\n");
+// 					stats.errors++;
+// 					continue;
+// 				}
 				
         hash.primorial = primorial / mpzRealPrimorial;
         hash.shash = mpzHash * hash.primorial;       
@@ -469,7 +553,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 					break;
 				}
 				
-				if(!sieveBuffers[i][widx].count[0]){
+				if(!(candidatesCountBuffers[i][widx])[0]){
 					
 					int hid = nexthash % PW;
 					nexthash++;
@@ -510,93 +594,42 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 					OCL(clEnqueueNDRangeKernel(mSmall, mSieve, 2, 0, globalSize, 0, 0, 0, 0));
 				}
 
-				sieveBuffers[si][widx].count.copyToDevice(mSmall, false);
+				candidatesCountBuffers[si][widx].copyToDevice(mSmall, false);
          
 				{
-					OCL(clSetKernelArg(mSieveSearch, 2, sizeof(cl_mem), &sieveBuffers[si][widx].info.DeviceData));
-					OCL(clSetKernelArg(mSieveSearch, 3, sizeof(cl_mem), &sieveBuffers[si][widx].count.DeviceData));
-					OCL(clSetKernelArg(mSieveSearch, 4, sizeof(cl_int), &hid));
+          cl_uint multiplierSize = mpz_sizeinbase(hashes[hid].shash.get_mpz_t(), 2);
+//           printf("hash size: %u\n", multiplierSize);
+					OCL(clSetKernelArg(mSieveSearch, 2, sizeof(cl_mem), &sieveBuffers[si][0][widx].DeviceData));
+          OCL(clSetKernelArg(mSieveSearch, 3, sizeof(cl_mem), &sieveBuffers[si][1][widx].DeviceData));          
+          OCL(clSetKernelArg(mSieveSearch, 4, sizeof(cl_mem), &candidatesCountBuffers[si][widx].DeviceData));
+					OCL(clSetKernelArg(mSieveSearch, 5, sizeof(cl_int), &hid));
+          OCL(clSetKernelArg(mSieveSearch, 6, sizeof(cl_uint), &multiplierSize));
 					size_t globalSize[] = { mConfig.SIZE*mConfig.STRIPES/2, 1, 1 };
 					OCL(clEnqueueNDRangeKernel(mSmall, mSieveSearch, 1, 0, globalSize, 0, 0, 0, 0));
-					sieveBuffers[si][widx].count.copyToHost(mSmall, false);
+          
+          candidatesCountBuffers[si][widx].copyToHost(mSmall, false);
 				}
-    				
-       				
 			}
 		}
 		
 
     
 		// get candis
-		int numcandis = fermat.final.count[0];
-		numcandis = std::min(numcandis, fermat.final.info.Size);
+		int numcandis = final.count[0];
+		numcandis = std::min(numcandis, final.info.Size);
 		numcandis = std::max(numcandis, 0);
 // 		printf("got %d new candis\n", numcandis);
 		candis.resize(numcandis);
 		primeCount += numcandis;
 		if(numcandis)
-			memcpy(&candis[0], fermat.final.info.HostData, numcandis*sizeof(fermat_t));
+			memcpy(&candis[0], final.info.HostData, numcandis*sizeof(fermat_t));
 		
-		// fermat dispatch
-		{
-			cl_uint& count = fermat.buffer[ridx].count[0];
-			
-			cl_uint left = fermat.buffer[widx].count[0] - fermat.bsize;
-			//printf("fermat: %d passed + %d leftover\n", count, left);
-			if(left > 0){
-				OCL(clEnqueueCopyBuffer(	mBig,
-											fermat.buffer[widx].info.DeviceData,
-											fermat.buffer[ridx].info.DeviceData,
-											fermat.bsize*sizeof(fermat_t), count*sizeof(fermat_t),
-											left*sizeof(fermat_t), 0, 0, 0));
-				count += left;
-			}
-			
-			for(int i = 0; i < SW; ++i){
-				
-				cl_uint& avail = sieveBuffers[i][ridx].count[0];
-				if(avail){
-// 					printf("sieve %d has %d infos available\n", i, avail);
-					OCL(clEnqueueCopyBuffer(mBig,
-											sieveBuffers[i][ridx].info.DeviceData,
-											fermat.buffer[ridx].info.DeviceData,
-											0, count*sizeof(fermat_t),
-											avail*sizeof(fermat_t), 0, 0, 0));
-					count += avail;
-					testCount += avail;
-					fermatCount += avail;
-					avail = 0;
-				}
-			}
-			
-			fermat.buffer[widx].count[0] = 0;
-			fermat.buffer[widx].count.copyToDevice(mBig, false);
-			
-			fermat.bsize = 0;
-			if(count > mBlockSize){           
-
-				fermat.bsize = count - (count % mBlockSize);
-				fermat.final.count[0] = 0;
-				fermat.final.count.copyToDevice(mBig, false);
-        
-				size_t globalSize[] = { fermat.bsize, 1, 1 };
-				OCL(clSetKernelArg(mFermatSetup, 1, sizeof(cl_mem), &fermat.buffer[ridx].info.DeviceData));
-				OCL(clEnqueueNDRangeKernel(mBig, mFermatSetup, 1, 0, globalSize, 0, 0, 0, 0));
-        OCL(clEnqueueNDRangeKernel(mBig, mFermatKernel, 1, 0, globalSize, 0, 0, 0, 0));
-				OCL(clSetKernelArg(mFermatCheck, 0, sizeof(cl_mem), &fermat.buffer[widx].info.DeviceData));
-				OCL(clSetKernelArg(mFermatCheck, 1, sizeof(cl_mem), &fermat.buffer[widx].count.DeviceData));
-				OCL(clSetKernelArg(mFermatCheck, 5, sizeof(cl_mem), &fermat.buffer[ridx].info.DeviceData));
-				OCL(clEnqueueNDRangeKernel(mBig, mFermatCheck, 1, 0, globalSize, 0, 0, 0, 0));
-				fermat.buffer[widx].count.copyToHost(mBig, false);
-				fermat.final.info.copyToHost(mBig, false);
-				fermat.final.count.copyToHost(mBig, false);     
-			} else {
-        printf(" * warning: no enough candidates available\n");
-        fermat.final.count[0] = 0;
-        fermat.buffer[widx].count[0] = 0;
-      }
-			//printf("fermat: total of %d infos, bsize = %d\n", count, fermat.bsize);
-		}
+    final.count[0] = 0;
+    final.count.copyToDevice(mBig, false);    
+    FermatDispatch(fermat320, sieveBuffers, candidatesCountBuffers, 0, ridx, widx, testCount, fermatCount, mFermatKernel320);    
+    FermatDispatch(fermat352, sieveBuffers, candidatesCountBuffers, 1, ridx, widx, testCount, fermatCount, mFermatKernel352);
+    final.info.copyToHost(mBig, false);
+    final.count.copyToHost(mBig, false);         
 		
 		clFlush(mBig);
 		clFlush(mSmall);

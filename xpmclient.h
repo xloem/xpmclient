@@ -17,8 +17,12 @@
 #include "uint256.h"
 #include "sha256.h"
 
+#define FERMAT_PIPELINES 2
 
-
+#define PW 128      // Pipeline width (number of hashes to store)
+#define SW 5      // number of sieves in one iteration
+#define MSO 128*1024    // max sieve output
+#define MFS 2*SW*MSO  // max fermat size
 
 
 extern unsigned gPrimes[96*1024];
@@ -115,14 +119,17 @@ public:
 	};
 	
 	struct pipeline_t {
-		
+		unsigned current;
 		unsigned bsize;
 		clBuffer<cl_uint> input;
 		clBuffer<cl_uchar> output;
 		info_t buffer[2];
-		info_t final;
-		
 	};
+  
+  struct sieve_t {
+    info_t cunningham1[1];
+    info_t cunningham2[1];
+  };
 	
 	
 	PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned depth);
@@ -135,7 +142,16 @@ public:
 	bool MakeExit;
 	
 private:
-	
+  void FermatInit(pipeline_t &fermat, unsigned mfs);
+  void FermatDispatch(pipeline_t &fermat,
+                      clBuffer<fermat_t>  sieveBuffers[SW][FERMAT_PIPELINES][2],
+                      clBuffer<cl_uint> candidatesCountBuffers[SW][2],
+                      unsigned pipelineIdx,
+                      int ridx,
+                      int widx,
+                      uint64_t &testCount,
+                      uint64_t &fermatCount,
+                      cl_kernel fermatKernel);
 	void Mining(zctx_t *ctx, void *pipe);
 	
 	
@@ -146,7 +162,7 @@ private:
 	unsigned mPrimorial;
 	unsigned mHashPrimorial;
 	unsigned mBlockSize;
-	unsigned mDepth;
+	cl_uint mDepth;
 	
 	cl_command_queue mSmall;
 	cl_command_queue mBig;
@@ -156,10 +172,11 @@ private:
 	cl_kernel mSieve;
 	cl_kernel mSieveSearch;
 	cl_kernel mFermatSetup;
-	cl_kernel mFermatKernel;
+	cl_kernel mFermatKernel352;
+  cl_kernel mFermatKernel320;  
 	cl_kernel mFermatCheck;
 	
-	
+  info_t final;	
 };
 
 

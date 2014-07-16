@@ -477,9 +477,12 @@ __kernel void search_sieve_bi(	__global const uint* gsieve1,
 
 __kernel void s_sieve(	__global const uint* gsieve1,
 						__global const uint* gsieve2,
-						__global fermat_t* found,
+						__global fermat_t* found320,
+            __global fermat_t* found352,
 						__global uint* fcount,
-						uint hashid )
+						uint hashid,
+            uint hashSize,
+            uint depth)
 {
 	
 	const uint id = get_global_id(0);
@@ -499,22 +502,18 @@ __kernel void s_sieve(	__global const uint* gsieve1,
 		
 		if(mask != 0xFFFFFFFF) {
       unsigned bit = 31-clz(~mask);
-// 			for(int bit = 0; bit < 32; ++bit)
-// 				if((~mask & (1 << bit))){
+      unsigned multiplier = mad24(id, 32u, (unsigned)bit) + SIZE*32*STRIPES/2;
+      unsigned maxSize = hashSize + (32-clz(multiplier)) + start + depth;
+      const uint addr = atomic_inc(&fcount[(maxSize <= 320) ? 0 : 1]);     
+      __global fermat_t *found = (maxSize <= 320) ? found320 : found352;
 					
-					const uint addr = atomic_inc(fcount);
-					
-					fermat_t info;
-					info.index = mad24(id, 32u, (unsigned)bit) + SIZE*32*STRIPES/2;
-					info.origin = start;
-					info.chainpos = 0;
-					info.type = 0;
-					info.hashid = hashid;
-					
-					found[addr] = info;
-					
-// 					break;
-// 				}
+			fermat_t info;
+      info.index = multiplier;
+			info.origin = start;
+			info.chainpos = 0;
+			info.type = 0;
+			info.hashid = hashid;
+      found[addr] = info;
     }
 	}
 	
@@ -533,24 +532,19 @@ __kernel void s_sieve(	__global const uint* gsieve1,
 		
 		if(mask != 0xFFFFFFFF) {
       unsigned bit = 31-clz(~mask);
-// 			for(int bit = 0; bit < 32; ++bit)
-// 				if((~mask & (1 << bit))){
+      unsigned multiplier = mad24(id, 32u, (unsigned)bit) + SIZE*32*STRIPES/2;
+      unsigned maxSize = hashSize + (32-clz(multiplier)) + start + depth;
+      const uint addr = atomic_inc(&fcount[(maxSize <= 320) ? 0 : 1]);     
+      __global fermat_t *found = (maxSize <= 320) ? found320 : found352;
 					
-					const uint addr = atomic_inc(fcount);
-					
-					fermat_t info;
-          info.index = mad24(id, 32u, (unsigned)bit) + SIZE*32*STRIPES/2;
-					info.origin = start;
-					info.chainpos = 0;
-					info.type = 1;
-					info.hashid = hashid;
-					
-					found[addr] = info;
-					
-// 					break;
-// 				}
+			fermat_t info;
+      info.index = multiplier;
+			info.origin = start;
+			info.chainpos = 0;
+			info.type = 1;
+			info.hashid = hashid;
+      found[addr] = info;
     }
-		
 	}
 	
 #pragma unroll	
@@ -569,43 +563,18 @@ __kernel void s_sieve(	__global const uint* gsieve1,
 		
 		if(mask != 0xFFFFFFFF) {
       unsigned bit = 31-clz(~mask);
-// 			for(int bit = 0; bit < 32; ++bit)
-// 				if((~mask & (1 << bit))){
+      unsigned multiplier = mad24(id, 32u, (unsigned)bit) + SIZE*32*STRIPES/2;
+      unsigned maxSize = hashSize + (32-clz(multiplier)) + start + depth;
+      const uint addr = atomic_inc(&fcount[(maxSize <= 320) ? 0 : 1]);     
+      __global fermat_t *found = (maxSize <= 320) ? found320 : found352;
 					
-					const uint addr = atomic_inc(fcount);
-					
-					fermat_t info;
-          info.index = mad24(id, 32u, (unsigned)bit) + SIZE*32*STRIPES/2;
-					info.origin = start;
-					info.chainpos = 0;
-					info.type = 2;
-					info.hashid = hashid;
-					
-					found[addr] = info;
-					
-// 					break;
-// 				}
+			fermat_t info;
+      info.index = multiplier;
+			info.origin = start;
+			info.chainpos = 0;
+			info.type = 2;
+			info.hashid = hashid;
+      found[addr] = info;
     }
-		
 	}
-	
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
