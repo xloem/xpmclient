@@ -8,7 +8,6 @@
  */
 
 //#include "config.h"
-#define LINUX
 #define HAVE_ADL
 
 #ifdef _WIN32

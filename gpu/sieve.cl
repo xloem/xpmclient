@@ -153,16 +153,7 @@ __kernel void sieve(	__global uint4* gsieve_all,
         
         vpos = mad24(var*4, prime, vpos);
       }      
-      
-//       while (pos < SIZE*32) {
-//         atomic_or(&sieve[pos >> 5], 1u << pos); pos = mad24(var, prime, pos);
-//         atomic_or(&sieve[pos >> 5], 1u << pos); pos = mad24(var, prime, pos);
-//         atomic_or(&sieve[pos >> 5], 1u << pos); pos = mad24(var, prime, pos);
-//         atomic_or(&sieve[pos >> 5], 1u << pos); pos = mad24(var, prime, pos);
-//       }
-			
 		}
-	
 	}
 	
 	__global const uint2* pprimes = &primes[id];
@@ -186,10 +177,10 @@ __kernel void sieve(	__global uint4* gsieve_all,
 	}
 	
 	uint lpos = 0;
-	#pragma unroll
+  
+#pragma unroll
   for(uint ip = 1; ip < 48; ++ip){
-		
-		const uint prime = plifo[lpos];
+    const uint prime = plifo[lpos];
 		const float fiprime = as_float(fiplifo[lpos]);
 		uint pos = olifo[lpos];
 		
@@ -200,22 +191,19 @@ __kernel void sieve(	__global uint4* gsieve_all,
       while (pos < SIZE*32) {
         atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos); pos = mad24(1u, prime, pos);
         atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos); pos = mad24(1u, prime, pos);
+        atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos); pos = mad24(1u, prime, pos);
         atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos); pos = mad24(1u, prime, pos);        
       }      
 		}else if(ip < 26){
       atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
-				pos += prime;
-        atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
-					pos += prime;
-//           if(pos < SIZE*32){
-            atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
-// 					}
+			pos += prime;
+      atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
+			pos += prime;
+      atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
 		}else if(ip < 48){
       atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
-				pos += prime;
-//         if(pos < SIZE*32){
-          atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
-// 				}
+  		pos += prime;
+      atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
 		}
 		
 		if(ip+NLIFO < SCOUNT/LSIZE){

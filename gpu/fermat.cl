@@ -2525,23 +2525,36 @@ uint int_invert(uint a, uint nPrime)
     return (inverse + nPrime) % nPrime;
 }
 
-
+uint32_t mod32(uint32_t *data, unsigned size, uint32_t *modulos, uint32_t divisor)
+{
+  uint64_t acc = data[0];
+  for (unsigned i = 1; i < size; i++)
+    acc += (uint64_t)modulos[i-1] * (uint64_t)data[i];
+  return acc % divisor;
+}
 
 __kernel void setup_sieve(	__global uint* offset1,
 							__global uint* offset2,
 							__global const uint* vPrimes,
 							__constant uint* hash,
-							uint hashid )
+							uint hashid,
+              __global uint *modulos)
 {
 	
 	const uint id = get_global_id(0);
 	const uint nPrime = vPrimes[id];
 	
 	uint tmp[N];
+#pragma unroll
 	for(int i = 0; i < N; ++i)
 		tmp[i] = hash[hashid*N + i];
-	
-	const uint nFixedFactorMod = tdiv_ui(tmp, nPrime);
+
+  uint localModulos[N-2];
+#pragma unroll
+  for (unsigned i = 0; i < N-2; i++)
+    localModulos[i] = modulos[PCOUNT*i + id];
+  const uint nFixedFactorMod = mod32(tmp, N-1, localModulos, nPrime);
+  
 	if(nFixedFactorMod == 0){
 		for(uint line = 0; line < WIDTH; ++line){
 			offset1[PCOUNT*line + id] = 1u << 31;

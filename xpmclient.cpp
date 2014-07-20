@@ -32,10 +32,10 @@ cl_program gProgram = 0;
 std::vector<unsigned> gPrimes2;
 
 
-uint32_t divisorsNum = 17;
+uint32_t divisorsNum = 18;
 
 uint32_t divisors24[] = {
-  3, 5, 7, 13, 17,
+  2, 3, 5, 7, 13, 17,
 //   3,
 //   5,
 //   7,
@@ -229,7 +229,7 @@ void PrimeMiner::FermatDispatch(pipeline_t &fermat,
       OCL(clEnqueueNDRangeKernel(mBig, mFermatCheck, 1, 0, globalSize, 0, 0, 0, 0));
       fermat.buffer[widx].count.copyToHost(mBig, false);
     } else {
-//       printf(" * warning: no enough candidates available\n");
+//       printf(" * warning: no enough candidates available (pipeline %u)\n", pipelineIdx);
     }
     //printf("fermat: total of %d infos, bsize = %d\n", count, fermat.bsize);
   }
@@ -342,6 +342,20 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	FermatInit(fermat320, MFS);
   FermatInit(fermat352, MFS);  
 
+  unsigned modulosBufferSize = mConfig.PCOUNT*(mConfig.N-1);
+  std::unique_ptr<uint32_t[]> modulos(new uint32_t[modulosBufferSize]);
+  for (unsigned i = 0; i < mConfig.PCOUNT; i++) {
+    mpz_class X = 1;
+    for (unsigned j = 0; j < mConfig.N-1; j++) {
+      X <<= 32;
+      mpz_class mod = X % gPrimes[i+mPrimorial+1];
+      modulos[mConfig.PCOUNT*j+i] = mod.get_ui();
+    }
+  }
+  cl_mem modulosBuf = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                     modulosBufferSize*sizeof(cl_uint), modulos.get(), &error);
+  OCL(error);  
+  
 	OCL(clSetKernelArg(mHashMod, 0, sizeof(cl_mem), &hashmod.found.DeviceData));
 	OCL(clSetKernelArg(mHashMod, 1, sizeof(cl_mem), &hashmod.count.DeviceData));
 	OCL(clSetKernelArg(mHashMod, 2, sizeof(cl_mem), &hashmod.primorialBitField.DeviceData));
@@ -350,6 +364,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	OCL(clSetKernelArg(mSieveSetup, 1, sizeof(cl_mem), &sieveOff[1].DeviceData));
 	OCL(clSetKernelArg(mSieveSetup, 2, sizeof(cl_mem), &primeBuf));
 	OCL(clSetKernelArg(mSieveSetup, 3, sizeof(cl_mem), &hashBuf.DeviceData));
+  OCL(clSetKernelArg(mSieveSetup, 5, sizeof(cl_mem), &modulosBuf));  
 	OCL(clSetKernelArg(mSieve, 2, sizeof(cl_mem), &primeBuf2));
 	OCL(clSetKernelArg(mSieveSearch, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData));
 	OCL(clSetKernelArg(mSieveSearch, 1, sizeof(cl_mem), &sieveBuf[1].DeviceData));
@@ -458,14 +473,14 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 		
 		// hashmod fetch & dispatch
 		{
-// 			printf("/*got %*/d new hashes\n", hashmod.count[0]);
+// 			printf("got %d new hashes\n", hashmod.count[0]);
 			for(unsigned i = 0; i < hashmod.count[0]; ++i) {
 				hash_t hash;
 				hash.iter = iteration;
 				hash.time = blockheader.time;
 				hash.nonce = hashmod.found[i];
         uint32_t primorialBitField = hashmod.primorialBitField[i];
-        uint64_t realPrimorial = 2;
+        uint64_t realPrimorial = 1;
         for (unsigned i = 0; i < divisorsNum; i++) {
           if (primorialBitField & (1 << i))
             realPrimorial *= divisors24[i];
@@ -485,19 +500,19 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				sha.update((const unsigned char*)&hash.hash, sizeof(uint256));
 				sha.final((unsigned char*)&hash.hash);
 				
-// 				if(hash.hash < (uint256(1) << 255)){
-// 					printf("error: hash does not meet minimum.\n");
-// 					stats.errors++;
-// 					continue;
-// 				}
+				if(hash.hash < (uint256(1) << 255)){
+					printf("error: hash does not meet minimum.\n");
+					stats.errors++;
+					continue;
+				}
 				
 				mpz_class mpzHash;
 				mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
-//         if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
-// 					printf("error: mpz_divisible_ui_p failed.\n");
-// 					stats.errors++;
-// 					continue;
-// 				}
+        if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
+					printf("error: mpz_divisible_ui_p failed.\n");
+					stats.errors++;
+					continue;
+				}
 				
         hash.primorial = primorial / mpzRealPrimorial;
         hash.shash = mpzHash * hash.primorial;       
@@ -507,7 +522,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 			//printf("hashlist.size() = %d\n", (int)hashlist.size());
 			hashmod.count[0] = 0;
 			
-      int numhash = ((16*SW) - hashlist.size()) * 96000;
+      int numhash = ((16*SW) - hashlist.size()) * 65536;
 
 			if(numhash > 0){
 				
@@ -561,6 +576,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 					hashes[hid].iter = iteration;
 					hashlist.pop_back();
 					newhashes.push_back(hid << 16 | i);
+          memset(&hashBuf[hid*mConfig.N], 0, sizeof(uint32_t)*mConfig.N);
 					mpz_export(&hashBuf[hid*mConfig.N], 0, -1, 4, 0, 0, hashes[hid].shash.get_mpz_t());
 					
 				}
@@ -684,8 +700,22 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 					Send(share, sharepush);
 					
 				}else if(chainlength < mDepth){
-          
 					printf("error: ProbablePrimeChainTestFast %ubits %d/%d\n", (unsigned)mpz_sizeinbase(chainorg.get_mpz_t(), 2), chainlength, mDepth);
+          printf(" * origin: %s\n", chainorg.get_str().c_str());
+          printf(" * type: %u\n", (unsigned)candi.type);
+          printf(" * multiplier: %u\n", (unsigned)candi.index);
+          printf(" * layer: %u\n", (unsigned)candi.origin);
+          printf(" * hash primorial: %s\n", hash.primorial.get_str().c_str());
+          printf("   * primorial multipliers: ");
+          for (unsigned i = 0; i < mPrimorial;) {
+            if (hash.primorial % gPrimes[i] == 0) {
+              hash.primorial /= gPrimes[i];
+              printf("[%u]%u ", i+1, gPrimes[i]);
+            } else {
+              i++;
+            }
+          }
+          printf("\n");
 					stats.errors++;
 				}
 			}

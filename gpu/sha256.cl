@@ -379,7 +379,7 @@ uint32_t sum24(const uint32_t *data, unsigned size, __constant uint32_t *moddata
 
 unsigned check24(uint32_t X, uint32_t divisor, uint32_t inversedMultiplier, unsigned offset)
 {
-  return X - divisor*(mul_hi(X, inversedMultiplier) >> offset);
+  return X == divisor*(mul_hi(X, inversedMultiplier) >> offset);
 }
 
 unsigned divisionCheck24(const uint32_t *data,
@@ -436,16 +436,16 @@ __kernel void bhashmod(	__global uint* found,
 	for(int i = 0; i < 8; ++i)
 		state[i] = sha2_pack(state[i]);
 	
-	if((state[7] & (1u << 31)) && ((state[0] & 0x1) == 0)){
-    uint32_t primorial = 0;
-    uint32_t count = 1;
+	if (state[7] & (1u << 31)) {
+    uint32_t count = !(state[0] & 0x1);
+    uint32_t primorial = count;
     state[8] = 0;
     
     {
       uint32_t acc = sum24(state, 8, modulos24one);
       for (unsigned i = 0; i < 5; i++) {
-        unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]) ? 0 : 1;
-        primorial |= (isDivisor << i);
+        unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
+        primorial |= (isDivisor << (i+1));
         count += isDivisor;
       }
     }
@@ -453,8 +453,8 @@ __kernel void bhashmod(	__global uint* found,
 #pragma unroll
     for (unsigned i = 0; i < 13-5; i++) {
       unsigned isDivisor =
-        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]) ? 0 : 1;
-      primorial |= (isDivisor << (i+5));
+        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
+      primorial |= (isDivisor << (i+5+1));
       count += isDivisor;
     }
 

@@ -3,7 +3,6 @@
 #define HAVE_ADL
 #ifdef HAVE_ADL
 
-#define LINUX
 #include "adl_sdk.h"
 #include <ctime>
 
