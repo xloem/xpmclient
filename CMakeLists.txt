@@ -19,7 +19,7 @@ include_directories(
 
 if (WIN32)
   message("Building for Win32")
-  add_definitions(-D_WIN32 -D__WINDOWS__ -DLIBCZMQ_EXPORTS)
+  add_definitions(-D_WIN32 -D__WINDOWS__ -DLIBCZMQ_EXPORTS -D__USE_MINGW_ANSI_STDIO=0)
   if (InstallPrefix)
     include_directories(${InstallPrefix}/include)
   endif()
@@ -42,6 +42,7 @@ add_executable(xpmclient
   protocol.pb.cpp
   sha256.cpp
   xpmclient.cpp
+  benchmarks.cpp
 )
 
 SET_TARGET_PROPERTIES(xpmclient PROPERTIES

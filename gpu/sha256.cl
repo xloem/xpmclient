@@ -119,132 +119,6 @@ __kernel void sha256_kernel(__global const uint* msg_in, __global uint* state_ou
 	
 }
 
-
-
-#define BSIZE 128
-
-__attribute__((reqd_work_group_size(BSIZE, 1, 1)))
-__kernel void blockhash(	__global uint* hashes,
-							__global uint* count,
-							__constant uint* midstate,
-							uint merkle, uint time, uint nbits )
-{
-	const uint id = get_global_id(0);
-	
-	uint msg[16];
-	msg[0] = merkle;
-	msg[1] = time;
-	msg[2] = nbits;
-	msg[3] = sha2_pack(id);
-	msg[4] = sha2_pack(0x80);
-  
-#pragma unroll  
-	for(int i = 5; i < 15; ++i)
-		msg[i] = 0;
-	msg[15] = 640;
-	
-	uint state[8];
-  
-#pragma unroll
-	for(int i = 0; i < 8; ++i)
-		state[i] = midstate[i];
-	
-	sha256(msg, state);
-	
-#pragma unroll  
-	for(int i = 0; i < 8; ++i)
-		msg[i] = state[i];
-	msg[8] = sha2_pack(0x80);
-	msg[15] = 256;
-	
-#pragma unroll  
-	for(int i = 0; i < 8; ++i)
-		state[i] = h_init[i];
-	
-	sha256(msg, state);
-	
-#pragma unroll  
-	for(int i = 0; i < 8; ++i)
-		state[i] = sha2_pack(state[i]);
-	
-	__local uint lcount;
-	__local uint lhash[BSIZE][9];
-	
-	const uint lid = get_local_id(0);
-	
-	if(lid == 0)
-		lcount = 0;
-	
-	barrier(CLK_LOCAL_MEM_FENCE);
-	
-	if(state[7] & (1u << 31)){
-		
-		const uint index = atomic_inc(&lcount);
-#pragma unroll    
-		for(int i = 0; i < 8; ++i)
-			lhash[index][i] = state[i];
-		
-		lhash[index][8] = id;
-		
-	}
-	
-	barrier(CLK_LOCAL_MEM_FENCE);
-	
-	__local uint gindex;
-	if(lid == 0)
-		gindex = atomic_add(count, lcount);
-	
-	barrier(CLK_LOCAL_MEM_FENCE);
-	
-	if(lid < lcount){
-		
-#pragma unroll    
-		for(int i = 0; i < 8; ++i)
-			hashes[(gindex+lid)*9+i] = lhash[lid][i];
-		
-		hashes[(gindex+lid)*9+8] = lhash[lid][8];
-		
-	}
-	
-}
-
-
-uint tdiv8_ui(const uint* y, uint z) {
-	
-	uint x = 0;
-	
-	#pragma unroll
-	for(uint k = 0; k < 8*32; ++k){
-		
-		x = x << 1;
-		x |= (y[7-(k/32)] >> (31-(k%32))) & 1u;
-		
-		if(x >= z)
-			x -= z;
-		
-	}
-	
-	return x;
-	
-}
-
-__kernel void hashmod(	__global const uint* hashes,
-						__global uint* found,
-						uint primorial )
-{
-	const uint id = get_global_id(0);
-	
-	uint hash[8];
-	for(int i = 0; i < 8; ++i)
-		hash[i] = hashes[id*9+i];
-	
-	const uint modulus = tdiv8_ui(hash, primorial);
-	
-	if(modulus == 0)
-		*found = hashes[id*9+8];
-	
-}
-
 __constant uint32_t divisorsNum = 17;
 
 __constant uint32_t divisors24one[] = {
@@ -393,11 +267,11 @@ unsigned divisionCheck24(const uint32_t *data,
 }
 
 
-__attribute__((reqd_work_group_size(256, 1, 1)))
-__kernel void bhashmod(	__global uint* found,
+void bhashmod(__global uint* found,
 						__global uint* fcount,
 						__global uint* resultPrimorial,
 						__constant uint* midstate,
+            uint primorial,
 						uint merkle, uint time, uint nbits )
 {
 	const uint id = get_global_id(0);
@@ -438,14 +312,163 @@ __kernel void bhashmod(	__global uint* found,
 	
 	if (state[7] & (1u << 31)) {
     uint32_t count = !(state[0] & 0x1);
-    uint32_t primorial = count;
+    uint32_t primorialBitField = count;
     state[8] = 0;
     
     {
       uint32_t acc = sum24(state, 8, modulos24one);
+#pragma unroll
       for (unsigned i = 0; i < 5; i++) {
         unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
-        primorial |= (isDivisor << (i+1));
+        primorialBitField |= (isDivisor << (i+1));
+        count += isDivisor;
+      }
+    }
+    
+#pragma unroll
+    for (unsigned i = 0; i < primorial-5; i++) {
+      unsigned isDivisor =
+        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
+        primorialBitField |= (isDivisor << (i+5+1));
+      count += isDivisor;
+    }
+
+    if (count >= 8) {
+			const uint index = atomic_inc(fcount);
+      resultPrimorial[index] = primorialBitField;
+			found[index] = id;
+		}
+	}
+}
+
+__attribute__((reqd_work_group_size(256, 1, 1)))
+__kernel void bhashmod12( __global uint* found,
+                          __global uint* fcount,
+                          __global uint* resultPrimorial,
+                          __constant uint* midstate,
+                          uint merkle, uint time, uint nbits )
+{
+  const uint id = get_global_id(0);
+
+  uint msg[16];
+  msg[0] = merkle;
+  msg[1] = time;
+  msg[2] = nbits;
+  msg[3] = sha2_pack(id);
+  msg[4] = sha2_pack(0x80);
+#pragma unroll  
+  for(int i = 5; i < 15; ++i)
+    msg[i] = 0;
+  msg[15] = 640;
+  
+  uint state[9];
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = midstate[i];
+  
+  sha256(msg, state);
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    msg[i] = state[i];
+  msg[8] = sha2_pack(0x80);
+  msg[15] = 256;
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = h_init[i];
+  
+  sha256(msg, state);
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = sha2_pack(state[i]);
+  
+  if (state[7] & (1u << 31)) {
+    uint32_t count = !(state[0] & 0x1);
+    uint32_t primorialBitField = count;
+    state[8] = 0;
+    
+    {
+      uint32_t acc = sum24(state, 8, modulos24one);
+#pragma unroll
+      for (unsigned i = 0; i < 5; i++) {
+        unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
+        primorialBitField |= (isDivisor << (i+1));
+        count += isDivisor;
+      }
+    }
+    
+#pragma unroll
+    for (unsigned i = 0; i < 12-5; i++) {
+      unsigned isDivisor =
+        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
+        primorialBitField |= (isDivisor << (i+5+1));
+      count += isDivisor;
+    }
+
+    if (count >= 8) {
+      const uint index = atomic_inc(fcount);
+      resultPrimorial[index] = primorialBitField;
+      found[index] = id;
+    }
+  }
+}
+
+__attribute__((reqd_work_group_size(256, 1, 1)))
+__kernel void bhashmod13( __global uint* found,
+                          __global uint* fcount,
+                          __global uint* resultPrimorial,
+                          __constant uint* midstate,
+                          uint merkle, uint time, uint nbits )
+{
+  const uint id = get_global_id(0);
+
+  uint msg[16];
+  msg[0] = merkle;
+  msg[1] = time;
+  msg[2] = nbits;
+  msg[3] = sha2_pack(id);
+  msg[4] = sha2_pack(0x80);
+#pragma unroll  
+  for(int i = 5; i < 15; ++i)
+    msg[i] = 0;
+  msg[15] = 640;
+  
+  uint state[9];
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = midstate[i];
+  
+  sha256(msg, state);
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    msg[i] = state[i];
+  msg[8] = sha2_pack(0x80);
+  msg[15] = 256;
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = h_init[i];
+  
+  sha256(msg, state);
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = sha2_pack(state[i]);
+  
+  if (state[7] & (1u << 31)) {
+    uint32_t count = !(state[0] & 0x1);
+    uint32_t primorialBitField = count;
+    state[8] = 0;
+    
+    {
+      uint32_t acc = sum24(state, 8, modulos24one);
+#pragma unroll
+      for (unsigned i = 0; i < 5; i++) {
+        unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
+        primorialBitField |= (isDivisor << (i+1));
         count += isDivisor;
       }
     }
@@ -454,14 +477,88 @@ __kernel void bhashmod(	__global uint* found,
     for (unsigned i = 0; i < 13-5; i++) {
       unsigned isDivisor =
         divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
-      primorial |= (isDivisor << (i+5+1));
+        primorialBitField |= (isDivisor << (i+5+1));
       count += isDivisor;
     }
 
     if (count >= 8) {
-			const uint index = atomic_inc(fcount);
-      resultPrimorial[index] = primorial;
-			found[index] = id;
-		}
-	}
+      const uint index = atomic_inc(fcount);
+      resultPrimorial[index] = primorialBitField;
+      found[index] = id;
+    }
+  }
+}
+
+__attribute__((reqd_work_group_size(256, 1, 1)))
+__kernel void bhashmod14( __global uint* found,
+                          __global uint* fcount,
+                          __global uint* resultPrimorial,
+                          __constant uint* midstate,
+                          uint merkle, uint time, uint nbits )
+{
+  const uint id = get_global_id(0);
+
+  uint msg[16];
+  msg[0] = merkle;
+  msg[1] = time;
+  msg[2] = nbits;
+  msg[3] = sha2_pack(id);
+  msg[4] = sha2_pack(0x80);
+#pragma unroll  
+  for(int i = 5; i < 15; ++i)
+    msg[i] = 0;
+  msg[15] = 640;
+  
+  uint state[9];
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = midstate[i];
+  
+  sha256(msg, state);
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    msg[i] = state[i];
+  msg[8] = sha2_pack(0x80);
+  msg[15] = 256;
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = h_init[i];
+  
+  sha256(msg, state);
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = sha2_pack(state[i]);
+  
+  if (state[7] & (1u << 31)) {
+    uint32_t count = !(state[0] & 0x1);
+    uint32_t primorialBitField = count;
+    state[8] = 0;
+    
+    {
+      uint32_t acc = sum24(state, 8, modulos24one);
+#pragma unroll
+      for (unsigned i = 0; i < 5; i++) {
+        unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
+        primorialBitField |= (isDivisor << (i+1));
+        count += isDivisor;
+      }
+    }
+    
+#pragma unroll
+    for (unsigned i = 0; i < 14-5; i++) {
+      unsigned isDivisor =
+        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
+        primorialBitField |= (isDivisor << (i+5+1));
+      count += isDivisor;
+    }
+
+    if (count >= 8) {
+      const uint index = atomic_inc(fcount);
+      resultPrimorial[index] = primorialBitField;
+      found[index] = id;
+    }
+  }
 }

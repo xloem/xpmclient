@@ -10,6 +10,8 @@
 
 
 #include <CL/cl.h>
+#include <stdio.h>
+#include <string.h>
 
 
 extern cl_context gContext;

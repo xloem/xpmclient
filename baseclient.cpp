@@ -364,9 +364,8 @@ static int HandleTimer(zloop_t *wloop, int timer_id, void *arg) {
 
 
 
-int main(void) {
-	
-	gBlock.set_height(0);
+int main(int argc, char **argv) {
+gBlock.set_height(0);
 	gClientName = sysinfo::GetClientName();
 	gClientID = sysinfo::GetClientID();
 	gInstanceID = gClientID * (unsigned)time(0);
@@ -411,10 +410,13 @@ int main(void) {
 	zsocket_bind(gWorkers, "inproc://shares");
 	
 	gClient = new XPMClient(gCtx);
-	gExit = !gClient->Initialize(cfg);
+  
+  bool benchmarkOnly = false;
+  if (argc >= 2 && (strcmp(argv[1], "-b") == 0 || strcmp(argv[1], "--benchmark") == 0))
+    benchmarkOnly = true;
+	gExit = !gClient->Initialize(cfg, benchmarkOnly);
 	
 	while(!gExit){
-		
 		printf("Connecting to frontend: %s:%d ...\n", frontHost.c_str(), frontPort);
 		
 		gBlock.Clear();
@@ -525,16 +527,3 @@ int main(void) {
 	return EXIT_SUCCESS;
 	
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

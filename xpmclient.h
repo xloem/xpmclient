@@ -19,9 +19,9 @@
 
 #define FERMAT_PIPELINES 2
 
-#define PW 128      // Pipeline width (number of hashes to store)
-#define SW 5      // number of sieves in one iteration
-#define MSO 128*1024    // max sieve output
+#define PW 256        // Pipeline width (number of hashes to store)
+#define SW 16         // maximum number of sieves in one iteration
+#define MSO 128*1024  // max sieve output
 #define MFS 2*SW*MSO  // max fermat size
 
 
@@ -65,6 +65,57 @@ struct config_t {
 };
 
 
+template<typename T> class lifoBuffer {
+private:
+  T *_data;
+  size_t _size;
+  size_t _readPos;
+  size_t _writePos;
+  
+  size_t nextPos(size_t pos) { return (pos+1) % _size; }
+  
+public:
+  lifoBuffer(size_t size) : _size(size), _readPos(0), _writePos(0) {
+    _data = new T[size];
+  }
+  
+  size_t readPos() const { return _readPos; }
+  size_t writePos() const { return _writePos; }
+  T *data() const { return _data; }
+  T& get(size_t index) const { return _data[index]; }
+  
+  bool empty() const {
+    return _readPos == _writePos;
+  }  
+  
+  size_t remaining() const {
+    return _writePos >= _readPos ?
+    _writePos - _readPos :
+    _size - (_readPos - _writePos);
+  }
+  
+  void clear() {
+    _readPos = _writePos;
+  }
+  
+  size_t push(const T& element) {
+    size_t oldWritePos = _writePos;
+    size_t nextWritePos = nextPos(_writePos);
+    if (nextWritePos != _readPos) {
+      _data[_writePos] = element;
+      _writePos = nextWritePos;
+    }
+    
+    return oldWritePos;
+  }
+  
+  size_t pop() {
+    size_t oldReadPos = _readPos;
+    if (!empty())
+      _readPos = nextPos(_readPos);
+    return oldReadPos;
+  }
+};
 
 class PrimeMiner {
 public:
@@ -132,17 +183,19 @@ public:
   };
 	
 	
-	PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned depth);
+	PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth);
 	~PrimeMiner();
 	
 	bool Initialize(cl_device_id dev);
 	
 	static void InvokeMining(void *args, zctx_t *ctx, void *pipe);
+  config_t getConfig() { return mConfig; }
 	
 	bool MakeExit;
 	
 private:
   void FermatInit(pipeline_t &fermat, unsigned mfs);
+  
   void FermatDispatch(pipeline_t &fermat,
                       clBuffer<fermat_t>  sieveBuffers[SW][FERMAT_PIPELINES][2],
                       clBuffer<cl_uint> candidatesCountBuffers[SW][2],
@@ -151,15 +204,17 @@ private:
                       int widx,
                       uint64_t &testCount,
                       uint64_t &fermatCount,
-                      cl_kernel fermatKernel);
+                      cl_kernel fermatKernel,
+                      unsigned sievePerRound);
+  
 	void Mining(zctx_t *ctx, void *pipe);
-	
 	
 	unsigned mID;
 	unsigned mThreads;
 	
 	config_t mConfig;
 	unsigned mPrimorial;
+  unsigned mSievePerRound;
 	unsigned mHashPrimorial;
 	unsigned mBlockSize;
 	cl_uint mDepth;
@@ -188,7 +243,7 @@ public:
 	XPMClient(zctx_t* ctx);
 	~XPMClient();
 	
-	bool Initialize(Configuration* cfg);
+	bool Initialize(Configuration* cfg, bool benchmarkOnly = false);
 	
 	void NotifyBlock(const proto::Block& block);
 	

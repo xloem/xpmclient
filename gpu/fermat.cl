@@ -10,15 +10,14 @@
 
 
 #define N 12
-
 #define SIZE 4096
 #define LSIZE 256
-#define STRIPES 840
-#define WIDTH 20
-#define PCOUNT (40960)
 #define SCOUNT PCOUNT
-#define TARGET 10
 
+// #define STRIPES 420
+// #define WIDTH 20
+// #define PCOUNT 40960
+// #define TARGET 10
 
 typedef unsigned char uint8_t;
 typedef unsigned int uint32_t;
@@ -1943,7 +1942,7 @@ void redcify320(unsigned shiftCount,
                 uint4 limbs0, uint4 limbs1, uint4 limbs2,
                 uint4 *r0, uint4 *r1, uint4 *r2)
 {
-  uint4 mr0, mr1, mr2, mr3, mr4;
+  uint4 mr0, mr1, mr2, mr3;
   
   for (unsigned  i = 0, ie = (64-shiftCount)/32; i < ie; i++)
     rshiftByLimb2(&q0, &q1);
@@ -2536,7 +2535,7 @@ uint32_t mod32(uint32_t *data, unsigned size, uint32_t *modulos, uint32_t diviso
 __kernel void setup_sieve(	__global uint* offset1,
 							__global uint* offset2,
 							__global const uint* vPrimes,
-							__constant uint* hash,
+							__global uint* hash,
 							uint hashid,
               __global uint *modulos)
 {
@@ -2594,7 +2593,7 @@ void mul384_1(uint4 l0, uint4 l1, uint4 l2, uint32_t m,
 
 __kernel void setup_fermat( __global uint* fprimes,
               __global const fermat_t* info_all,
-              __constant uint* hash )
+              __global uint* hash )
 {
   
   const uint id = get_global_id(0);
@@ -2604,7 +2603,7 @@ __kernel void setup_fermat( __global uint* fprimes,
   uint m[N];
   uint r[2*N];
   
-  __constant uint *H = &hash[info.hashid*N];
+  __global uint *H = &hash[info.hashid*N];
   uint4 h1 = {H[0], H[1], H[2], H[3]};
   uint4 h2 = {H[4], H[5], H[6], H[7]};
   uint4 h3 = {H[8], H[9], H[10], 0};
