@@ -19,11 +19,12 @@
 
 #define FERMAT_PIPELINES 2
 
-#define PW 256        // Pipeline width (number of hashes to store)
+#define PW 512        // Pipeline width (number of hashes to store)
 #define SW 16         // maximum number of sieves in one iteration
 #define MSO 128*1024  // max sieve output
 #define MFS 2*SW*MSO  // max fermat size
 
+const unsigned maxHashPrimorial = 19;
 
 extern unsigned gPrimes[96*1024];
 extern std::vector<unsigned> gPrimes2;
@@ -150,16 +151,16 @@ public:
 		uint256 hash;
 		mpz_class shash;
     mpz_class primorial;
+    unsigned primorialIdx;
 	};
 	
 	struct fermat_t {
-		
 		cl_uint index;
+    cl_uint hashid;
 		cl_uchar origin;
 		cl_uchar chainpos;
 		cl_uchar type;
-		cl_uchar hashid;
-		
+		cl_uchar reserved;
 	};
 	
 	struct info_t {
@@ -274,7 +275,9 @@ private:
 	std::vector<int> mCoreFreq;
 	std::vector<int> mMemFreq;
 	std::vector<int> mPowertune;
-        std::vector<int> mFanSpeed;        
+  std::vector<int> mFanSpeed;
+   
+  int exitType; 
 	
 	
 	

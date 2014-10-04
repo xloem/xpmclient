@@ -44,13 +44,12 @@ __constant uint32_t binvert_limb_table[128] = {
 
 
 typedef struct {
-	
-	uint index;
-	uchar origin;
-	uchar chainpos;
-	uchar type;
-	uchar hashid;
-	
+  uint index;
+  uint hashid;
+  uchar origin;
+  uchar chainpos;
+  uchar type;
+  uchar reserved;
 } fermat_t;
 
 
@@ -2697,104 +2696,3 @@ __kernel void check_fermat(	__global fermat_t* info_out,
 	}
 	
 }
-
-
-
-
-
-
-/*
-__attribute__((reqd_work_group_size(256, 1, 1)))
-__kernel void test_monty(__global const uint* asrc, __global const uint* bsrc, __global const uint* csrc, __global const uint* dsrc, __global uint* esrc) {
-	
-	const uint id = get_global_id(0);
-	
-	uint a[N];
-	uint b[N];
-	uint c[N];
-	uint d[N];
-	uint e[N];
-	
-	for(int i = 0; i < N; ++i){
-		a[i] = asrc[id*N+i];
-		b[i] = bsrc[id*N+i];
-		c[i] = csrc[id*N+i];
-		d[i] = dsrc[id*N+i];
-	}
-	
-	montymul(e, a, b, c, d);
-	
-	for(int i = 0; i < N; ++i){
-		esrc[id*(N)+i] = e[i];
-	}
-	
-}
-
-
-
-__attribute__((reqd_work_group_size(64, 1, 1)))
-__kernel void test_fermat(__global const uint* psrc, __global uint* dest) {
-	
-	const uint id = get_global_id(0);
-	
-	uint p[N];
-	for(int i = 0; i < N; ++i){
-		p[i] = psrc[id*N+i];
-	}
-	
-	dest[id] = fermat(p);
-	
-}
-
-
-__attribute__((reqd_work_group_size(256, 1, 1)))
-__kernel void test_1(__global const uint* asrc, __global const uint* bsrc, __global uint* csrc, __global uint* dsrc) {
-	
-	const uint id = get_global_id(0);
-	
-	uint a[N];
-	uint b[N];
-	uint c[N];
-	uint d[N];
-	
-	for(int i = 0; i < N; ++i){
-		a[i] = asrc[id*N+i];
-		b[i] = bsrc[id*N+i];
-		c[i] = 0;
-	}
-	
-	c[0] = int_invert(a[0], b[0]);
-	
-	for(int i = 0; i < N; ++i){
-		csrc[id*(N)+i] = c[i];
-		//dsrc[id*(N)+i] = d[i];
-	}
-	
-}*/
-
-
-__kernel void test_2(__global const uint* asrc, __global const uint* bsrc, __global uint* csrc) {
-	
-	const uint id = get_global_id(0);
-	
-	uint a[N];
-	uint b[N];
-	uint c[2*N];
-	
-	for(int i = 0; i < N; ++i){
-		a[i] = asrc[id*N+i];
-		b[i] = bsrc[id*N+i];
-	}
-	
-	for(int i = 0; i < 2*N; ++i){
-		//c[i] = 0;
-		c[i] = csrc[id*(2*N)+i];
-	}
-	
-	mad_211(c, a, b);
-	
-	for(int i = 0; i < 2*N; ++i)
-		csrc[id*(2*N)+i] = c[i];
-	
-}
-

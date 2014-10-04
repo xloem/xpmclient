@@ -23,7 +23,6 @@ extern "C" {
 #define steady_clock monotonic_clock
 #endif  
 
-
 XPMClient* gClient = 0;
 
 cl_context gContext = 0;
@@ -31,33 +30,6 @@ cl_program gProgram = 0;
 
 
 std::vector<unsigned> gPrimes2;
-
-
-uint32_t divisorsNum = 18;
-
-uint32_t divisors24[] = {
-  2, 3, 5, 7, 13, 17,
-//   3,
-//   5,
-//   7,
-  11,
-//   13,
-//   17,
-  19,
-  23,
-  29,
-  31,
-  37,
-  41,
-  43,
-  47,
-  //   53,
-  59,
-  61,
-  //   67,
-  71
-};
-
 
 
 PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth) {
@@ -109,23 +81,7 @@ bool PrimeMiner::Initialize(cl_device_id dev) {
 	
 	cl_int error;
   
-  const char *bhashmod;
-  switch (mPrimorial) {
-    case 12:
-      bhashmod = "bhashmod12";
-      break;
-    case 13:
-      bhashmod = "bhashmod13";
-      break;
-    case 14:
-      bhashmod = "bhashmod14";
-      break;
-    default:
-      printf(" * Error: only primorials 12-14 supported now\n");
-      return false;
-  }
-  
-  mHashMod = clCreateKernel(gProgram, bhashmod, &error);
+  mHashMod = clCreateKernel(gProgram, "bhashmod", &error);
 	mSieveSetup = clCreateKernel(gProgram, "setup_sieve", &error);
 	mSieve = clCreateKernel(gProgram, "sieve", &error);
 	mSieveSearch = clCreateKernel(gProgram, "s_sieve", &error);
@@ -295,7 +251,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	uint64_t testCount = 0;
 
 	unsigned iteration = 0;
-	mpz_class primorial;
+	mpz_class primorial[maxHashPrimorial];
 	block_t blockheader;
 	search_t hashmod;
 
@@ -310,23 +266,30 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	CPrimalityTestParams testParams;
 	std::vector<fermat_t> candis;
 	
-	cl_int error = 0;
-	cl_mem primeBuf = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-										mConfig.PCOUNT*sizeof(cl_uint), &gPrimes[mPrimorial+1], &error);
-	OCL(error);
-	cl_mem primeBuf2 = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-										mConfig.PCOUNT*2*sizeof(cl_uint), &gPrimes2[2*mPrimorial+2], &error);
-	OCL(error);
-	
-	primorial = 1;
-  for(unsigned i = 0; i <= mPrimorial; ++i)
-		primorial *= gPrimes[i];
-	
+  cl_mem primeBuf[maxHashPrimorial];
+  cl_mem primeBuf2[maxHashPrimorial];
+  
+  for (unsigned i = 0; i < maxHashPrimorial - mPrimorial; i++) {
+    cl_int error = 0;
+    primeBuf[i] = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                 mConfig.PCOUNT*sizeof(cl_uint), &gPrimes[mPrimorial+i+1], &error);
+    OCL(error);
+    primeBuf2[i] = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                  mConfig.PCOUNT*2*sizeof(cl_uint), &gPrimes2[2*(mPrimorial+i)+2], &error);
+    OCL(error);
+    
+    mpz_class p = 1;
+    for(unsigned j = 0; j <= mPrimorial+i; j++)
+      p *= gPrimes[j];
+    
+    primorial[i] = p;
+  }
+  
 	{
-		unsigned primorialbits = mpz_sizeinbase(primorial.get_mpz_t(), 2);
+		unsigned primorialbits = mpz_sizeinbase(primorial[0].get_mpz_t(), 2);
 		mpz_class sievesize = mConfig.SIZE*32*mConfig.STRIPES;
 		unsigned sievebits = mpz_sizeinbase(sievesize.get_mpz_t(), 2);
-		printf("GPU %d: primorial = %s (%d bits)\n", mID, primorial.get_str(10).c_str(), primorialbits);
+		printf("GPU %d: primorial = %s (%d bits)\n", mID, primorial[0].get_str(10).c_str(), primorialbits);
 		printf("GPU %d: sieve size = %s (%d bits)\n", mID, sievesize.get_str(10).c_str(), sievebits);
 	}
 	
@@ -356,30 +319,34 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	FermatInit(fermat320, MFS);
   FermatInit(fermat352, MFS);  
 
-  unsigned modulosBufferSize = mConfig.PCOUNT*(mConfig.N-1);
-  std::unique_ptr<uint32_t[]> modulos(new uint32_t[modulosBufferSize]);
-  for (unsigned i = 0; i < mConfig.PCOUNT; i++) {
-    mpz_class X = 1;
-    for (unsigned j = 0; j < mConfig.N-1; j++) {
-      X <<= 32;
-      mpz_class mod = X % gPrimes[i+mPrimorial+1];
-      modulos[mConfig.PCOUNT*j+i] = mod.get_ui();
+  clBuffer<cl_uint> modulosBuf[maxHashPrimorial];
+  unsigned modulosBufferSize = mConfig.PCOUNT*(mConfig.N-1);   
+  for (unsigned bufIdx = 0; bufIdx < maxHashPrimorial-mPrimorial; bufIdx++) {
+    clBuffer<cl_uint> &current = modulosBuf[bufIdx];
+    current.init(modulosBufferSize, CL_MEM_READ_ONLY);
+    for (unsigned i = 0; i < mConfig.PCOUNT; i++) {
+      mpz_class X = 1;
+      for (unsigned j = 0; j < mConfig.N-1; j++) {
+        X <<= 32;
+        mpz_class mod = X % gPrimes[i+mPrimorial+bufIdx+1];
+        current[mConfig.PCOUNT*j+i] = mod.get_ui();
+      }
     }
+    
+    current.copyToDevice(mSmall);
   }
-  cl_mem modulosBuf = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                                     modulosBufferSize*sizeof(cl_uint), modulos.get(), &error);
-  OCL(error);  
-  
+
 	OCL(clSetKernelArg(mHashMod, 0, sizeof(cl_mem), &hashmod.found.DeviceData));
 	OCL(clSetKernelArg(mHashMod, 1, sizeof(cl_mem), &hashmod.count.DeviceData));
 	OCL(clSetKernelArg(mHashMod, 2, sizeof(cl_mem), &hashmod.primorialBitField.DeviceData));
 	OCL(clSetKernelArg(mHashMod, 3, sizeof(cl_mem), &hashmod.midstate.DeviceData));
 	OCL(clSetKernelArg(mSieveSetup, 0, sizeof(cl_mem), &sieveOff[0].DeviceData));
 	OCL(clSetKernelArg(mSieveSetup, 1, sizeof(cl_mem), &sieveOff[1].DeviceData));
-	OCL(clSetKernelArg(mSieveSetup, 2, sizeof(cl_mem), &primeBuf));
 	OCL(clSetKernelArg(mSieveSetup, 3, sizeof(cl_mem), &hashBuf.DeviceData));
-  OCL(clSetKernelArg(mSieveSetup, 5, sizeof(cl_mem), &modulosBuf));  
-	OCL(clSetKernelArg(mSieve, 2, sizeof(cl_mem), &primeBuf2));
+  OCL(clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData));
+  OCL(clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[0].DeviceData));
+  OCL(clSetKernelArg(mSieve, 3, sizeof(cl_mem), &sieveBuf[1].DeviceData));
+  OCL(clSetKernelArg(mSieve, 4, sizeof(cl_mem), &sieveOff[1].DeviceData));          
 	OCL(clSetKernelArg(mSieveSearch, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData));
 	OCL(clSetKernelArg(mSieveSearch, 1, sizeof(cl_mem), &sieveBuf[1].DeviceData));
   OCL(clSetKernelArg(mSieveSearch, 7, sizeof(cl_uint), &mDepth));  
@@ -493,11 +460,16 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				hash.nonce = hashmod.found[i];
         uint32_t primorialBitField = hashmod.primorialBitField[i];
         uint64_t realPrimorial = 1;
-        for (unsigned i = 0; i < divisorsNum; i++) {
-          if (primorialBitField & (1 << i))
-            realPrimorial *= divisors24[i];
+        unsigned primorialIdx = 0;
+        for (unsigned i = 0; i < maxHashPrimorial; i++) {
+          if (primorialBitField & (1 << i)) {
+            primorialIdx = i;
+            realPrimorial *= gPrimes[i];
+          }
         }
         
+        primorialIdx = std::max(mPrimorial, primorialIdx) - mPrimorial;
+
         mpz_class mpzRealPrimorial;        
         mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);        
 				
@@ -526,7 +498,8 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 					continue;
 				}
 				
-        hash.primorial = primorial / mpzRealPrimorial;
+				hash.primorialIdx = primorialIdx;
+				hash.primorial = primorial[primorialIdx] / mpzRealPrimorial;
         hash.shash = mpzHash * hash.primorial;       
 
         unsigned hid = hashes.push(hash);
@@ -583,6 +556,10 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
         }
         
         cl_int hid = hashes.pop();
+        unsigned primorialIdx = hashes.get(hid).primorialIdx;
+        OCL(clSetKernelArg(mSieveSetup, 2, sizeof(cl_mem), &primeBuf[primorialIdx]));
+        OCL(clSetKernelArg(mSieveSetup, 5, sizeof(cl_mem), &modulosBuf[primorialIdx].DeviceData));          
+        OCL(clSetKernelArg(mSieve, 2, sizeof(cl_mem), &primeBuf2[primorialIdx]));        
 
         {
 					OCL(clSetKernelArg(mSieveSetup, 4, sizeof(cl_int), &hid));
@@ -590,12 +567,10 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 					OCL(clEnqueueNDRangeKernel(mSmall, mSieveSetup, 1, 0, globalSize, 0, 0, 0, 0));
 				}
 
-				for(int k = 0; k < 2; ++k){			
-					OCL(clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[k].DeviceData));
-					OCL(clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[k].DeviceData));
-					size_t globalSize[] = { 256*mConfig.STRIPES/2, mConfig.WIDTH, 1 };
-					OCL(clEnqueueNDRangeKernel(mSmall, mSieve, 2, 0, globalSize, 0, 0, 0, 0));
-				}
+        {
+					size_t globalSize[] = { 256*mConfig.STRIPES/2, mConfig.WIDTH, 2 };
+					OCL(clEnqueueNDRangeKernel(mSmall, mSieve, 3, 0, globalSize, 0, 0, 0, 0));
+ 				}
 
 				candidatesCountBuffers[i][widx].copyToDevice(mSmall, false);
          
@@ -724,8 +699,10 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	
 	printf("GPU %d stopped.\n", mID);
 	
-	clReleaseMemObject(primeBuf);
-	clReleaseMemObject(primeBuf2);
+  for (unsigned i = 0; i < maxHashPrimorial-mPrimorial; i++) {
+	  clReleaseMemObject(primeBuf[i]);
+	  clReleaseMemObject(primeBuf2[i]);
+  }
 	
 	zsocket_destroy(ctx, blocksub);
 	zsocket_destroy(ctx, worksub);
@@ -830,6 +807,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	depth = std::min(depth, 5);
 	//printf("CPU load = %d\n", cpuload);
 	
+  exitType = cfg->lookupInt("", "onCrash", 0);
+  
   unsigned clKernelTarget = cfg->lookupInt("", "target", 10);
   unsigned clKernelStripes = cfg->lookupInt("", "sieveSize", 420);
   unsigned clKernelPCount = cfg->lookupInt("", "weaveDepth", 40960);
@@ -1021,7 +1000,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
   if (benchmarkOnly) {
     for (unsigned i = 0; i < gpus.size(); i++) {
       if (binstatus[i] == CL_SUCCESS) {
-        runBenchmarks(gContext, gProgram, gpus[i]);
+        runBenchmarks(gContext, gProgram, gpus[i], primorial[i], depth);
       }
     }
     
@@ -1107,6 +1086,8 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 	unsigned errors = 0;
 	int maxtemp = 0;
 	unsigned ngpus = 0;
+  int crashed = 0;
+  
 	for(unsigned i = 0; i < nw; ++i){
 		
 		int devid = mDeviceMapRev[i];
@@ -1125,12 +1106,26 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 					i, temp, activity, wstats[i].errors, wstats[i].primeprob, wstats[i].fps, wstats[i].cpd);
 		}else if(!mWorkers[i].first)
 			printf("[GPU %d] failed to start!\n", i);
-		else if(mPaused)
+		else if(mPaused) {
 			printf("[GPU %d] paused\n", i);
-		else
+    } else {
+      crashed++;
 			printf("[GPU %d] crashed!\n", i);
+    }
 		
 	}
+	
+  if (crashed) {
+    if (exitType == 1) {
+      exit(1);
+    } else if (exitType == 2) {
+#ifdef WIN32
+      ExitWindowsEx(EWX_REBOOT, 0);
+#else
+      system("/sbin/reboot");
+#endif
+    }
+  }
 	
 	if(mStatCounter % 10 == 0)
 		for(unsigned i = 0; i < mNumDevices; ++i){

@@ -73,7 +73,9 @@ __constant uint32_t count[] = {33, 25, 20, 18, 25, 20, 16, 13, 11, 10, 16, 13, 1
 __attribute__((reqd_work_group_size(LSIZE, 1, 1)))
 __kernel void sieve(	__global uint4* gsieve_all,
 						__global const uint* offset_all,
-						__global const uint2* primes )
+						__global const uint2* primes,
+            __global uint4* gsieve_all2,
+            __global const uint* offset_all2)
 {
 	
 	__local uint sieve[SIZE];
@@ -81,11 +83,12 @@ __kernel void sieve(	__global uint4* gsieve_all,
 	const uint id = get_local_id(0);
 	const uint stripe = get_group_id(0);
 	const uint line = get_group_id(1);
+  const uint type = get_group_id(2);
 	
 	const uint entry = SIZE*32*(stripe+STRIPES/2);
 	const float fentry = entry;
 	
-	__global const uint* offset = &offset_all[PCOUNT*line];
+  __global const uint* offset = (type == 0) ? &offset_all[PCOUNT*line] : &offset_all2[PCOUNT*line];
 	
 	for(uint i = 0; i < SIZE/LSIZE; ++i)
 		sieve[i*LSIZE+id] = 0;
@@ -255,7 +258,7 @@ __kernel void sieve(	__global uint4* gsieve_all,
 	
 	barrier(CLK_LOCAL_MEM_FENCE);
 	
-	__global uint4* gsieve = &gsieve_all[SIZE*(STRIPES/2*line + stripe)/4];
+  __global uint4* gsieve = (type == 0) ? &gsieve_all[SIZE*(STRIPES/2*line + stripe)/4] : &gsieve_all2[SIZE*(STRIPES/2*line + stripe)/4];
 	
 	for(uint i = 0; i < SIZE/LSIZE/4; i++){
 		
@@ -269,199 +272,6 @@ __kernel void sieve(	__global uint4* gsieve_all,
 	}
 	
 }
-
-
-__kernel void sieveL2(	__global uint* gsieve_all,
-						__global const uint* offset_all,
-						__global const uint* primes )
-{
-	const uint id = get_global_id(0);
-	const uint line = get_global_id(1);
-	
-	const uint entry = SIZE*32*STRIPES/2;
-	
-	__global uint* gsieve = &gsieve_all[SIZE*STRIPES/2*line];
-	__global const uint* offset = &offset_all[PCOUNT*line];
-	
-	const uint prime = primes[SCOUNT + id];
-	
-	uint pos = offset[SCOUNT + id];
-	pos = mad24((uint)((float)(entry)/(float)(prime)), prime, pos) - entry;
-	pos = mad24((uint)((int)pos < (int)0), prime, pos);
-	
-	uint index = pos >> 5;
-	
-	while(index < STRIPES*SIZE){
-		
-		atomic_or(&gsieve[index], 1u << pos);
-		
-		pos += prime;
-		index = pos >> 5;
-		
-	}
-	
-}
-
-
-
-__kernel void search_sieve_0(	__global const uint* gsieve,
-								__global fermat_t* found,
-								__global uint* fcount,
-								uint hashid,
-								uint type )
-{
-	
-	const uint id = get_global_id(0);
-	
-	uint mask = 0;
-	for(int line = 0; line < TARGET; ++line)
-		mask |= gsieve[SIZE*STRIPES/2*line + id];
-	
-	if(mask != 0xFFFFFFFF)
-		for(int bit = 0; bit < 32; ++bit)
-			if((~mask & (1 << bit))){
-				
-				const uint addr = atomic_inc(fcount);
-				
-				fermat_t info;
-				info.index = SIZE*32*STRIPES/2 + id*32 + bit;
-				info.origin = 0;
-				info.chainpos = 0;
-				info.type = type;
-				info.hashid = hashid;
-				
-				found[addr] = info;
-				return;
-				
-			}
-	
-}
-
-
-__kernel void search_sieve(	__global const uint* gsieve,
-							__global fermat_t* found,
-							__global uint* fcount,
-							uint hashid,
-							uint type )
-{
-	
-	const uint id = get_global_id(0);
-	
-	uint tmp[WIDTH];
-	for(int i = 0; i < WIDTH; ++i)
-		tmp[i] = gsieve[SIZE*STRIPES/2*i + id];
-	
-	for(int start = 0; start <= WIDTH-TARGET; ++start){
-		
-		uint mask = 0;
-		for(int line = 0; line < TARGET; ++line)
-			mask |= tmp[start+line];
-		
-		if(mask != 0xFFFFFFFF)
-			for(int bit = 0; bit < 32; ++bit)
-				if((~mask & (1 << bit))){
-					
-					const uint addr = atomic_inc(fcount);
-					
-					fermat_t info;
-					info.index = SIZE*32*STRIPES/2 + id*32 + bit;
-					info.origin = start;
-					info.chainpos = 0;
-					info.type = type;
-					info.hashid = hashid;
-					
-					found[addr] = info;
-					
-					break;
-					//return;
-					
-				}
-		
-	}
-	
-}
-
-
-__kernel void search_sieve_bi_0(	__global const uint* gsieve1,
-									__global const uint* gsieve2,
-									__global fermat_t* found,
-									__global uint* fcount,
-									uint hashid )
-{
-	
-	const uint id = get_global_id(0);
-	
-	uint mask = 0;
-	for(int line = 0; line < TARGET/2; ++line)
-		mask |= gsieve1[SIZE*STRIPES/2*line + id] | gsieve2[SIZE*STRIPES/2*line + id];
-	
-	if(mask != 0xFFFFFFFF)
-		for(int bit = 0; bit < 32; ++bit)
-			if((~mask & (1 << bit))){
-				
-				const uint addr = atomic_inc(fcount);
-				
-				fermat_t info;
-				info.index = SIZE*32*STRIPES/2 + id*32 + bit;
-				info.origin = 0;
-				info.chainpos = 0;
-				info.type = 2;
-				info.hashid = hashid;
-				
-				found[addr] = info;
-				return;
-				
-			}
-	
-}
-
-
-__kernel void search_sieve_bi(	__global const uint* gsieve1,
-								__global const uint* gsieve2,
-								__global fermat_t* found,
-								__global uint* fcount,
-								uint hashid )
-{
-	
-	const uint id = get_global_id(0);
-	
-	uint tmp1[WIDTH];
-	uint tmp2[WIDTH];
-	for(int i = 0; i < WIDTH; ++i){
-		tmp1[i] = gsieve1[SIZE*STRIPES/2*i + id];
-		tmp2[i] = gsieve2[SIZE*STRIPES/2*i + id];
-	}
-	
-	for(int start = 0; start <= WIDTH-TARGET/2; ++start){
-		
-		uint mask = 0;
-		for(int line = 0; line < TARGET/2; ++line)
-			mask |= tmp1[start+line] | tmp2[start+line];
-		
-		if(mask != 0xFFFFFFFF)
-			for(int bit = 0; bit < 32; ++bit)
-				if((~mask & (1 << bit))){
-					
-					const uint addr = atomic_inc(fcount);
-					
-					fermat_t info;
-					info.index = SIZE*32*STRIPES/2 + id*32 + bit;
-					info.origin = start;
-					info.chainpos = 0;
-					info.type = 2;
-					info.hashid = hashid;
-					
-					found[addr] = info;
-					
-					break;
-					//return;
-					
-				}
-		
-	}
-	
-}
-
 
 __kernel void s_sieve(	__global const uint* gsieve1,
 						__global const uint* gsieve2,

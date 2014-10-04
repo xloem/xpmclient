@@ -20,7 +20,7 @@ __constant uint k[] = {
 
 __constant uint h_init[] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
 
-
+#define HashPrimorial 14
 #define Zrotr(a, b) rotate((uint)a, (uint)b)
 
 #define ZR25(n) ((Zrotr((n), 25) ^ Zrotr((n), 14) ^ ((n) >> 3U)))
@@ -100,142 +100,85 @@ uint sha2_pack(uint val) {
 	
 }
 
+__constant uint32_t indexesOne[] = { 1, 2, 3, 5, 6 };
+__constant uint32_t divisors24one[] = { 3, 5, 7, 13, 17 };
 
-__kernel void sha256_kernel(__global const uint* msg_in, __global uint* state_out)
-{
-	
-	uint msg[16];
-	for(int i = 0; i < 16; ++i)
-		msg[i] = msg_in[i];
-	
-	uint state[8];
-	for(int i = 0; i < 8; ++i)
-		state[i] = h_init[i];
-	
-	sha256(msg, state);
-	
-	for(int i = 0; i < 8; ++i)
-		state_out[i] = state[i];
-	
-}
 
-__constant uint32_t divisorsNum = 17;
-
-__constant uint32_t divisors24one[] = {
-  3,
-  5,
-  7,
-  13,
-  17
-};
-
-__constant uint32_t divisors24[] = {
-//   3,
-//   5,
-//   7,
-  11,
-//   13,
-//   17,
-  19,
-  23,
-  29,
-  31,
-  37,
-  41,
-  43,
-  47,
-//   53,
-  59,
-  61,
-//   67,
-  71
-};
+__constant uint32_t indexes[] = { 4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 };
+__constant uint32_t divisors24[] = { 11, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71 };
 
 __constant uint32_t modulos24one[] = {
   0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1
 };
 
 __constant uint32_t modulos24[] = {
-//   0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 
-//   0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 
-//   0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 
-  0x5, 0x3, 0x4, 0x9, 0x1, 0x5, 0x3, 0x4, 0x9, 0x1, 0x5, 
-//   0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 
-//   0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 
-  0x7, 0xb, 0x1, 0x7, 0xb, 0x1, 0x7, 0xb, 0x1, 0x7, 0xb, 
-  0x4, 0x10, 0x12, 0x3, 0xc, 0x2, 0x8, 0x9, 0xd, 0x6, 0x1, 
-  0x14, 0x17, 0x19, 0x7, 0x18, 0x10, 0x1, 0x14, 0x17, 0x19, 0x7, 
-  0x10, 0x8, 0x4, 0x2, 0x1, 0x10, 0x8, 0x4, 0x2, 0x1, 0x10, 
-  0xa, 0x1a, 0x1, 0xa, 0x1a, 0x1, 0xa, 0x1a, 0x1, 0xa, 0x1a, 
-  0x10, 0xa, 0x25, 0x12, 0x1, 0x10, 0xa, 0x25, 0x12, 0x1, 0x10, 
-  0x23, 0x15, 0x4, 0xb, 0x29, 0x10, 0x1, 0x23, 0x15, 0x4, 0xb, 
-  0x2, 0x4, 0x8, 0x10, 0x20, 0x11, 0x22, 0x15, 0x2a, 0x25, 0x1b, 
-//   0xd, 0xa, 0x18, 0x2f, 0x1c, 0x2e, 0xf, 0x24, 0x2c, 0x2a, 0x10, 
-  0x23, 0x2d, 0x29, 0x13, 0x10, 0x1d, 0xc, 0x7, 0x9, 0x14, 0x33, 
-  0x14, 0x22, 0x9, 0x3a, 0x1, 0x14, 0x22, 0x9, 0x3a, 0x1, 0x14, 
-//   0xe, 0x3e, 0x40, 0x19, 0xf, 0x9, 0x3b, 0x16, 0x28, 0x18, 0x1, 
-  0x3a, 0x1b, 0x4, 0x13, 0x25, 0x10, 0x5, 0x6, 0x40, 0x14, 0x18, 
+  0x5, 0x3, 0x4, 0x9, 0x1, 0x5, 0x3, 0x4, 0x9, 0x1, 0x5,            // 11
+  0x7, 0xb, 0x1, 0x7, 0xb, 0x1, 0x7, 0xb, 0x1, 0x7, 0xb,            // 19
+  0x4, 0x10, 0x12, 0x3, 0xc, 0x2, 0x8, 0x9, 0xd, 0x6, 0x1,          // 23
+  0x14, 0x17, 0x19, 0x7, 0x18, 0x10, 0x1, 0x14, 0x17, 0x19, 0x7,    // 29
+  0x10, 0x8, 0x4, 0x2, 0x1, 0x10, 0x8, 0x4, 0x2, 0x1, 0x10,         // 31
+  0xa, 0x1a, 0x1, 0xa, 0x1a, 0x1, 0xa, 0x1a, 0x1, 0xa, 0x1a,        // 37
+  0x10, 0xa, 0x25, 0x12, 0x1, 0x10, 0xa, 0x25, 0x12, 0x1, 0x10,     // 41
+  0x23, 0x15, 0x4, 0xb, 0x29, 0x10, 0x1, 0x23, 0x15, 0x4, 0xb,      // 43
+  0x2, 0x4, 0x8, 0x10, 0x20, 0x11, 0x22, 0x15, 0x2a, 0x25, 0x1b,    // 47
+  0xd, 0xa, 0x18, 0x2f, 0x1c, 0x2e, 0xf, 0x24, 0x2c, 0x2a, 0x10,    // 53 *
+  0x23, 0x2d, 0x29, 0x13, 0x10, 0x1d, 0xc, 0x7, 0x9, 0x14, 0x33,    // 59
+  0x14, 0x22, 0x9, 0x3a, 0x1, 0x14, 0x22, 0x9, 0x3a, 0x1, 0x14,     // 61
+  0xe, 0x3e, 0x40, 0x19, 0xf, 0x9, 0x3b, 0x16, 0x28, 0x18, 0x1,     // 67 *
+  0x3a, 0x1b, 0x4, 0x13, 0x25, 0x10, 0x5, 0x6, 0x40, 0x14, 0x18,    // 71
 };
 
 __constant uint32_t multipliers32one[] = {
-   0xaaaaaaab,
-   0x66666667,
-   0x92492493,
-   0x4ec4ec4f,
-   0x78787879,
+   0xaaaaaaab,     // 3
+   0x66666667,     // 5
+   0x92492493,     // 7
+   0x4ec4ec4f,     // 13
+   0x78787879,     // 17
 };
 
 __constant uint32_t multipliers32[] = {
-//   0xaaaaaaab,
-//   0x66666667,
-//   0x92492493,
-  0x2e8ba2e9,
-//   0x4ec4ec4f,
-//   0x78787879,
-  0x6bca1af3,
-  0xb21642c9,
-  0x8d3dcb09,
-  0x84210843,
-  0xdd67c8a7,
-  0x63e7063f,
-  0x2fa0be83,
-  0xae4c415d,
-//   0x4d4873ed,
-  0x22b63cbf,
-  0x4325c53f,
-//   0x7a44c6b,
-  0xe6c2b449
+  0x2e8ba2e9,      // 11
+  0x6bca1af3,      // 19
+  0xb21642c9,      // 23
+  0x8d3dcb09,      // 29
+  0x84210843,      // 31
+  0xdd67c8a7,      // 37
+  0x63e7063f,      // 41
+  0x2fa0be83,      // 43
+  0xae4c415d,      // 47
+  0x4d4873ed,      // 53 *
+  0x22b63cbf,      // 59
+  0x4325c53f,      // 61
+  0x7a44c6b,       // 67 *
+  0xe6c2b449       // 71
 };
 
 __constant uint32_t offsets32one[] = {
-  1,
-  1,
-  2,
-  2,
-  3
+  1,               // 3
+  1,               // 5
+  2,               // 7
+  2,               // 13
+  3                // 17
 };
 
 __constant uint32_t offsets32[] = {
-//   1,
-//   1,
-//   2,
-  1,
-//   2,
-//   3,
-  3,
-  4,
-  4,
-  4,
-  5,
-  4,
-  3,
-  5,
-//   4,
-  3,
-  4,
-//   1,
-  6
+  1,               // 11
+  3,               // 19
+  4,               // 23
+  4,               // 29
+  4,               // 31
+  5,               // 37
+  4,               // 41
+  3,               // 43
+  5,               // 47
+  4,               // 53 *
+  3,               // 59
+  4,               // 61
+  1,               // 67 *
+  6                // 71
 };
+
+// * using 24-bit arithmetic with primes 53,67 can produce wrong results!
 
 uint32_t sum24(const uint32_t *data, unsigned size, __constant uint32_t *moddata)
 {
@@ -267,11 +210,10 @@ unsigned divisionCheck24(const uint32_t *data,
 }
 
 
-void bhashmod(__global uint* found,
+__kernel void bhashmod(__global uint* found,
 						__global uint* fcount,
 						__global uint* resultPrimorial,
 						__constant uint* midstate,
-            uint primorial,
 						uint merkle, uint time, uint nbits )
 {
 	const uint id = get_global_id(0);
@@ -320,16 +262,16 @@ void bhashmod(__global uint* found,
 #pragma unroll
       for (unsigned i = 0; i < 5; i++) {
         unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
-        primorialBitField |= (isDivisor << (i+1));
+        primorialBitField |= (isDivisor << indexesOne[i]);
         count += isDivisor;
       }
     }
     
 #pragma unroll
-    for (unsigned i = 0; i < primorial-5; i++) {
+    for (unsigned i = 0; i < HashPrimorial-5; i++) {
       unsigned isDivisor =
         divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
-        primorialBitField |= (isDivisor << (i+5+1));
+        primorialBitField |= (isDivisor << indexes[i]);
       count += isDivisor;
     }
 
@@ -341,224 +283,3 @@ void bhashmod(__global uint* found,
 	}
 }
 
-__attribute__((reqd_work_group_size(256, 1, 1)))
-__kernel void bhashmod12( __global uint* found,
-                          __global uint* fcount,
-                          __global uint* resultPrimorial,
-                          __constant uint* midstate,
-                          uint merkle, uint time, uint nbits )
-{
-  const uint id = get_global_id(0);
-
-  uint msg[16];
-  msg[0] = merkle;
-  msg[1] = time;
-  msg[2] = nbits;
-  msg[3] = sha2_pack(id);
-  msg[4] = sha2_pack(0x80);
-#pragma unroll  
-  for(int i = 5; i < 15; ++i)
-    msg[i] = 0;
-  msg[15] = 640;
-  
-  uint state[9];
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    state[i] = midstate[i];
-  
-  sha256(msg, state);
-  
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    msg[i] = state[i];
-  msg[8] = sha2_pack(0x80);
-  msg[15] = 256;
-  
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    state[i] = h_init[i];
-  
-  sha256(msg, state);
-  
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    state[i] = sha2_pack(state[i]);
-  
-  if (state[7] & (1u << 31)) {
-    uint32_t count = !(state[0] & 0x1);
-    uint32_t primorialBitField = count;
-    state[8] = 0;
-    
-    {
-      uint32_t acc = sum24(state, 8, modulos24one);
-#pragma unroll
-      for (unsigned i = 0; i < 5; i++) {
-        unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
-        primorialBitField |= (isDivisor << (i+1));
-        count += isDivisor;
-      }
-    }
-    
-#pragma unroll
-    for (unsigned i = 0; i < 12-5; i++) {
-      unsigned isDivisor =
-        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
-        primorialBitField |= (isDivisor << (i+5+1));
-      count += isDivisor;
-    }
-
-    if (count >= 8) {
-      const uint index = atomic_inc(fcount);
-      resultPrimorial[index] = primorialBitField;
-      found[index] = id;
-    }
-  }
-}
-
-__attribute__((reqd_work_group_size(256, 1, 1)))
-__kernel void bhashmod13( __global uint* found,
-                          __global uint* fcount,
-                          __global uint* resultPrimorial,
-                          __constant uint* midstate,
-                          uint merkle, uint time, uint nbits )
-{
-  const uint id = get_global_id(0);
-
-  uint msg[16];
-  msg[0] = merkle;
-  msg[1] = time;
-  msg[2] = nbits;
-  msg[3] = sha2_pack(id);
-  msg[4] = sha2_pack(0x80);
-#pragma unroll  
-  for(int i = 5; i < 15; ++i)
-    msg[i] = 0;
-  msg[15] = 640;
-  
-  uint state[9];
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    state[i] = midstate[i];
-  
-  sha256(msg, state);
-  
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    msg[i] = state[i];
-  msg[8] = sha2_pack(0x80);
-  msg[15] = 256;
-  
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    state[i] = h_init[i];
-  
-  sha256(msg, state);
-  
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    state[i] = sha2_pack(state[i]);
-  
-  if (state[7] & (1u << 31)) {
-    uint32_t count = !(state[0] & 0x1);
-    uint32_t primorialBitField = count;
-    state[8] = 0;
-    
-    {
-      uint32_t acc = sum24(state, 8, modulos24one);
-#pragma unroll
-      for (unsigned i = 0; i < 5; i++) {
-        unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
-        primorialBitField |= (isDivisor << (i+1));
-        count += isDivisor;
-      }
-    }
-    
-#pragma unroll
-    for (unsigned i = 0; i < 13-5; i++) {
-      unsigned isDivisor =
-        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
-        primorialBitField |= (isDivisor << (i+5+1));
-      count += isDivisor;
-    }
-
-    if (count >= 8) {
-      const uint index = atomic_inc(fcount);
-      resultPrimorial[index] = primorialBitField;
-      found[index] = id;
-    }
-  }
-}
-
-__attribute__((reqd_work_group_size(256, 1, 1)))
-__kernel void bhashmod14( __global uint* found,
-                          __global uint* fcount,
-                          __global uint* resultPrimorial,
-                          __constant uint* midstate,
-                          uint merkle, uint time, uint nbits )
-{
-  const uint id = get_global_id(0);
-
-  uint msg[16];
-  msg[0] = merkle;
-  msg[1] = time;
-  msg[2] = nbits;
-  msg[3] = sha2_pack(id);
-  msg[4] = sha2_pack(0x80);
-#pragma unroll  
-  for(int i = 5; i < 15; ++i)
-    msg[i] = 0;
-  msg[15] = 640;
-  
-  uint state[9];
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    state[i] = midstate[i];
-  
-  sha256(msg, state);
-  
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    msg[i] = state[i];
-  msg[8] = sha2_pack(0x80);
-  msg[15] = 256;
-  
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    state[i] = h_init[i];
-  
-  sha256(msg, state);
-  
-#pragma unroll  
-  for(int i = 0; i < 8; ++i)
-    state[i] = sha2_pack(state[i]);
-  
-  if (state[7] & (1u << 31)) {
-    uint32_t count = !(state[0] & 0x1);
-    uint32_t primorialBitField = count;
-    state[8] = 0;
-    
-    {
-      uint32_t acc = sum24(state, 8, modulos24one);
-#pragma unroll
-      for (unsigned i = 0; i < 5; i++) {
-        unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
-        primorialBitField |= (isDivisor << (i+1));
-        count += isDivisor;
-      }
-    }
-    
-#pragma unroll
-    for (unsigned i = 0; i < 14-5; i++) {
-      unsigned isDivisor =
-        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
-        primorialBitField |= (isDivisor << (i+5+1));
-      count += isDivisor;
-    }
-
-    if (count >= 8) {
-      const uint index = atomic_inc(fcount);
-      resultPrimorial[index] = primorialBitField;
-      found[index] = id;
-    }
-  }
-}
