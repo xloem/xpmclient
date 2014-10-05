@@ -16,10 +16,6 @@
 #include "protocol.pb.h"
 using namespace pool;
 
-#ifndef _WIN32
-typedef int SOCKET;
-#endif
-
 #include <zmq.h>
 #include <czmq.h>
 

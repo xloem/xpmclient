@@ -766,6 +766,13 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 		}
 	}
 	
+	const char *platformId = cfg->lookupString("", "platform");
+  const char *platformName = "";
+  if (strcmp(platformId, "amd") == 0)
+    platformName = "AMD Accelerated Parallel Processing";
+  else if (strcmp(platformId, "nvidia") == 0)
+    platformName = "NVIDIA CUDA";
+	
 	cl_platform_id platforms[10];
 	cl_uint numplatforms;
 	OCLR(clGetPlatformIDs(10, platforms, &numplatforms), false);
@@ -778,8 +785,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	for(unsigned i = 0; i < numplatforms; ++i){
 		char name[1024] = {0};
 		OCLR(clGetPlatformInfo(platforms[i], CL_PLATFORM_NAME, sizeof(name), name, 0), false);
-		//printf("platform[%d] name = '%s'\n", i, name);
-		if(!strcmp(name, "AMD Accelerated Parallel Processing")){
+		printf("found platform[%d] name = '%s'\n", i, name);
+    if(!strcmp(name, platformName)){
 			iplatform = i;
 			break;
 		}
@@ -932,7 +939,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
     
     char arguments[1024];
     sprintf(arguments,
-            "-DSTRIPES=%u -DWIDTH=%u -DPCOUNT=%u -DTARGET=%u -save-temps",
+            "-DSTRIPES=%u -DWIDTH=%u -DPCOUNT=%u -DTARGET=%u",
             clKernelStripes, clKernelWidth, clKernelPCount, clKernelTarget);
     
     if (clBuildProgram(gProgram, gpus.size(), &gpus[0], arguments, 0, 0) != CL_SUCCESS) {    
