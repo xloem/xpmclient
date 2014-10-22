@@ -36,7 +36,7 @@ static const char *gOpenCLKernelNames[] = {
   "multiplyBenchmark352",
   "fermatTestBenchMark320",
   "fermatTestBenchMark352",
-  "bhashmod",
+  "bhashmodUsePrecalc",
   "setup_sieve",
   "sieve",
   "s_sieve"
@@ -472,30 +472,17 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
     {
       uint8_t *pHeader = (uint8_t*)&blockheader;
       for (unsigned i = 0; i < sizeof(blockheader); i++)
-        pHeader[i] = rand();
+        pHeader[i] = rand32();
       blockheader.version = PrimeMiner::block_t::CURRENT_VERSION;
-      blockheader.nonce = 1;    
+      blockheader.nonce = 1;  
       
-      SHA_256 sha;
-      sha.init();
-      sha.transform((const unsigned char*)&blockheader, 1u);
-      for(int i = 0; i < 8; ++i)
-        hashmod.midstate[i] = sha.m_h[i];
-      hashmod.midstate.copyToDevice(queue, false);          
+      simplePrecalcSHA256(&blockheader, hashmod.midstate, queue, mHashMod);
     }    
-    
-    cl_uint msg_merkle = blockheader.hashMerkleRoot.Get64(3) >> 32;
-    cl_uint msg_time = blockheader.time;
-    cl_uint msg_bits = blockheader.bits;
-    SHA2_PACK32(&msg_merkle, &msg_merkle);
-    SHA2_PACK32(&msg_time, &msg_time);
-    SHA2_PACK32(&msg_bits, &msg_bits);
-    clSetKernelArg(mHashMod, 4, sizeof(cl_uint), &msg_merkle);
-    clSetKernelArg(mHashMod, 5, sizeof(cl_uint), &msg_time);
-    clSetKernelArg(mHashMod, 6, sizeof(cl_uint), &msg_bits);    
+
     hashmod.count.copyToDevice(queue, false);
     
     size_t globalSize[] = { numhash, 1, 1 };
+    size_t localSize[] = { 256, 1 };
  
     hashmod.count[0] = 0;
     hashmod.count.copyToDevice(queue);
@@ -510,7 +497,7 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
                                            1,
                                            0,
                                            globalSize,
-                                           0,
+                                           localSize,
                                            0,
                                            0, &event)) != CL_SUCCESS) {
         fprintf(stderr, "clEnqueueNDRangeKernel error!\n");
@@ -681,24 +668,9 @@ void sieveTestBenchmark(cl_command_queue queue,
       pHeader[i] = rand();
     blockheader.version = PrimeMiner::block_t::CURRENT_VERSION;
     blockheader.nonce = 1;    
-    
-    SHA_256 sha;
-    sha.init();
-    sha.transform((const unsigned char*)&blockheader, 1u);
-    for(int i = 0; i < 8; ++i)
-      hashmod.midstate[i] = sha.m_h[i];
-    hashmod.midstate.copyToDevice(queue, false);    
+    simplePrecalcSHA256(&blockheader, hashmod.midstate, queue, mHashMod);
   }    
-    
-  cl_uint msg_merkle = blockheader.hashMerkleRoot.Get64(3) >> 32;
-  cl_uint msg_time = blockheader.time;
-  cl_uint msg_bits = blockheader.bits;
-  SHA2_PACK32(&msg_merkle, &msg_merkle);
-  SHA2_PACK32(&msg_time, &msg_time);
-  SHA2_PACK32(&msg_bits, &msg_bits);
-  clSetKernelArg(mHashMod, 4, sizeof(cl_uint), &msg_merkle);
-  clSetKernelArg(mHashMod, 5, sizeof(cl_uint), &msg_time);
-  clSetKernelArg(mHashMod, 6, sizeof(cl_uint), &msg_bits);    
+
   hashmod.count.copyToDevice(queue, false);
     
   size_t globalSize[] = { numhash, 1, 1 };

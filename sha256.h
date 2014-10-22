@@ -11,7 +11,7 @@
 
 #include <string>
 #include <inttypes.h>
- 
+#include "opencl.h"
 
 
 class SHA_256
@@ -64,8 +64,12 @@ std::string sha256_str(std::string input);
 }
 
 
+void simplePrecalcSHA256(const void *block,
+                         clBuffer<cl_uint> &midstate,
+                         cl_command_queue queue,
+                         cl_kernel sha256kernel);
 
-
+void precalc_hash(const void *block, cl_kernel sha256kernel);
 
 
 #endif /* SHA256_H_ */

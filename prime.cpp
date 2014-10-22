@@ -150,18 +150,24 @@ static bool EulerLagrangeLifchitzPrimalityTestFast(const mpz_class& n, bool fSop
 // fSophieGermain:
 // true - Test for Cunningham Chain of first kind (n, 2n+1, 4n+3, ...)
 // false - Test for Cunningham Chain of second kind (n, 2n-1, 4n-3, ...)
-static void ProbableCunninghamChainTestFast(const mpz_class& n, bool fSophieGermain, unsigned int& nProbableChainLength, CPrimalityTestParams& testParams)
+static void ProbableCunninghamChainTestFast(const mpz_class& n, bool fSophieGermain, unsigned int& nProbableChainLength, CPrimalityTestParams& testParams, int base)
 {
-    nProbableChainLength = 0;
+    nProbableChainLength = base << nFractionalBits;
+    mpz_class &N = testParams.mpzN;
+          
+    N = n;
+    if (base > 0) {
+      int X = (1 << base) - 1;
+      N <<= base;
+      N += (fSophieGermain? X : (-X));
+    }
 
     // Fermat test for n first
-    if (!FermatProbablePrimalityTestFast(n, nProbableChainLength, testParams, true))
+    if (!FermatProbablePrimalityTestFast(N, nProbableChainLength, testParams, true))
         return;
 
     // Euler-Lagrange-Lifchitz test for the following numbers in chain
-    mpz_class &N = testParams.mpzN;
-    N = n;
-    for (unsigned int nChainSeq = 1; true; nChainSeq++)
+    for (unsigned int nChainSeq = base+1; true; nChainSeq++)
     {
         TargetIncrementLength(nProbableChainLength);
         N <<= 1;
@@ -175,81 +181,81 @@ static void ProbableCunninghamChainTestFast(const mpz_class& n, bool fSophieGerm
 // Test Probable BiTwin Chain for: mpzOrigin
 // Test the numbers in the optimal order for any given chain length
 // Gives the correct length of a BiTwin chain even for short chains
-static void ProbableBiTwinChainTestFast(const mpz_class& mpzOrigin, unsigned int& nProbableChainLength, CPrimalityTestParams& testParams)
+static void ProbableBiTwinChainTestFast(const mpz_class& mpzOrigin, unsigned int& nProbableChainLength, CPrimalityTestParams& testParams, int base)
 {
-    mpz_class& mpzOriginMinusOne = testParams.mpzOriginMinusOne;
-    mpz_class& mpzOriginPlusOne = testParams.mpzOriginPlusOne;
-    nProbableChainLength = 0;
-
-    // Fermat test for origin-1 first
-    mpzOriginMinusOne = mpzOrigin - 1;
-    if (!FermatProbablePrimalityTestFast(mpzOriginMinusOne, nProbableChainLength, testParams, true))
-        return;
+  mpz_class& mpzOriginMinusOne = testParams.mpzOriginMinusOne;
+  mpz_class& mpzOriginPlusOne = testParams.mpzOriginPlusOne;
+  nProbableChainLength = (base-base%2) << nFractionalBits;
+  base /= 2;
+  int X = (1 << base) - 1;
+  
+  // Fermat test for origin-1 first
+  mpzOriginMinusOne = mpzOrigin - 1;
+  if (base > 0) {
+    mpzOriginMinusOne <<= base;
+    mpzOriginMinusOne += X;
+  }
+  
+  if (!FermatProbablePrimalityTestFast(mpzOriginMinusOne, nProbableChainLength, testParams, true))
+    return;
+  TargetIncrementLength(nProbableChainLength);
+  
+  // Fermat test for origin+1
+  mpzOriginPlusOne = mpzOrigin + 1;
+  if (base > 0) {
+    mpzOriginPlusOne <<= base;
+    mpzOriginPlusOne -= X;
+  }
+  
+  if (!FermatProbablePrimalityTestFast(mpzOriginPlusOne, nProbableChainLength, testParams, true))
+    return;
+  TargetIncrementLength(nProbableChainLength);
+  
+  // Euler-Lagrange-Lifchitz test for the following numbers in chain
+  for (unsigned int nChainSeq = base+2; true; nChainSeq += 2)
+  {
+    mpzOriginMinusOne <<= 1;
+    mpzOriginMinusOne++;
+    bool fFastFail = nChainSeq < 4;
+    if (!EulerLagrangeLifchitzPrimalityTestFast(mpzOriginMinusOne, true, nProbableChainLength, testParams, fFastFail))
+      break;
     TargetIncrementLength(nProbableChainLength);
-
-    // Fermat test for origin+1
-    mpzOriginPlusOne = mpzOrigin + 1;
-    if (!FermatProbablePrimalityTestFast(mpzOriginPlusOne, nProbableChainLength, testParams, true))
-        return;
+    
+    mpzOriginPlusOne <<= 1;
+    mpzOriginPlusOne--;
+    if (!EulerLagrangeLifchitzPrimalityTestFast(mpzOriginPlusOne, false, nProbableChainLength, testParams, fFastFail))
+      break;
     TargetIncrementLength(nProbableChainLength);
-
-    // Euler-Lagrange-Lifchitz test for the following numbers in chain
-    for (unsigned int nChainSeq = 2; true; nChainSeq += 2)
-    {
-        mpzOriginMinusOne <<= 1;
-        mpzOriginMinusOne++;
-        bool fFastFail = nChainSeq < 4;
-        if (!EulerLagrangeLifchitzPrimalityTestFast(mpzOriginMinusOne, true, nProbableChainLength, testParams, fFastFail))
-            break;
-        TargetIncrementLength(nProbableChainLength);
-
-        mpzOriginPlusOne <<= 1;
-        mpzOriginPlusOne--;
-        if (!EulerLagrangeLifchitzPrimalityTestFast(mpzOriginPlusOne, false, nProbableChainLength, testParams, fFastFail))
-            break;
-        TargetIncrementLength(nProbableChainLength);
-    }
+  }
 }
 
-// Test probable prime chain for: nOrigin
-// Return value:
-// true - Probable prime chain found (one of nChainLength meeting target)
-// false - prime chain too short (none of nChainLength meeting target)
-bool ProbablePrimeChainTestFast(const mpz_class& mpzPrimeChainOrigin, CPrimalityTestParams& testParams)
+bool ProbablePrimeChainTestFast(const mpz_class& mpzPrimeChainOrigin, CPrimalityTestParams& testParams, int base)
 {
-    const unsigned int nBits = testParams.nBits;
-    const unsigned int nCandidateType = testParams.nCandidateType;
-    mpz_class& mpzOriginMinusOne = testParams.mpzOriginMinusOne;
-    mpz_class& mpzOriginPlusOne = testParams.mpzOriginPlusOne;
-    unsigned int& nChainLength = testParams.nChainLength;
-    nChainLength = 0;
-
-    // Test for Cunningham Chain of first kind
-    if (nCandidateType == 0)
-    {
-        mpzOriginMinusOne = mpzPrimeChainOrigin - 1;
-        ProbableCunninghamChainTestFast(mpzOriginMinusOne, true, nChainLength, testParams);
-    }
-    else if (nCandidateType == 1)
-    {
-        // Test for Cunningham Chain of second kind
-        mpzOriginPlusOne = mpzPrimeChainOrigin + 1;
-        ProbableCunninghamChainTestFast(mpzOriginPlusOne, false, nChainLength, testParams);
-    }
-    else if (nCandidateType == 2)
-    {
-        ProbableBiTwinChainTestFast(mpzPrimeChainOrigin, nChainLength, testParams);
-    }
-
-    return (nChainLength >= nBits);
+  const unsigned int nBits = testParams.nBits;
+  const unsigned int nCandidateType = testParams.nCandidateType;
+  mpz_class& mpzOriginMinusOne = testParams.mpzOriginMinusOne;
+  mpz_class& mpzOriginPlusOne = testParams.mpzOriginPlusOne;
+  unsigned int& nChainLength = testParams.nChainLength;
+  nChainLength = 0;
+  
+  // Test for Cunningham Chain of first kind
+  if (nCandidateType == 0)
+  {
+    mpzOriginMinusOne = mpzPrimeChainOrigin - 1;
+    ProbableCunninghamChainTestFast(mpzOriginMinusOne, true, nChainLength, testParams, base);
+  }
+  else if (nCandidateType == 1)
+  {
+    // Test for Cunningham Chain of second kind
+    mpzOriginPlusOne = mpzPrimeChainOrigin + 1;
+    ProbableCunninghamChainTestFast(mpzOriginPlusOne, false, nChainLength, testParams, base);
+  }
+  else if (nCandidateType == 2)
+  {
+    ProbableBiTwinChainTestFast(mpzPrimeChainOrigin, nChainLength, testParams, base);
+  }
+  
+  return (nChainLength >= nBits);
 }
-
-
-
-
-
-
-
-
 
 

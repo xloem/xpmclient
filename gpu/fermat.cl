@@ -19,9 +19,7 @@
 // #define PCOUNT 40960
 // #define TARGET 10
 
-typedef unsigned char uint8_t;
-typedef unsigned int uint32_t;
-typedef unsigned long uint64_t;
+__constant uint pow2[9] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
 
 __constant uint32_t binvert_limb_table[128] = {
   0x01, 0xAB, 0xCD, 0xB7, 0x39, 0xA3, 0xC5, 0xEF,
@@ -88,6 +86,7 @@ uint32_t add128(uint4 *A, uint4 B)
   (*A).w += carry.z;
   return carry.w + ((*A).w < carry.z); 
 }
+
 
 uint32_t add128Carry(uint4 *A, uint4 B, uint32_t externalCarry)
 {
@@ -848,677 +847,51 @@ uint2 divq640to384(uint4 dividendLimbs0,
 return (uint2){divisorLimbs, 32-normalizeShiftCount};
 }
 
-
-void mul352round_v3(uint4 op1l0, uint4 op1l1, uint4 op1l2, uint32_t m1, uint32_t m2,
-                    uint64_t *R0, uint64_t *R1, uint64_t *R2, uint64_t *R3,
-                    uint64_t *R4, uint64_t *R5, uint64_t *R6, uint64_t *R7,
-                    uint64_t *R8, uint64_t *R9, uint64_t *R10)
-{
-  uint4 m1l0 = mul_hi(op1l0, m1);
-  uint4 m1l1 = mul_hi(op1l1, m1);
-  uint4 m1l2 = {
-    mul_hi(op1l2.x, m1),
-       mul_hi(op1l2.y, m1),
-       mul_hi(op1l2.z, m1),
-       0
-  };
-  uint4 m2l0 = op1l0 * m2;
-  uint4 m2l1 = op1l1 * m2;
-  uint4 m2l2 = {
-    op1l2.x * m2,
-    op1l2.y * m2,
-    op1l2.z * m2,
-    0
-  };
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;
-  *R0 += m1l0.x; *R0 += m2l0.x;
-  *R1 += m1l0.y; *R1 += m2l0.y; Int.v64 = *R0; *R1 += Int.v32.y;
-  *R2 += m1l0.z; *R2 += m2l0.z;
-  *R3 += m1l0.w; *R3 += m2l0.w;
-  *R4 += m1l1.x; *R4 += m2l1.x;
-  *R5 += m1l1.y; *R5 += m2l1.y;
-  *R6 += m1l1.z; *R6 += m2l1.z;
-  *R7 += m1l1.w; *R7 += m2l1.w;  
-  *R8 += m1l2.x; *R8 += m2l2.x;
-  *R9 += m1l2.y; *R9 += m2l2.y;
-  *R10 += m1l2.z; *R10 += m2l2.z;
-}
-
-void redc352_round_v3(uint4 op1l0, uint4 op1l1, uint4 op1l2, uint32_t m1, uint32_t *m2, uint32_t invm,
-                      uint64_t *R0, uint64_t *R1, uint64_t *R2, uint64_t *R3,
-                      uint64_t *R4, uint64_t *R5, uint64_t *R6, uint64_t *R7,
-                      uint64_t *R8, uint64_t *R9, uint64_t *R10)
-{
-  uint4 m1l0 = mul_hi(op1l0, m1);
-  uint4 m1l1 = mul_hi(op1l1, m1);
-  uint4 m1l2 = {
-    mul_hi(op1l2.x, m1),
-       mul_hi(op1l2.y, m1),
-       mul_hi(op1l2.z, m1),
-       0
-  };
-  
-  *m2 = invm * ((uint32_t)*R0 + m1l0.x);
-  uint4 m2l0 = op1l0 * (*m2);
-  uint4 m2l1 = op1l1 * (*m2);
-  uint4 m2l2 = {
-    op1l2.x * (*m2),
-       op1l2.y * (*m2),
-       op1l2.z * (*m2),    
-       0
-  };
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int; 
-  
-  *R0 += m1l0.x; *R0 += m2l0.x;
-  *R1 += m1l0.y; *R1 += m2l0.y; Int.v64 = *R0; *R1 += Int.v32.y;
-  *R2 += m1l0.z; *R2 += m2l0.z;
-  *R3 += m1l0.w; *R3 += m2l0.w;
-  *R4 += m1l1.x; *R4 += m2l1.x;
-  *R5 += m1l1.y; *R5 += m2l1.y;
-  *R6 += m1l1.z; *R6 += m2l1.z;
-  *R7 += m1l1.w; *R7 += m2l1.w;  
-  *R8 += m1l2.x; *R8 += m2l2.x;
-  *R9 += m1l2.y; *R9 += m2l2.y;
-  *R10 += m1l2.z; *R10 += m2l2.z;
-}
-
-void redc1_352_v3(uint4 limbs0, uint4 limbs1, uint4 limbs2, uint4 limbs3, uint4 limbs4, uint4 limbs5,
-                  uint4 moduloLimb0, uint4 moduloLimb1, uint4 moduloLimb2,
-                  uint32_t invm,
-                  uint4 *ResultLimb0, uint4 *ResultLimb1, uint4 *ResultLimb2)
-{
-  ulong R0x = limbs0.x;
-  ulong R0y = limbs0.y;
-  ulong R0z = limbs0.z;
-  ulong R0w = limbs0.w;
-  ulong R1x = limbs1.x;
-  ulong R1y = limbs1.y;
-  ulong R1z = limbs1.z;
-  ulong R1w = limbs1.w;
-  ulong R2x = limbs2.x;
-  ulong R2y = limbs2.y;
-  ulong R2z = limbs2.z;
-  ulong R2w = limbs2.w;
-  ulong R3x = limbs3.x;
-  ulong R3y = limbs3.y;
-  ulong R3z = limbs3.z;
-  ulong R3w = limbs3.w;
-  ulong R4x = limbs4.x;
-  ulong R4y = limbs4.y;
-  ulong R4z = limbs4.z;
-  ulong R4w = limbs4.w;
-  ulong R5x = limbs5.x;
-  ulong R5y = limbs5.y;
-  
-  uint32_t i0, i1, i2, i3, i4, i5, i6, i7, i8, i9, i10/*, i11*/;
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;   
-  
-  i0 = limbs0.x * invm;
-  {
-    uint4 M1l0 = moduloLimb0 * i0;
-    uint4 M1l1 = moduloLimb1 * i0;
-    uint4 M1l2 = {
-      moduloLimb2.x * i0,
-       moduloLimb2.y * i0,
-       moduloLimb2.z * i0,
-       0
-    };
-    R0x += M1l0.x;
-    R0y += M1l0.y; Int.v64 = R0x; R0y += Int.v32.y;
-    R0z += M1l0.z;
-    R0w += M1l0.w;
-    R1x += M1l1.x;
-    R1y += M1l1.y;
-    R1z += M1l1.z;
-    R1w += M1l1.w;
-    R2x += M1l2.x;
-    R2y += M1l2.y;
-    R2z += M1l2.z;
-  }
-  
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i0, &i1, invm, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i1, &i2, invm, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i2, &i3, invm, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y);
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i3, &i4, invm, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z);
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i4, &i5, invm, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w);
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i5, &i6, invm, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x);
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i6, &i7, invm, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y);
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i7, &i8, invm, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z);
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i8, &i9, invm, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z, &R4w);
-  redc352_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i9, &i10, invm, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z, &R4w, &R5x);
-  
-  {
-    uint4 M1l0 = mul_hi(moduloLimb0, i10);
-    uint4 M1l1 = mul_hi(moduloLimb1, i10);    
-    uint4 M1l2 = {
-      mul_hi(moduloLimb2.x, i10),
-       mul_hi(moduloLimb2.y, i10),
-       mul_hi(moduloLimb2.z, i10),
-       0
-    };
-    R2w += M1l0.x;
-    R3x += M1l0.y; Int.v64 = R2w; R3x += Int.v32.y;
-    R3y += M1l0.z; Int.v64 = R3x; R3y += Int.v32.y;
-    R3z += M1l0.w; Int.v64 = R3y; R3z += Int.v32.y;
-    R3w += M1l1.x; Int.v64 = R3z; R3w += Int.v32.y;
-    R4x += M1l1.y; Int.v64 = R3w; R4x += Int.v32.y;
-    R4y += M1l1.z; Int.v64 = R4x; R4y += Int.v32.y;
-    R4z += M1l1.w; Int.v64 = R4y; R4z += Int.v32.y;
-    R4w += M1l2.x; Int.v64 = R4z; R4w += Int.v32.y;
-    R5x += M1l2.y; Int.v64 = R4w; R5x += Int.v32.y;
-    R5y += M1l2.z; Int.v64 = R5x; R5y += Int.v32.y;
-  }
-  
-  *ResultLimb0 = (uint4){R2w, R3x, R3y, R3z};
-  *ResultLimb1 = (uint4){R3w, R4x, R4y, R4z};  
-  *ResultLimb2 = (uint4){R4w, R5x, R5y, 0};    
-  
-  
-  {
-    Int.v64 = R5y;
-    uint4 l0 = Int.v32.y ? moduloLimb0 : (uint4){0, 0, 0, 0};
-    uint4 l1 = Int.v32.y ? moduloLimb1 : (uint4){0, 0, 0, 0};
-    uint4 l2 = Int.v32.y ? moduloLimb2 : (uint4){0, 0, 0, 0};    
-    sub352(ResultLimb0, ResultLimb1, ResultLimb2, l0, l1, l2);
-  }
-}
-
-
-void mul352to128(uint4 op1l0, uint4 op1l1, uint4 op1l2,
-                 uint4 op2l0,
-                 uint4 *rl0, uint4 *rl1, uint4 *rl2, uint4 *rl3)
-{ 
-#define b1 op2l0.w
-#define b2 op2l0.z
-#define b3 op2l0.y
-#define b4 op2l0.x  
-  
-  ulong R0x = op1l0.x * b4;
-  ulong R0y = op1l0.y * b4;
-  ulong R0z = op1l0.z * b4;
-  ulong R0w = op1l0.w * b4;
-  ulong R1x = op1l1.x * b4 + mul_hi(op1l0.x, b1);
-  ulong R1y = op1l1.y * b4 + mul_hi(op1l0.y, b1);
-  ulong R1z = op1l1.z * b4 + mul_hi(op1l0.z, b1);
-  ulong R1w = op1l1.w * b4 + mul_hi(op1l0.w, b1);
-  ulong R2x = op1l2.x * b4 + mul_hi(op1l1.x, b1);
-  ulong R2y = op1l2.y * b4 + mul_hi(op1l1.y, b1);
-  ulong R2z = op1l2.z * b4 + mul_hi(op1l1.z, b1);
-  ulong R2w = mul_hi(op1l1.w, b1);
-  ulong R3x = mul_hi(op1l2.x, b1);
-  ulong R3y = mul_hi(op1l2.y, b1);
-  ulong R3z = mul_hi(op1l2.z, b1);
-
-  mul352round_v3(op1l0, op1l1, op1l2, b4, b3, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  mul352round_v3(op1l0, op1l1, op1l2, b3, b2, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  mul352round_v3(op1l0, op1l1, op1l2, b2, b1, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y);
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;
-
-  Int.v64 = R1x; R1y += Int.v32.y;
-  Int.v64 = R1y; R1z += Int.v32.y;
-  Int.v64 = R1z; R1w += Int.v32.y;
-  Int.v64 = R1w; R2x += Int.v32.y;
-  Int.v64 = R2x; R2y += Int.v32.y;
-  Int.v64 = R2y; R2z += Int.v32.y;
-  Int.v64 = R2z; R2w += Int.v32.y;
-  Int.v64 = R2w; R3x += Int.v32.y;
-  Int.v64 = R3x; R3y += Int.v32.y;
-  Int.v64 = R3y; R3z += Int.v32.y;
-  
-  *rl0 = (uint4){R0x, R0y, R0z, R0w};
-  *rl1 = (uint4){R1x, R1y, R1z, R1w};
-  *rl2 = (uint4){R2x, R2y, R2z, R2w};
-  *rl3 = (uint4){R3x, R3y, R3z, 0};
-
-#undef b1
-#undef b2
-#undef b3
-#undef b4
-}
-
 void redcify352(unsigned shiftCount,
-                uint4 q0, uint4 q1,
-                uint4 limbs0, uint4 limbs1, uint4 limbs2,
-                uint4 *r0, uint4 *r1, uint4 *r2)
+                uint4 *quotient,
+                uint4 *limbs,
+                uint32_t *result,
+                uint32_t windowSize)
 {
-  uint4 mr0, mr1, mr2, mr3;
+  uint4 q[2];
+  q[0] = quotient[0];
+  q[1] = quotient[1];
+  const unsigned pow2ws = pow2[windowSize];  
   
-  for (unsigned  i = 0, ie = (64-shiftCount)/32; i < ie; i++)
-    rshiftByLimb2(&q0, &q1);
-  rshift2(&q0, &q1, (64-shiftCount) % 32);
-  
-  mul352to128(limbs0, limbs1, limbs2, q0, &mr0, &mr1, &mr2, &mr3);
+  for (unsigned  i = 0, ie = (pow2ws-shiftCount)/32; i < ie; i++)
+    rshiftByLimb2(&q[0], &q[1]);
+  rshift2(&q[0], &q[1], (pow2ws-shiftCount) % 32);
+
+  if (windowSize == 5)
+    mulProductScan352to96(result, limbs, q);
+  else if (windowSize == 6)
+    mulProductScan352to128(result, limbs, q);
+  else if (windowSize == 7)
+    mulProductScan352to192(result, limbs, q);
   
   // substract 2^(384+shiftCount) - q*R
-  *r0 = ~mr0;
-  *r1 = ~mr1;
-  (*r2).x = ~mr2.x;
-  (*r2).y = ~mr2.y;
-  (*r2).z = ~mr2.z;
-  
-  // TODO: bring carry
-  (*r0).x++;
+  for (unsigned i = 0; i < 11; i++)
+    result[i] = ~result[i];
+  result[0]++;
 }
 
-
-void mul352roundNoCarry(uint4 op1l0, uint4 op1l1, uint4 op1l2, uint32_t m1, uint32_t m2,
-                        uint64_t *R0, uint64_t *R1, uint64_t *R2, uint64_t *R3,
-                        uint64_t *R4, uint64_t *R5, uint64_t *R6, uint64_t *R7,
-                        uint64_t *R8, uint64_t *R9, uint64_t *R10)
-{
-  uint4 m1l0 = mul_hi(op1l0, m1);
-  uint4 m1l1 = mul_hi(op1l1, m1);
-  uint4 m1l2 = {
-    mul_hi(op1l2.x, m1),
-    mul_hi(op1l2.y, m1),
-    mul_hi(op1l2.z, m1),
-    0
-  };
-  uint4 m2l0 = op1l0 * m2;
-  uint4 m2l1 = op1l1 * m2;
-  uint4 m2l2 = {
-    op1l2.x * m2,
-    op1l2.y * m2,
-    op1l2.z * m2,
-    0
-  };
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;
-  *R0 += m1l0.x; *R0 += m2l0.x;
-  *R1 += m1l0.y; *R1 += m2l0.y;
-  *R2 += m1l0.z; *R2 += m2l0.z;
-  *R3 += m1l0.w; *R3 += m2l0.w;
-  *R4 += m1l1.x; *R4 += m2l1.x;
-  *R5 += m1l1.y; *R5 += m2l1.y;
-  *R6 += m1l1.z; *R6 += m2l1.z;
-  *R7 += m1l1.w; *R7 += m2l1.w;  
-  *R8 += m1l2.x; *R8 += m2l2.x;
-  *R9 += m1l2.y; *R9 += m2l2.y;
-  *R10 += m1l2.z; *R10 += m2l2.z;
-}
-
-void m_add(uint32_t a, uint32_t b, unsigned N1, uint64_t *R0, uint64_t *R1, int isInit)
-{
-  uint32_t lo = a*b;
-  uint32_t hi = mul_hi(a, b);
-  
-  if (N1 == 1) {
-    *R0 += lo;
-    if (isInit)
-      *R1 = hi;
-    else
-      *R1 += hi;
-  } else {
-    *R0 += lo;
-    *R0 += lo;
-    if (isInit)
-      *R1 = hi;
-    else
-      *R1 += hi;
-    *R1 += hi;    
-  }
-}
-
-void m_dbladd(uint32_t a1, uint32_t b1, unsigned N1,
-              uint32_t a2, uint32_t b2, unsigned N2,
-              uint64_t *R0, uint64_t *R1,
-              int isInit)
-{
-  uint32_t lo1 = a1*b1;
-  uint32_t lo2 = a2*b2;
-  uint32_t hi1 = mul_hi(a1, b1);
-  uint32_t hi2 = mul_hi(a2, b2);
-  
-  if (N1 == 1) {
-    *R0 += lo1;
-    if (isInit)
-      *R1 = hi1;
-    else
-      *R1 += hi1;
-  } else {
-    *R0 += lo1;
-    *R0 += lo1;
-    if (isInit)
-      *R1 = hi1;
-    else
-      *R1 += hi1;
-    *R1 += hi1;
-  }
-  
-  if (N2 == 1) {
-    *R0 += lo2;
-    *R1 += hi2;
-  } else {
-    *R0 += lo2;
-    *R0 += lo2;
-    *R1 += hi2;
-    *R1 += hi2;
-  }
-}
-
-void montgomerySqr352(uint4 *rl0, uint4 *rl1, uint4 *rl2,
-                      uint4 modl0, uint4 modl1, uint4 modl2,
-                      uint32_t invm)
-{
-  #define a1 (*rl2).z
-  #define a2 (*rl2).y
-  #define a3 (*rl2).x
-  #define a4 (*rl1).w
-  #define a5 (*rl1).z
-  #define a6 (*rl1).y
-  #define a7 (*rl1).x
-  #define a8 (*rl0).w
-  #define a9 (*rl0).z
-  #define a10 (*rl0).y
-  #define a11 (*rl0).x  
-  
-  uint64_t R0x = 0, R0y, R0z, R0w, R1x, R1y, R1z, R1w, R2x,
-  R2y, R2z, R2w, R3x, R3y, R3z, R3w, R4x,
-  R4y, R4z, R4w, R5x, R5y;
-  
-  m_add(a11, a11, 1, &R0x, &R0y, 1);
-  m_add(a11, a10, 2, &R0y, &R0z, 1);
-  m_dbladd(a11, a9, 2, a10, a10, 1, &R0z, &R0w, 1);
-  m_dbladd(a11, a8, 2, a10, a9, 2, &R0w, &R1x, 1);
-  m_dbladd(a11, a7, 2, a10, a8, 2, &R1x, &R1y, 1);
-  m_add(a9, a9, 1, &R1x, &R1y, 0);
-  m_dbladd(a11, a6, 2, a10, a7, 2, &R1y, &R1z, 1);
-  m_add(a9, a8, 2, &R1y, &R1z, 0);
-  m_dbladd(a11, a5, 2, a10, a6, 2, &R1z, &R1w, 1);
-  m_dbladd(a9, a7, 2, a8, a8, 1, &R1z, &R1w, 0);
-  m_dbladd(a11, a4, 2, a10, a5, 2, &R1w, &R2x, 1);
-  m_dbladd(a9, a6, 2, a8, a7, 2, &R1w, &R2x, 0);
-  m_dbladd(a11, a3, 2, a10, a4, 2, &R2x, &R2y, 1);
-  m_dbladd(a9, a5, 2, a8, a6, 2, &R2x, &R2y, 0);
-  m_add(a7, a7, 1, &R2x, &R2y, 0);
-  m_dbladd(a11, a2, 2, a10, a3, 2, &R2y, &R2z, 1);
-  m_dbladd(a9, a4, 2, a8, a5, 2, &R2y, &R2z, 0);
-  m_add(a7, a6, 2, &R2y, &R2z, 0);
-  m_dbladd(a11, a1, 2, a10, a2, 2, &R2z, &R2w, 1);
-  m_dbladd(a9, a3, 2, a8, a4, 2, &R2z, &R2w, 0);
-  m_dbladd(a7, a5, 2, a6, a6, 1, &R2z, &R2w, 0);
-  m_dbladd(a10, a1, 2, a9, a2, 2, &R2w, &R3x, 1);
-  m_dbladd(a8, a3, 2, a7, a4, 2, &R2w, &R3x, 0);
-  m_add(a6, a5, 2, &R2w, &R3x, 0);
-  m_dbladd(a9, a1, 2, a8, a2, 2, &R3x, &R3y, 1);
-  m_dbladd(a7, a3, 2, a6, a4, 2, &R3x, &R3y, 0);
-  m_add(a5, a5, 1, &R3x, &R3y, 0);
-  m_dbladd(a8, a1, 2, a7, a2, 2, &R3y, &R3z, 1);
-  m_dbladd(a6, a3, 2, a5, a4, 2, &R3y, &R3z, 0);
-  m_dbladd(a7, a1, 2, a6, a2, 2, &R3z, &R3w, 1);
-  m_dbladd(a5, a3, 2, a4, a4, 1, &R3z, &R3w, 0);
-  m_dbladd(a6, a1, 2, a5, a2, 2, &R3w, &R4x, 1);
-  m_add(a4, a3, 2, &R3w, &R4x, 0);
-  m_dbladd(a5, a1, 2, a4, a2, 2, &R4x, &R4y, 1);
-  m_add(a3, a3, 1, &R4x, &R4y, 0);
-  m_dbladd(a4, a1, 2, a3, a2, 2, &R4y, &R4z, 1);
-  m_dbladd(a3, a1, 2, a2, a2, 1, &R4z, &R4w, 1);
-  m_add(a2, a1, 2, &R4w, &R5x, 1);
-  m_add(a1, a1, 1, &R5x, &R5y, 1);
-  
-  #undef a1
-  #undef a2
-  #undef a3
-  #undef a4
-  #undef a5
-  #undef a6
-  #undef a7
-  #undef a8
-  #undef a9
-  #undef a10
-  #undef a11
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;     
-  
-  uint32_t i0, i1, i2, i3, i4, i5, i6, i7, i8, i9, i10;  
-  i0 = R0x * invm;
-  {
-    uint4 M1l0 = modl0 * i0;
-    uint4 M1l1 = modl1 * i0;
-    uint4 M1l2 = {
-      modl2.x * i0,
-       modl2.y * i0,
-       modl2.z * i0,
-       0
-    };
-    R0x += M1l0.x;
-    R0y += M1l0.y; Int.v64 = R0x; R0y += Int.v32.y;
-    R0z += M1l0.z;
-    R0w += M1l0.w;
-    R1x += M1l1.x;
-    R1y += M1l1.y;
-    R1z += M1l1.z;
-    R1w += M1l1.w;
-    R2x += M1l2.x;
-    R2y += M1l2.y;
-    R2z += M1l2.z;
-  }  
-  
-  redc352_round_v3(modl0, modl1, modl2, i0, &i1, invm, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  redc352_round_v3(modl0, modl1, modl2, i1, &i2, invm, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  redc352_round_v3(modl0, modl1, modl2, i2, &i3, invm, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y);
-  redc352_round_v3(modl0, modl1, modl2, i3, &i4, invm, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z);
-  redc352_round_v3(modl0, modl1, modl2, i4, &i5, invm, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w);  
-  redc352_round_v3(modl0, modl1, modl2, i5, &i6, invm, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x);
-  redc352_round_v3(modl0, modl1, modl2, i6, &i7, invm, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y);
-  redc352_round_v3(modl0, modl1, modl2, i7, &i8, invm, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z);
-  redc352_round_v3(modl0, modl1, modl2, i8, &i9, invm, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z, &R4w);
-  redc352_round_v3(modl0, modl1, modl2, i9, &i10, invm, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z, &R4w, &R5x);  
-  
-  {
-    uint4 M1l0 = mul_hi(modl0, i10);
-    uint4 M1l1 = mul_hi(modl1, i10);    
-    uint4 M1l2 = {
-      mul_hi(modl2.x, i10),
-       mul_hi(modl2.y, i10),
-       mul_hi(modl2.z, i10),
-       0
-    };
-    R2w += M1l0.x;
-    R3x += M1l0.y; Int.v64 = R2w; R3x += Int.v32.y;
-    R3y += M1l0.z; Int.v64 = R3x; R3y += Int.v32.y;
-    R3z += M1l0.w; Int.v64 = R3y; R3z += Int.v32.y;
-    R3w += M1l1.x; Int.v64 = R3z; R3w += Int.v32.y;
-    R4x += M1l1.y; Int.v64 = R3w; R4x += Int.v32.y;
-    R4y += M1l1.z; Int.v64 = R4x; R4y += Int.v32.y;
-    R4z += M1l1.w; Int.v64 = R4y; R4z += Int.v32.y;
-    R4w += M1l2.x; Int.v64 = R4z; R4w += Int.v32.y;
-    R5x += M1l2.y; Int.v64 = R4w; R5x += Int.v32.y;
-    R5y += M1l2.z; Int.v64 = R5x; R5y += Int.v32.y;
-  }
-  
-  *rl0 = (uint4){R2w, R3x, R3y, R3z};
-  *rl1 = (uint4){R3w, R4x, R4y, R4z};  
-  *rl2 = (uint4){R4w, R5x, R5y, 0};    
-  
-  {
-    Int.v64 = R5y;
-    uint4 l0 = Int.v32.y ? modl0 : (uint4){0, 0, 0, 0};
-    uint4 l1 = Int.v32.y ? modl1 : (uint4){0, 0, 0, 0};
-    uint4 l2 = Int.v32.y ? modl2 : (uint4){0, 0, 0, 0};    
-    sub352(rl0, rl1, rl2, l0, l1, l2);
-  }
-}
-
-void montgomeryMul352(uint4 *rl0, uint4 *rl1, uint4 *rl2,
-                      uint4 ml0, uint4 ml1, uint4 ml2, 
-                      uint4 modl0, uint4 modl1, uint4 modl2,
-                      uint32_t invm)
-{
-  uint4 RL0 = *rl0;
-  uint4 RL1 = *rl1;
-  uint4 RL2 = *rl2;
-  
-  #define b1 ml2.z
-  #define b2 ml2.y
-  #define b3 ml2.x
-  #define b4 ml1.w
-  #define b5 ml1.z
-  #define b6 ml1.y
-  #define b7 ml1.x
-  #define b8 ml0.w
-  #define b9 ml0.z
-  #define b10 ml0.y
-  #define b11 ml0.x  
-  ulong R0x = (*rl0).x * b11;
-  ulong R0y = (*rl0).y * b11;
-  ulong R0z = (*rl0).z * b11;
-  ulong R0w = (*rl0).w * b11;
-  ulong R1x = (*rl1).x * b11;
-  ulong R1y = (*rl1).y * b11;
-  ulong R1z = (*rl1).z * b11;
-  ulong R1w = (*rl1).w * b11;  
-  ulong R2x = (*rl2).x * b11;
-  ulong R2y = (*rl2).y * b11;
-  ulong R2z = (*rl2).z * b11;
-  ulong R2w = mul_hi((*rl0).x, b1);
-  ulong R3x = mul_hi((*rl0).y, b1);
-  ulong R3y = mul_hi((*rl0).z, b1);
-  ulong R3z = mul_hi((*rl0).w, b1);
-  ulong R3w = mul_hi((*rl1).x, b1);
-  ulong R4x = mul_hi((*rl1).y, b1);
-  ulong R4y = mul_hi((*rl1).z, b1);
-  ulong R4z = mul_hi((*rl1).w, b1);
-  ulong R4w = mul_hi((*rl2).x, b1);
-  ulong R5x = mul_hi((*rl2).y, b1);
-  ulong R5y = mul_hi((*rl2).z, b1);
-  
-  mul352roundNoCarry(*rl0, *rl1, *rl2, b11, b10, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  mul352roundNoCarry(*rl0, *rl1, *rl2, b10, b9, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  mul352roundNoCarry(*rl0, *rl1, *rl2, b9,  b8, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y);
-  mul352roundNoCarry(*rl0, *rl1, *rl2,  b8,  b7, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z);
-  mul352roundNoCarry(*rl0, *rl1, *rl2,  b7,  b6, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w);
-  mul352roundNoCarry(*rl0, *rl1, *rl2,  b6,  b5, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x);
-  mul352roundNoCarry(*rl0, *rl1, *rl2,  b5,  b4, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y);
-  mul352roundNoCarry(*rl0, *rl1, *rl2,  b4,  b3, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z);
-  mul352roundNoCarry(*rl0, *rl1, *rl2,  b3,  b2, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z, &R4w);
-  mul352roundNoCarry(*rl0, *rl1, *rl2,  b2,  b1, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z, &R4w, &R5x);
-  
-  #undef b1
-  #undef b2
-  #undef b3
-  #undef b4
-  #undef b5
-  #undef b6
-  #undef b7
-  #undef b8
-  #undef b9
-  #undef b10
-  #undef b11
-  #undef b12    
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;     
-  
-  uint32_t i0, i1, i2, i3, i4, i5, i6, i7, i8, i9, i10;  
-  i0 = R0x * invm;
-  {
-    uint4 M1l0 = modl0 * i0;
-    uint4 M1l1 = modl1 * i0;
-    uint4 M1l2 = {
-      modl2.x * i0,
-      modl2.y * i0,
-      modl2.z * i0,
-      0
-    };
-    R0x += M1l0.x;
-    R0y += M1l0.y; Int.v64 = R0x; R0y += Int.v32.y;
-    R0z += M1l0.z;
-    R0w += M1l0.w;
-    R1x += M1l1.x;
-    R1y += M1l1.y;
-    R1z += M1l1.z;
-    R1w += M1l1.w;
-    R2x += M1l2.x;
-    R2y += M1l2.y;
-    R2z += M1l2.z;
-  }  
-  
-  redc352_round_v3(modl0, modl1, modl2, i0, &i1, invm, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  redc352_round_v3(modl0, modl1, modl2, i1, &i2, invm, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  redc352_round_v3(modl0, modl1, modl2, i2, &i3, invm, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y);
-  redc352_round_v3(modl0, modl1, modl2, i3, &i4, invm, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z);
-  redc352_round_v3(modl0, modl1, modl2, i4, &i5, invm, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w);  
-  redc352_round_v3(modl0, modl1, modl2, i5, &i6, invm, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x);
-  redc352_round_v3(modl0, modl1, modl2, i6, &i7, invm, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y);
-  redc352_round_v3(modl0, modl1, modl2, i7, &i8, invm, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z);
-  redc352_round_v3(modl0, modl1, modl2, i8, &i9, invm, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z, &R4w);
-  redc352_round_v3(modl0, modl1, modl2, i9, &i10, invm, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z, &R4w, &R5x);  
-  
-  {
-    uint4 M1l0 = mul_hi(modl0, i10);
-    uint4 M1l1 = mul_hi(modl1, i10);    
-    uint4 M1l2 = {
-      mul_hi(modl2.x, i10),
-      mul_hi(modl2.y, i10),
-      mul_hi(modl2.z, i10),
-      0
-    };
-    R2w += M1l0.x;
-    R3x += M1l0.y; Int.v64 = R2w; R3x += Int.v32.y;
-    R3y += M1l0.z; Int.v64 = R3x; R3y += Int.v32.y;
-    R3z += M1l0.w; Int.v64 = R3y; R3z += Int.v32.y;
-    R3w += M1l1.x; Int.v64 = R3z; R3w += Int.v32.y;
-    R4x += M1l1.y; Int.v64 = R3w; R4x += Int.v32.y;
-    R4y += M1l1.z; Int.v64 = R4x; R4y += Int.v32.y;
-    R4z += M1l1.w; Int.v64 = R4y; R4z += Int.v32.y;
-    R4w += M1l2.x; Int.v64 = R4z; R4w += Int.v32.y;
-    R5x += M1l2.y; Int.v64 = R4w; R5x += Int.v32.y;
-    R5y += M1l2.z; Int.v64 = R5x; R5y += Int.v32.y;
-  }
-  
-  *rl0 = (uint4){R2w, R3x, R3y, R3z};
-  *rl1 = (uint4){R3w, R4x, R4y, R4z};  
-  *rl2 = (uint4){R4w, R5x, R5y, 0};    
-  
-  {
-    Int.v64 = R5y;
-    uint4 l0 = Int.v32.y ? modl0 : (uint4){0, 0, 0, 0};
-    uint4 l1 = Int.v32.y ? modl1 : (uint4){0, 0, 0, 0};
-    uint4 l2 = Int.v32.y ? modl2 : (uint4){0, 0, 0, 0};    
-    sub352(rl0, rl1, rl2, l0, l1, l2);
-  }
-}
 
 void FermatTest352(uint4 *restrict limbs,
-                   uint4 *resultLimbs0, uint4 *resultLimbs1, uint4 *resultLimbs2)
+                      uint4 *redcl)
 {
   uint2 bitSize;
-  uint4 redcl0, redcl1, redcl2;
+//   uint4 redcl0, redcl1, redcl2;
   uint32_t inverted = invert_limb(limbs[0].x);  
   
-  uint4 q0 = 0, q1 = 0;  
+//   uint4 q0 = 0, q1 = 0;  
+  uint4 q[2] = {0, 0};
   {
     uint4 dl4 = {0, 0, 0, 0};    
-    uint4 dl3 = {0, 1, 0, 0};
+    uint4 dl3 = {0, 0, 0, 1};
     uint4 dl2 = {0, 0, 0, 0};
     uint4 dl1 = {0, 0, 0, 0};
     uint4 dl0 = {0, 0, 0, 0};
-    divq640to384(dl0, dl1, dl2, dl3, dl4, limbs[0], limbs[1], limbs[2], &q0, &q1);
+    divq640to384(dl0, dl1, dl2, dl3, dl4, limbs[0], limbs[1], limbs[2], &q[0], &q[1]);
   }
   
   
@@ -1528,7 +901,7 @@ void FermatTest352(uint4 *restrict limbs,
     uint4 dl2 = {0, 0, 0, 2};
     uint4 dl1 = {0, 0, 0, 0};
     uint4 dl0 = {0, 0, 0, 0};    
-    bitSize = modulo512to384(dl0, dl1, dl2, dl3, limbs[0], limbs[1], limbs[2], &redcl0, &redcl1, &redcl2);
+    bitSize = modulo512to384(dl0, dl1, dl2, dl3, limbs[0], limbs[1], limbs[2], &redcl[0], &redcl[1], &redcl[2]);
     --bitSize.y;
     if (bitSize.y == 0) {
       --bitSize.x;
@@ -1536,580 +909,76 @@ void FermatTest352(uint4 *restrict limbs,
     }
   }
   
+  const int windowSize = 7;  
   uint32_t *data = (uint32_t*)limbs;
   int remaining = (bitSize.x-1)*32 + bitSize.y;
   
   while (remaining > 0) {
-    int bitPos = max(remaining-6, 0);
-    int size = min(remaining, 6);
+    int bitPos = max(remaining-windowSize, 0);
+    int size = min(remaining, windowSize);
     
-    uint64_t v64 = *(uint64_t*)(data+bitPos/32) - (remaining <= 6 ? 1 : 0);
+    uint64_t v64 = *(uint64_t*)(data+bitPos/32) - (remaining <= windowSize ? 1 : 0);
     v64 >>= bitPos % 32;
     uint32_t index = ((uint32_t)v64) & ((1 << size) - 1);
-    
-    uint4 m0, m1, m2;
+
+    uint4 m[3];
     for (unsigned i = 0; i < size; i++)
-      montgomerySqr352(&redcl0, &redcl1, &redcl2, limbs[0], limbs[1], limbs[2], inverted);
-    redcify352(index, q0, q1, limbs[0], limbs[1], limbs[2], &m0, &m1, &m2);
-    montgomeryMul352(&redcl0, &redcl1, &redcl2, m0, m1, m2, limbs[0], limbs[1], limbs[2], inverted);
-    
-    remaining -= 6;
+      monSqr352(redcl, limbs, inverted);
+
+    redcify352(index, q, limbs, m, windowSize);    
+    monMul352(redcl, m, limbs, inverted);
+    remaining -= windowSize;
   }
-  
-  redc1_352_v3(redcl0, redcl1, redcl2, 0, 0, 0, limbs[0], limbs[1], limbs[2], inverted, resultLimbs0, resultLimbs1, resultLimbs2); 
+
+  barrier(CLK_LOCAL_MEM_FENCE);
+  redcHalf352(redcl, limbs, inverted);
 }
 
-void mul320round_v3(uint4 op1l0, uint4 op1l1, uint2 op1l2, uint32_t m1, uint32_t m2,
-                    uint64_t *R0, uint64_t *R1, uint64_t *R2, uint64_t *R3,
-                    uint64_t *R4, uint64_t *R5, uint64_t *R6, uint64_t *R7,
-                    uint64_t *R8, uint64_t *R9)
-{
-  uint4 m1l0 = mul_hi(op1l0, m1);
-  uint4 m1l1 = mul_hi(op1l1, m1);
-  uint2 m1l2 = mul_hi(op1l2, m1);
-  
-  uint4 m2l0 = op1l0 * m2;
-  uint4 m2l1 = op1l1 * m2;
-  uint2 m2l2 = op1l2 * m2;
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;
-  *R0 += m1l0.x; *R0 += m2l0.x;
-  *R1 += m1l0.y; *R1 += m2l0.y; Int.v64 = *R0; *R1 += Int.v32.y;
-  *R2 += m1l0.z; *R2 += m2l0.z;
-  *R3 += m1l0.w; *R3 += m2l0.w;
-  *R4 += m1l1.x; *R4 += m2l1.x;
-  *R5 += m1l1.y; *R5 += m2l1.y;
-  *R6 += m1l1.z; *R6 += m2l1.z;
-  *R7 += m1l1.w; *R7 += m2l1.w;  
-  *R8 += m1l2.x; *R8 += m2l2.x;
-  *R9 += m1l2.y; *R9 += m2l2.y;
-}
-
-void mul320to128(uint4 op1l0, uint4 op1l1, uint2 op1l2,
-                 uint4 op2l0,
-                 uint4 *rl0, uint4 *rl1, uint4 *rl2, uint4 *rl3)
-{
-#define b1 op2l0.w
-#define b2 op2l0.z
-#define b3 op2l0.y
-#define b4 op2l0.x
-
-  ulong R0x = op1l0.x * b4;
-  ulong R0y = op1l0.y * b4;
-  ulong R0z = op1l0.z * b4;
-  ulong R0w = op1l0.w * b4;
-  ulong R1x = op1l1.x * b4 + mul_hi(op1l0.x, b1);
-  ulong R1y = op1l1.y * b4 + mul_hi(op1l0.y, b1);
-  ulong R1z = op1l1.z * b4 + mul_hi(op1l0.z, b1);
-  ulong R1w = op1l1.w * b4 + mul_hi(op1l0.w, b1);  
-  ulong R2x = op1l2.x * b4 + mul_hi(op1l1.x, b1);
-  ulong R2y = op1l2.y * b4 + mul_hi(op1l1.y, b1);
-  ulong R2z = mul_hi(op1l1.z, b1);
-  ulong R2w = mul_hi(op1l1.w, b1);
-  ulong R3x = mul_hi(op1l2.x, b1);
-  ulong R3y = mul_hi(op1l2.y, b1);
-  
-  mul320round_v3(op1l0, op1l1, op1l2, b4, b3, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z);
-  mul320round_v3(op1l0, op1l1, op1l2, b3, b2, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  mul320round_v3(op1l0, op1l1, op1l2, b2, b1, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;
-  
-  Int.v64 = R1x; R1y += Int.v32.y;
-  Int.v64 = R1y; R1z += Int.v32.y;
-  Int.v64 = R1z; R1w += Int.v32.y;
-  Int.v64 = R1w; R2x += Int.v32.y;
-  Int.v64 = R2x; R2y += Int.v32.y;
-  Int.v64 = R2y; R2z += Int.v32.y;
-  Int.v64 = R2z; R2w += Int.v32.y;
-  Int.v64 = R2w; R3x += Int.v32.y;
-  Int.v64 = R3x; R3y += Int.v32.y;
-  
-  *rl0 = (uint4){R0x, R0y, R0z, R0w};
-  *rl1 = (uint4){R1x, R1y, R1z, R1w};
-  *rl2 = (uint4){R2x, R2y, R2z, R2w};
-  *rl3 = (uint4){R3x, R3y, 0, 0};
-  
-#undef b1
-#undef b2
-#undef b3
-#undef b4
-}
 
 void redcify320(unsigned shiftCount,
-                uint4 q0, uint4 q1,
-                uint4 limbs0, uint4 limbs1, uint4 limbs2,
-                uint4 *r0, uint4 *r1, uint4 *r2)
+                uint4 *quotient,
+                uint4 *limbs,
+                uint32_t *result,
+                uint32_t windowSize)
 {
   uint4 mr0, mr1, mr2, mr3;
+  uint4 q[2];
+  q[0] = quotient[0];
+  q[1] = quotient[1];
   
-  for (unsigned  i = 0, ie = (64-shiftCount)/32; i < ie; i++)
-    rshiftByLimb2(&q0, &q1);
-  rshift2(&q0, &q1, (64-shiftCount) % 32);
+  const unsigned pow2ws = pow2[windowSize];
+  for (unsigned  i = 0, ie = (pow2ws-shiftCount)/32; i < ie; i++)
+    rshiftByLimb2(&q[0], &q[1]);
+  rshift2(&q[0], &q[1], (pow2ws-shiftCount) % 32);
 
-  mul320to128(limbs0, limbs1, (uint2){limbs2.x, limbs2.y}, q0, &mr0, &mr1, &mr2, &mr3);  
+  if (windowSize == 5)
+    mulProductScan320to96(result, limbs, q);  
+  else if (windowSize == 6)
+    mulProductScan320to128(result, limbs, q);
+  else if (windowSize == 7)
+    mulProductScan320to192(result, limbs, q);
   
   // substract 2^(384+shiftCount) - q*R
-  *r0 = ~mr0;
-  *r1 = ~mr1;
-  (*r2).x = ~mr2.x;
-  (*r2).y = ~mr2.y;
-  (*r2).z = ~mr2.z;
-
-  // TODO: bring carry
-  (*r0).x++;
-}
-
-void redc320_round_v3(uint4 op1l0, uint4 op1l1, uint2 op1l2, uint32_t m1, uint32_t *m2, uint32_t invm,
-                      uint64_t *R0, uint64_t *R1, uint64_t *R2, uint64_t *R3,
-                      uint64_t *R4, uint64_t *R5, uint64_t *R6, uint64_t *R7,
-                      uint64_t *R8, uint64_t *R9)
-{
-  uint4 m1l0 = mul_hi(op1l0, m1);
-  uint4 m1l1 = mul_hi(op1l1, m1);
-  uint2 m1l2 = mul_hi(op1l2, m1);
-  
-  *m2 = invm * ((uint32_t)*R0 + m1l0.x);
-  uint4 m2l0 = op1l0 * (*m2);
-  uint4 m2l1 = op1l1 * (*m2);
-  uint2 m2l2 = op1l2 * (*m2);
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int; 
-  
-  *R0 += m1l0.x; *R0 += m2l0.x;
-  *R1 += m1l0.y; *R1 += m2l0.y; Int.v64 = *R0; *R1 += Int.v32.y;
-  *R2 += m1l0.z; *R2 += m2l0.z;
-  *R3 += m1l0.w; *R3 += m2l0.w;
-  *R4 += m1l1.x; *R4 += m2l1.x;
-  *R5 += m1l1.y; *R5 += m2l1.y;
-  *R6 += m1l1.z; *R6 += m2l1.z;
-  *R7 += m1l1.w; *R7 += m2l1.w;  
-  *R8 += m1l2.x; *R8 += m2l2.x;
-  *R9 += m1l2.y; *R9 += m2l2.y;
-}
-
-void redc1_320_v3(uint4 limbs0, uint4 limbs1, uint4 limbs2, uint4 limbs3, uint4 limbs4,
-                  uint4 moduloLimb0, uint4 moduloLimb1, uint2 moduloLimb2,
-                  uint32_t invm,
-                  uint4 *ResultLimb0, uint4 *ResultLimb1, uint4 *ResultLimb2)
-{
-  ulong R0x = limbs0.x;
-  ulong R0y = limbs0.y;
-  ulong R0z = limbs0.z;
-  ulong R0w = limbs0.w;
-  ulong R1x = limbs1.x;
-  ulong R1y = limbs1.y;
-  ulong R1z = limbs1.z;
-  ulong R1w = limbs1.w;
-  ulong R2x = limbs2.x;
-  ulong R2y = limbs2.y;
-  ulong R2z = limbs2.z;
-  ulong R2w = limbs2.w;
-  ulong R3x = limbs3.x;
-  ulong R3y = limbs3.y;
-  ulong R3z = limbs3.z;
-  ulong R3w = limbs3.w;
-  ulong R4x = limbs4.x;
-  ulong R4y = limbs4.y;
-  ulong R4z = limbs4.z;
-  ulong R4w = limbs4.w;
-    
-  uint32_t i0, i1, i2, i3, i4, i5, i6, i7, i8, i9;
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;   
-  
-  i0 = limbs0.x * invm;
-  {
-    uint4 M1l0 = moduloLimb0 * i0;
-    uint4 M1l1 = moduloLimb1 * i0;
-    uint4 M1l2 = {
-      moduloLimb2.x * i0,
-      moduloLimb2.y * i0,
-      0,
-      0
-    };
-    R0x += M1l0.x;
-    R0y += M1l0.y; Int.v64 = R0x; R0y += Int.v32.y;
-    R0z += M1l0.z;
-    R0w += M1l0.w;
-    R1x += M1l1.x;
-    R1y += M1l1.y;
-    R1z += M1l1.z;
-    R1w += M1l1.w;
-    R2x += M1l2.x;
-    R2y += M1l2.y;
-  }
-  
-  redc320_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i0, &i1, invm, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z);
-  redc320_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i1, &i2, invm, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  redc320_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i2, &i3, invm, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  redc320_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i3, &i4, invm, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y);
-  redc320_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i4, &i5, invm, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z);
-  redc320_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i5, &i6, invm, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w);
-  redc320_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i6, &i7, invm, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x);
-  redc320_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i7, &i8, invm, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y);
-  redc320_round_v3(moduloLimb0, moduloLimb1, moduloLimb2, i8, &i9, invm, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z);
-
-  {
-    uint4 M1l0 = mul_hi(moduloLimb0, i9);
-    uint4 M1l1 = mul_hi(moduloLimb1, i9);    
-    uint4 M1l2 = {
-      mul_hi(moduloLimb2.x, i9),
-      mul_hi(moduloLimb2.y, i9),
-      0,
-      0
-    };
-    R2z += M1l0.x;
-    R2w += M1l0.y; Int.v64 = R2z; R2w += Int.v32.y;
-    R3x += M1l0.z; Int.v64 = R2w; R3x += Int.v32.y;
-    R3y += M1l0.w; Int.v64 = R3x; R3y += Int.v32.y;
-    R3z += M1l1.x; Int.v64 = R3y; R3z += Int.v32.y;
-    R3w += M1l1.y; Int.v64 = R3z; R3w += Int.v32.y;
-    R4x += M1l1.z; Int.v64 = R3w; R4x += Int.v32.y;
-    R4y += M1l1.w; Int.v64 = R4x; R4y += Int.v32.y;
-    R4z += M1l2.x; Int.v64 = R4y; R4z += Int.v32.y;
-    R4w += M1l2.y; Int.v64 = R4z; R4w += Int.v32.y;
-  }
-  
-  *ResultLimb0 = (uint4){R2z, R2w, R3x, R3y};
-  *ResultLimb1 = (uint4){R3z, R3w, R4x, R4y};  
-  *ResultLimb2 = (uint4){R4z, R4w, 0, 0};    
-  
-  {
-    Int.v64 = R4w;
-    uint4 l0 = Int.v32.y ? moduloLimb0 : (uint4){0, 0, 0, 0};
-    uint4 l1 = Int.v32.y ? moduloLimb1 : (uint4){0, 0, 0, 0};
-    uint2 l2 = Int.v32.y ? moduloLimb2 : (uint2){0, 0};    
-    sub320(ResultLimb0, ResultLimb1, ResultLimb2, l0, l1, l2);
-  }
+  for (unsigned i = 0; i < 10; i++)
+    result[i] = ~result[i];
+  result[0]++;
 }
 
 
-void montgomerySqr320(uint4 *rl0, uint4 *rl1, uint4 *rl2,
-                      uint4 modl0, uint4 modl1, uint2 modl2,
-                      uint32_t invm)
-{
-#define a1 (*rl2).y
-#define a2 (*rl2).x
-#define a3 (*rl1).w
-#define a4 (*rl1).z
-#define a5 (*rl1).y
-#define a6 (*rl1).x
-#define a7 (*rl0).w
-#define a8 (*rl0).z
-#define a9 (*rl0).y
-#define a10 (*rl0).x  
-  
-  uint64_t R0x = 0, R0y, R0z, R0w, R1x, R1y, R1z, R1w, R2x,
-           R2y, R2z, R2w, R3x, R3y, R3z, R3w, R4x,
-           R4y, R4z, R4w;
-
-  m_add(a10, a10, 1, &R0x, &R0y, 1);
-  m_add(a10, a9, 2, &R0y, &R0z, 1);
-  m_dbladd(a10, a8, 2, a9, a9, 1, &R0z, &R0w, 1);
-  m_dbladd(a10, a7, 2, a9, a8, 2, &R0w, &R1x, 1);
-  m_dbladd(a10, a6, 2, a9, a7, 2, &R1x, &R1y, 1);
-      m_add(a8, a8, 1, &R1x, &R1y, 0);
-  m_dbladd(a10, a5, 2, a9, a6, 2, &R1y, &R1z, 1);
-      m_add(a8, a7, 2, &R1y, &R1z, 0);
-  m_dbladd(a10, a4, 2, a9, a5, 2, &R1z, &R1w, 1);
-      m_dbladd(a8, a6, 2, a7, a7, 1, &R1z, &R1w, 0);
-  m_dbladd(a10, a3, 2, a9, a4, 2, &R1w, &R2x, 1);
-      m_dbladd(a8, a5, 2, a7, a6, 2, &R1w, &R2x, 0);
-  m_dbladd(a10, a2, 2, a9, a3, 2, &R2x, &R2y, 1);
-      m_dbladd(a8, a4, 2, a7, a5, 2, &R2x, &R2y, 0);
-      m_add(a6, a6, 1, &R2x, &R2y, 0);
-  m_dbladd(a10, a1, 2, a9, a2, 2, &R2y, &R2z, 1);
-      m_dbladd(a8, a3, 2, a7, a4, 2, &R2y, &R2z, 0);
-      m_add(a6, a5, 2, &R2y, &R2z, 0);
-  m_dbladd(a9, a1, 2, a8, a2, 2, &R2z, &R2w, 1);
-      m_dbladd(a7, a3, 2, a6, a4, 2, &R2z, &R2w, 0);
-      m_add(a5, a5, 1, &R2z, &R2w, 0);
-  m_dbladd(a8, a1, 2, a7, a2, 2, &R2w, &R3x, 1);
-      m_dbladd(a6, a3, 2, a5, a4, 2, &R2w, &R3x, 0);
-  m_dbladd(a7, a1, 2, a6, a2, 2, &R3x, &R3y, 1);
-      m_dbladd(a5, a3, 2, a4, a4, 1, &R3x, &R3y, 0);
-  m_dbladd(a6, a1, 2, a5, a2, 2, &R3y, &R3z, 1);
-      m_add(a4, a3, 2, &R3y, &R3z, 0);
-  m_dbladd(a5, a1, 2, a4, a2, 2, &R3z, &R3w, 1);
-      m_add(a3, a3, 1, &R3z, &R3w, 0);
-  m_dbladd(a4, a1, 2, a3, a2, 2, &R3w, &R4x, 1);
-  m_dbladd(a3, a1, 2, a2, a2, 1, &R4x, &R4y, 1);
-  m_add(a2, a1, 2, &R4y, &R4z, 1);
-  m_add(a1, a1, 1, &R4z, &R4w, 1);
-  
-#undef a1
-#undef a2
-#undef a3
-#undef a4
-#undef a5
-#undef a6
-#undef a7
-#undef a8
-#undef a9
-#undef a10    
-  
-  uint32_t i0, i1, i2, i3, i4, i5, i6, i7, i8, i9;
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;   
-  
-  i0 = R0x * invm;
-  {
-    uint4 M1l0 = modl0 * i0;
-    uint4 M1l1 = modl1 * i0;
-    uint4 M1l2 = {
-      modl2.x * i0,
-      modl2.y * i0,
-      0,
-      0
-    };
-    R0x += M1l0.x;
-    R0y += M1l0.y; Int.v64 = R0x; R0y += Int.v32.y;
-    R0z += M1l0.z;
-    R0w += M1l0.w;
-    R1x += M1l1.x;
-    R1y += M1l1.y;
-    R1z += M1l1.z;
-    R1w += M1l1.w;
-    R2x += M1l2.x;
-    R2y += M1l2.y;
-  }
-  
-  redc320_round_v3(modl0, modl1, modl2, i0, &i1, invm, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z);
-  redc320_round_v3(modl0, modl1, modl2, i1, &i2, invm, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  redc320_round_v3(modl0, modl1, modl2, i2, &i3, invm, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  redc320_round_v3(modl0, modl1, modl2, i3, &i4, invm, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y);
-  redc320_round_v3(modl0, modl1, modl2, i4, &i5, invm, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z);
-  redc320_round_v3(modl0, modl1, modl2, i5, &i6, invm, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w);
-  redc320_round_v3(modl0, modl1, modl2, i6, &i7, invm, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x);
-  redc320_round_v3(modl0, modl1, modl2, i7, &i8, invm, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y);
-  redc320_round_v3(modl0, modl1, modl2, i8, &i9, invm, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z);
-
-  {
-    uint4 M1l0 = mul_hi(modl0, i9);
-    uint4 M1l1 = mul_hi(modl1, i9);    
-    uint4 M1l2 = {
-      mul_hi(modl2.x, i9),
-      mul_hi(modl2.y, i9),
-      0,
-      0
-    };
-    R2z += M1l0.x;
-    R2w += M1l0.y; Int.v64 = R2z; R2w += Int.v32.y;
-    R3x += M1l0.z; Int.v64 = R2w; R3x += Int.v32.y;
-    R3y += M1l0.w; Int.v64 = R3x; R3y += Int.v32.y;
-    R3z += M1l1.x; Int.v64 = R3y; R3z += Int.v32.y;
-    R3w += M1l1.y; Int.v64 = R3z; R3w += Int.v32.y;
-    R4x += M1l1.z; Int.v64 = R3w; R4x += Int.v32.y;
-    R4y += M1l1.w; Int.v64 = R4x; R4y += Int.v32.y;
-    R4z += M1l2.x; Int.v64 = R4y; R4z += Int.v32.y;
-    R4w += M1l2.y; Int.v64 = R4z; R4w += Int.v32.y;
-  }
-  
-  *rl0 = (uint4){R2z, R2w, R3x, R3y};
-  *rl1 = (uint4){R3z, R3w, R4x, R4y};  
-  *rl2 = (uint4){R4z, R4w, 0, 0};    
-  
-  {
-    Int.v64 = R4w;
-    uint4 l0 = Int.v32.y ? modl0 : (uint4){0, 0, 0, 0};
-    uint4 l1 = Int.v32.y ? modl1 : (uint4){0, 0, 0, 0};
-    uint2 l2 = Int.v32.y ? modl2 : (uint2){0, 0};    
-    sub320(rl0, rl1, rl2, l0, l1, l2);
-  }
-}
-
-void mul320roundNoCarry(uint4 op1l0, uint4 op1l1, uint2 op1l2, uint32_t m1, uint32_t m2,
-                        uint64_t *R0, uint64_t *R1, uint64_t *R2, uint64_t *R3,
-                        uint64_t *R4, uint64_t *R5, uint64_t *R6, uint64_t *R7,
-                        uint64_t *R8, uint64_t *R9)
-{
-  uint4 m1l0 = mul_hi(op1l0, m1);
-  uint4 m1l1 = mul_hi(op1l1, m1);
-  uint2 m1l2 = mul_hi(op1l2, m1);
-  
-  uint4 m2l0 = op1l0 * m2;
-  uint4 m2l1 = op1l1 * m2;
-  uint2 m2l2 = op1l2 * m2;
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;
-  *R0 += m1l0.x; *R0 += m2l0.x;
-  *R1 += m1l0.y; *R1 += m2l0.y;
-  *R2 += m1l0.z; *R2 += m2l0.z;
-  *R3 += m1l0.w; *R3 += m2l0.w;
-  *R4 += m1l1.x; *R4 += m2l1.x;
-  *R5 += m1l1.y; *R5 += m2l1.y;
-  *R6 += m1l1.z; *R6 += m2l1.z;
-  *R7 += m1l1.w; *R7 += m2l1.w;  
-  *R8 += m1l2.x; *R8 += m2l2.x;
-  *R9 += m1l2.y; *R9 += m2l2.y;
-}
-
-
-void montgomeryMul320(uint4 *rl0, uint4 *rl1, uint2 *rl2,
-                      uint4 ml0, uint4 ml1, uint2 ml2, 
-                      uint4 modl0, uint4 modl1, uint2 modl2,
-                      uint32_t invm)
-{
-#define b1 ml2.y
-#define b2 ml2.x
-#define b3 ml1.w
-#define b4 ml1.z
-#define b5 ml1.y
-#define b6 ml1.x
-#define b7 ml0.w
-#define b8 ml0.z
-#define b9 ml0.y
-#define b10 ml0.x  
-
-  ulong R0x = (*rl0).x * b10;
-  ulong R0y = (*rl0).y * b10;
-  ulong R0z = (*rl0).z * b10;
-  ulong R0w = (*rl0).w * b10;
-  ulong R1x = (*rl1).x * b10;
-  ulong R1y = (*rl1).y * b10;
-  ulong R1z = (*rl1).z * b10;
-  ulong R1w = (*rl1).w * b10;  
-  ulong R2x = (*rl2).x * b10;
-  ulong R2y = (*rl2).y * b10;
-  ulong R2z = mul_hi((*rl0).x, b1);
-  ulong R2w = mul_hi((*rl0).y, b1);
-  ulong R3x = mul_hi((*rl0).z, b1);
-  ulong R3y = mul_hi((*rl0).w, b1);
-  ulong R3z = mul_hi((*rl1).x, b1);
-  ulong R3w = mul_hi((*rl1).y, b1);
-  ulong R4x = mul_hi((*rl1).z, b1);
-  ulong R4y = mul_hi((*rl1).w, b1);
-  ulong R4z = mul_hi((*rl2).x, b1);
-  ulong R4w = mul_hi((*rl2).y, b1);
-  
-  mul320roundNoCarry(*rl0, *rl1, *rl2, b10, b9, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z);
-  mul320roundNoCarry(*rl0, *rl1, *rl2, b9, b8, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  mul320roundNoCarry(*rl0, *rl1, *rl2, b8,  b7, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  mul320roundNoCarry(*rl0, *rl1, *rl2,  b7,  b6, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y);
-  mul320roundNoCarry(*rl0, *rl1, *rl2,  b6,  b5, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z);
-  mul320roundNoCarry(*rl0, *rl1, *rl2,  b5,  b4, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w);
-  mul320roundNoCarry(*rl0, *rl1, *rl2,  b4,  b3, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x);
-  mul320roundNoCarry(*rl0, *rl1, *rl2,  b3,  b2, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y);
-  mul320roundNoCarry(*rl0, *rl1, *rl2,  b2,  b1, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z);
-  
-#undef b1
-#undef b2
-#undef b3
-#undef b4
-#undef b5
-#undef b6
-#undef b7
-#undef b8
-#undef b9
-#undef b10
-  
-  uint32_t i0, i1, i2, i3, i4, i5, i6, i7, i8, i9;
-  
-  union {
-    uint2 v32;
-    ulong v64;
-  } Int;   
-  
-  i0 = R0x * invm;
-  {
-    uint4 M1l0 = modl0 * i0;
-    uint4 M1l1 = modl1 * i0;
-    uint4 M1l2 = {
-      modl2.x * i0,
-      modl2.y * i0,
-      0,
-      0
-    };
-    R0x += M1l0.x;
-    R0y += M1l0.y; Int.v64 = R0x; R0y += Int.v32.y;
-    R0z += M1l0.z;
-    R0w += M1l0.w;
-    R1x += M1l1.x;
-    R1y += M1l1.y;
-    R1z += M1l1.z;
-    R1w += M1l1.w;
-    R2x += M1l2.x;
-    R2y += M1l2.y;
-  }
-  
-  redc320_round_v3(modl0, modl1, modl2, i0, &i1, invm, &R0y, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z);
-  redc320_round_v3(modl0, modl1, modl2, i1, &i2, invm, &R0z, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w);
-  redc320_round_v3(modl0, modl1, modl2, i2, &i3, invm, &R0w, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x);
-  redc320_round_v3(modl0, modl1, modl2, i3, &i4, invm, &R1x, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y);
-  redc320_round_v3(modl0, modl1, modl2, i4, &i5, invm, &R1y, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z);
-  redc320_round_v3(modl0, modl1, modl2, i5, &i6, invm, &R1z, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w);
-  redc320_round_v3(modl0, modl1, modl2, i6, &i7, invm, &R1w, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x);
-  redc320_round_v3(modl0, modl1, modl2, i7, &i8, invm, &R2x, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y);
-  redc320_round_v3(modl0, modl1, modl2, i8, &i9, invm, &R2y, &R2z, &R2w, &R3x, &R3y, &R3z, &R3w, &R4x, &R4y, &R4z);
-
-  {
-    uint4 M1l0 = mul_hi(modl0, i9);
-    uint4 M1l1 = mul_hi(modl1, i9);    
-    uint4 M1l2 = {
-      mul_hi(modl2.x, i9),
-      mul_hi(modl2.y, i9),
-      0,
-      0
-    };
-    R2z += M1l0.x;
-    R2w += M1l0.y; Int.v64 = R2z; R2w += Int.v32.y;
-    R3x += M1l0.z; Int.v64 = R2w; R3x += Int.v32.y;
-    R3y += M1l0.w; Int.v64 = R3x; R3y += Int.v32.y;
-    R3z += M1l1.x; Int.v64 = R3y; R3z += Int.v32.y;
-    R3w += M1l1.y; Int.v64 = R3z; R3w += Int.v32.y;
-    R4x += M1l1.z; Int.v64 = R3w; R4x += Int.v32.y;
-    R4y += M1l1.w; Int.v64 = R4x; R4y += Int.v32.y;
-    R4z += M1l2.x; Int.v64 = R4y; R4z += Int.v32.y;
-    R4w += M1l2.y; Int.v64 = R4z; R4w += Int.v32.y;
-  }
-  
-  *rl0 = (uint4){R2z, R2w, R3x, R3y};
-  *rl1 = (uint4){R3z, R3w, R4x, R4y};  
-  *rl2 = (uint2){R4z, R4w};    
-  
-  {
-    Int.v64 = R4w;
-    uint4 l0 = Int.v32.y ? modl0 : (uint4){0, 0, 0, 0};
-    uint4 l1 = Int.v32.y ? modl1 : (uint4){0, 0, 0, 0};
-    uint2 l2 = Int.v32.y ? modl2 : (uint2){0, 0};    
-    sub320(rl0, rl1, rl2, l0, l1, l2);
-  }
-}
-
-void FermatTest320(uint4 *restrict limbs,
-                   uint4 *resultLimbs0, uint4 *resultLimbs1, uint4 *resultLimbs2)
+void FermatTest320(uint4 *restrict limbs, uint4 *redcl)
 {
   uint2 bitSize;
-  uint4 redcl0, redcl1, redcl2;
   uint32_t inverted = invert_limb(limbs[0].x);  
   
-  uint4 q0 = 0, q1 = 0;  
+//   uint4 q0 = 0, q1 = 0;  
+  uint4 q[2] = {0, 0};
   {
     uint4 dl4 = {0, 0, 0, 0};    
-    uint4 dl3 = {1, 0, 0, 0};
-    uint4 dl2 = {0, 0, 0, 0};
+    uint4 dl3 = {0, 0, 0, 0};
+    uint4 dl2 = {0, 0, 0, 1};
     uint4 dl1 = {0, 0, 0, 0};
     uint4 dl0 = {0, 0, 0, 0};
-    divq640to384(dl0, dl1, dl2, dl3, dl4, limbs[0], limbs[1], limbs[2], &q0, &q1);
+    divq640to384(dl0, dl1, dl2, dl3, dl4, limbs[0], limbs[1], limbs[2], &q[0], &q[1]);
   }
   
   
@@ -2119,7 +988,7 @@ void FermatTest320(uint4 *restrict limbs,
     uint4 dl2 = {0, 0, 2, 0};
     uint4 dl1 = {0, 0, 0, 0};
     uint4 dl0 = {0, 0, 0, 0};    
-    bitSize = modulo512to384(dl0, dl1, dl2, dl3, limbs[0], limbs[1], limbs[2], &redcl0, &redcl1, &redcl2);
+    bitSize = modulo512to384(dl0, dl1, dl2, dl3, limbs[0], limbs[1], limbs[2], &redcl[0], &redcl[1], &redcl[2]);
     --bitSize.y;
     if (bitSize.y == 0) {
       --bitSize.x;
@@ -2130,59 +999,52 @@ void FermatTest320(uint4 *restrict limbs,
   uint32_t *data = (uint32_t*)limbs;
   int remaining = (bitSize.x-1)*32 + bitSize.y;
   
+  const int windowSize = 5;
   while (remaining > 0) {
-    int bitPos = max(remaining-6, 0);
-    int size = min(remaining, 6);
+    int bitPos = max(remaining-windowSize, 0);
+    int size = min(remaining, windowSize);
     
-    uint64_t v64 = *(uint64_t*)(data+bitPos/32) - (remaining <= 6 ? 1 : 0);
+    uint64_t v64 = *(uint64_t*)(data+bitPos/32) - (remaining <= windowSize ? 1 : 0);
     v64 >>= bitPos % 32;
     uint32_t index = ((uint32_t)v64) & ((1 << size) - 1);
-    
-    uint4 m0, m1, m2;
+
+    uint4 m[3];
     for (unsigned i = 0; i < size; i++)
-      montgomerySqr320(&redcl0, &redcl1, &redcl2, limbs[0], limbs[1], (uint2){limbs[2].x, limbs[2].y}, inverted);
-    redcify320(index, q0, q1, limbs[0], limbs[1], limbs[2], &m0, &m1, &m2);
-    montgomeryMul320(&redcl0, &redcl1, (uint2*)&redcl2,
-                     m0, m1, (uint2){m2.x, m2.y},
-                     limbs[0], limbs[1], (uint2){limbs[2].x, limbs[2].y}, inverted);
-    
-    remaining -= 6;
+      monSqr320(redcl, limbs, inverted);
+    redcify320(index, q, limbs, m, windowSize);
+    monMul320(redcl, m, limbs, inverted);   
+    remaining -= windowSize;
   }
   
-  redc1_320_v3(redcl0, redcl1, redcl2, 0, 0,
-               limbs[0], limbs[1], (uint2){limbs[2].x, limbs[2].y},
-               inverted,
-               resultLimbs0, resultLimbs1, resultLimbs2); 
+  barrier(CLK_LOCAL_MEM_FENCE);  
+  redcHalf320(redcl, limbs, inverted);
 }
-
-
 
 bool fermat352(const uint* p) {
-  uint4 modpowl0, modpowl1, modpowl2;
-  FermatTest352((const uint4*)p, &modpowl0, &modpowl1, &modpowl2);
+  uint4 modpowl[3];
+  FermatTest352((const uint4*)p, modpowl);
   
-  --modpowl0.x;
-  modpowl0 |= modpowl1;
-  modpowl0.xy |= modpowl0.zw;
-  modpowl0.x |= modpowl0.y;
-  modpowl0.x |= modpowl2.x;
-  modpowl0.x |= modpowl2.y;  
-  modpowl0.x |= modpowl2.z;  
-  return modpowl0.x == 0;
+  --modpowl[0].x;
+  modpowl[0] |= modpowl[1];
+  modpowl[0].xy |= modpowl[0].zw;
+  modpowl[0].x |= modpowl[0].y;
+  modpowl[0].x |= modpowl[2].x;
+  modpowl[0].x |= modpowl[2].y;  
+  modpowl[0].x |= modpowl[2].z;  
+  return modpowl[0].x == 0;
 }
 
-
 bool fermat320(const uint* p) {
-  uint4 modpowl0, modpowl1, modpowl2;
-  FermatTest320((const uint4*)p, &modpowl0, &modpowl1, &modpowl2);
+  uint4 modpowl[3];
+  FermatTest320((const uint4*)p, modpowl);
   
-  --modpowl0.x;
-  modpowl0 |= modpowl1;
-  modpowl0.xy |= modpowl0.zw;
-  modpowl0.x |= modpowl0.y;
-  modpowl0.x |= modpowl2.x;
-  modpowl0.x |= modpowl2.y;  
-  return modpowl0.x == 0;
+  --modpowl[0].x;
+  modpowl[0] |= modpowl[1];
+  modpowl[0].xy |= modpowl[0].zw;
+  modpowl[0].x |= modpowl[0].y;
+  modpowl[0].x |= modpowl[2].x;
+  modpowl[0].x |= modpowl[2].y;  
+  return modpowl[0].x == 0;
 }
 
 

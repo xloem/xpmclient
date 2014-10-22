@@ -362,7 +362,7 @@ __kernel void s_sieve(	__global const uint* gsieve1,
 		if(mask != 0xFFFFFFFF) {
       unsigned bit = 31-clz(~mask);
       unsigned multiplier = mad24(id, 32u, (unsigned)bit) + SIZE*32*STRIPES/2;
-      unsigned maxSize = hashSize + (32-clz(multiplier)) + start + depth;
+      unsigned maxSize = hashSize + (32-clz(multiplier)) + start + (depth/2) + (depth&1);
       const uint addr = atomic_inc(&fcount[(maxSize <= 320) ? 0 : 1]);     
       __global fermat_t *found = (maxSize <= 320) ? found320 : found352;
 					

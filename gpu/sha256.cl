@@ -5,8 +5,7 @@
  *      Author: mad
  */
 
-
-
+#define BITALIGN
 
 __constant uint k[] = {
    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -21,15 +20,27 @@ __constant uint k[] = {
 __constant uint h_init[] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
 
 #define HashPrimorial 14
-#define Zrotr(a, b) rotate((uint)a, (uint)b)
+
+#ifdef BITALIGN
+  #pragma OPENCL EXTENSION cl_amd_media_ops : enable
+  #define Zrotr(a, b) amd_bitalign((uint)a, (uint)a, (uint)(32 - b))
+  #ifdef BFI_INT
+    #define Ch(x, y, z) amd_bytealign(x, y, z)
+    #define Ma(x, y, z) amd_bytealign(z ^ x, y, x)
+  #else
+    #define Ch(x, y, z) bitselect(z, y, x)
+    #define Ma(z, x, y) bitselect(z, y, z ^ x)
+  #endif
+#else
+  #define Zrotr(a, b) rotate((uint)a, (uint)b)
+  #define Ch(x, y, z) (z ^ (x & (y ^ z)))
+  #define Ma(x, y, z) ((x & z) | (y & (x | z)))
+#endif
 
 #define ZR25(n) ((Zrotr((n), 25) ^ Zrotr((n), 14) ^ ((n) >> 3U)))
 #define ZR15(n) ((Zrotr((n), 15) ^ Zrotr((n), 13) ^ ((n) >> 10U)))
 #define ZR26(n) ((Zrotr((n), 26) ^ Zrotr((n), 21) ^ Zrotr((n), 7)))
 #define ZR30(n) ((Zrotr((n), 30) ^ Zrotr((n), 19) ^ Zrotr((n), 10)))
-
-#define Ch(x, y, z) (z ^ (x & (y ^ z)))
-#define Ma(x, y, z) ((x & z) | (y & (x | z)))
 
 
 void sha256(	const uint* msg,
@@ -283,3 +294,162 @@ __kernel void bhashmod(__global uint* found,
 	}
 }
 
+void sha256UsePrecalc(const uint *msg,
+                      uint *s,
+                      const uint32_t *WData, int WSize,
+                      const uint32_t *new1Data, int new1Size,
+                      const uint32_t *new2Data, int new2Size,
+                      const uint32_t *temp2Data, int tmp2Size)
+{
+  uint w[64];
+  
+#pragma unroll  
+  for(int i = 0; i < 16; ++i)
+    w[i] = msg[i];
+  
+#pragma unroll    
+  for (int i = 0; i < WSize; i++)
+    w[i+16] = WData[i];
+  
+#pragma unroll  
+  for(int i = 16+WSize; i < 64; ++i){
+    const uint s0 = ZR25(w[i-15]);
+    const uint s1 = ZR15(w[i-2]);
+    w[i] = w[i-16] + s0 + w[i-7] + s1;
+  }
+  
+  uint a = s[0];
+  uint b = s[1];
+  uint c = s[2];
+  uint d = s[3];
+  uint e = s[4];
+  uint f = s[5];
+  uint g = s[6];
+  uint h = s[7];
+  
+#pragma unroll  
+  for(int i = 0; i < 64; ++i){
+    const uint S1 = ZR26(e);
+    const uint ch = Ch(e, f, g);
+     
+    const uint temp1 = h + S1 + ch + k[i] + w[i];
+    const uint S0 = ZR30(a);
+    const uint maj = Ma(a, b, c);
+    const uint temp2 = S0 + maj;
+    
+    h = g;
+    g = f;
+    f = e;
+    if (i < new2Size)
+      e = new2Data[i];
+    else
+      e = d + temp1;
+    d = c;
+    c = b;
+    b = a;
+    if (i < new1Size)
+      a = new1Data[i];
+    else if (i < tmp2Size)
+      a = temp1 + temp2Data[i];
+    else
+      a = temp1 + temp2;
+  }
+  
+  s[0] += a;
+  s[1] += b;
+  s[2] += c;
+  s[3] += d;
+  s[4] += e;
+  s[5] += f;
+  s[6] += g;
+  s[7] += h;
+}
+
+__attribute__((reqd_work_group_size(256, 1, 1)))
+__kernel void bhashmodUsePrecalc(__global uint *found,
+                        __global uint *fcount,
+                        __global uint *resultPrimorial,
+                        __constant* midstate,
+                        uint merkle,
+                        uint time,
+                        uint nbits,
+                        uint W0,
+                        uint W1,
+                        uint new1_0,
+                        uint new1_1,
+                        uint new1_2,
+                        uint new2_0,
+                        uint new2_1,
+                        uint new2_2,
+                        uint temp2_3)
+{
+  const uint id = get_global_id(0);
+  
+  uint msg[16];
+  msg[0] = merkle;
+  msg[1] = time;
+  msg[2] = nbits;
+  msg[3] = sha2_pack(id);
+  msg[4] = sha2_pack(0x80);
+  
+#pragma unroll  
+  for(int i = 5; i < 15; ++i)
+    msg[i] = 0;
+  msg[15] = 640;
+  
+  uint state[9];
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = midstate[i];
+
+  uint32_t W[2] = {W0, W1};
+  uint32_t new1[3] = {new1_0, new1_1, new1_2};
+  uint32_t new2[3] = {new2_0, new2_1, new2_2};
+  uint32_t temp2[4] = {0, 0, 0, temp2_3};  
+
+  sha256UsePrecalc(msg, state, W, 2, new1, 3, new2, 3, temp2, 4);
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    msg[i] = state[i];
+  msg[8] = sha2_pack(0x80);
+  msg[15] = 256;
+  
+#pragma unroll  
+  for(int i = 0; i < 8; ++i)
+    state[i] = h_init[i];
+  
+  sha256(msg, state);
+  for(int i = 0; i < 8; ++i)
+    state[i] = sha2_pack(state[i]);
+
+  if (state[7] & (1u << 31)) {
+    uint32_t count = !(state[0] & 0x1);
+    uint32_t primorialBitField = count;
+    state[8] = 0;
+    
+    {
+      uint32_t acc = sum24(state, 8, modulos24one);
+#pragma unroll
+      for (unsigned i = 0; i < 5; i++) {
+        unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
+        primorialBitField |= (isDivisor << indexesOne[i]);
+        count += isDivisor;
+      }
+    }
+    
+#pragma unroll
+    for (unsigned i = 0; i < HashPrimorial-5; i++) {
+      unsigned isDivisor =
+        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
+        primorialBitField |= (isDivisor << indexes[i]);
+      count += isDivisor;
+    }
+
+    if (count >= 8) {
+      const uint index = atomic_inc(fcount);
+      resultPrimorial[index] = primorialBitField;
+      found[index] = id;
+    }
+  }
+}

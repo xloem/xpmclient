@@ -81,7 +81,7 @@ bool PrimeMiner::Initialize(cl_device_id dev) {
 	
 	cl_int error;
   
-  mHashMod = clCreateKernel(gProgram, "bhashmod", &error);
+  mHashMod = clCreateKernel(gProgram, "bhashmodUsePrecalc", &error);
 	mSieveSetup = clCreateKernel(gProgram, "setup_sieve", &error);
 	mSieve = clCreateKernel(gProgram, "sieve", &error);
 	mSieveSearch = clCreateKernel(gProgram, "s_sieve", &error);
@@ -440,14 +440,8 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				printf("ERROR: This miner is compiled with the wrong target: %d (required target %d)\n", mConfig.TARGET, target);
 				return;
 			}
-			
-			SHA_256 sha;
-			sha.init();
-			sha.transform((const unsigned char*)&blockheader, 1u);
-			for(int i = 0; i < 8; ++i)
-				hashmod.midstate[i] = sha.m_h[i];
-			hashmod.midstate.copyToDevice(mBig, false);
-			
+
+			simplePrecalcSHA256(&blockheader, hashmod.midstate, mBig, mHashMod);
 		}
 		
 		// hashmod fetch & dispatch
@@ -521,18 +515,9 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				if(blockheader.nonce > (1u << 31)){
 					blockheader.time += mThreads;
 					blockheader.nonce = 1;
+          simplePrecalcSHA256(&blockheader, hashmod.midstate, mBig, mHashMod);
 				}
 				
-//  				printf("hashmod: numhash=%d time=%d nonce=%d\n", numhash, blockheader.time, blockheader.nonce);
-				cl_uint msg_merkle = blockheader.hashMerkleRoot.Get64(3) >> 32;
-				cl_uint msg_time = blockheader.time;
-				cl_uint msg_bits = blockheader.bits;
-				SHA2_PACK32(&msg_merkle, &msg_merkle);
-				SHA2_PACK32(&msg_time, &msg_time);
-				SHA2_PACK32(&msg_bits, &msg_bits);
-				OCL(clSetKernelArg(mHashMod, 4, sizeof(cl_uint), &msg_merkle));
-				OCL(clSetKernelArg(mHashMod, 5, sizeof(cl_uint), &msg_time));
-				OCL(clSetKernelArg(mHashMod, 6, sizeof(cl_uint), &msg_bits));
 				size_t globalOffset[] = { blockheader.nonce, 1, 1 };
 				size_t globalSize[] = { numhash, 1, 1 };
 				hashmod.count.copyToDevice(mBig, false);
@@ -640,9 +625,9 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				chainorg *= multi;
 				
 				testParams.nCandidateType = candi.type;
-				bool isblock = ProbablePrimeChainTestFast(chainorg, testParams);
-				
+        bool isblock = ProbablePrimeChainTestFast(chainorg, testParams, mDepth);
 				unsigned chainlength = TargetGetLength(testParams.nChainLength);
+
 				/*printf("candi %d: hashid=%d index=%d origin=%d type=%d length=%d\n",
 						i, candi.hashid, candi.index, candi.origin, candi.type, chainlength);*/
 				if(chainlength >= block.minshare()){
@@ -694,7 +679,6 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 			break;
 		
 		iteration++;
-		
 	}
 	
 	printf("GPU %d stopped.\n", mID);
@@ -793,7 +777,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	}
 	
 	if(iplatform < 0){
-		printf("ERROR: AMD APP SDK not found.\n");
+		printf("ERROR: %s found.\n", platformName);
 		return false;
 	}
 	
@@ -905,10 +889,15 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 		
 		printf("Compiling ...\n");
 		std::string sourcefile;
+    {
+      std::ifstream t("gpu/procs.cl");
+      std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+      sourcefile = str;
+    }    
 		{
 			std::ifstream t("gpu/fermat.cl");
 			std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-			sourcefile = str;
+			sourcefile.append(str);
 		}
 		{
 			std::ifstream t("gpu/sieve.cl");
@@ -1180,24 +1169,8 @@ void XPMClient::setup_adl(){
 		if(mPowertune[i] >= -20 && mPowertune[i] <= 20)
 			if(set_powertune(i, mPowertune[i]))
 				printf("set_powertune(%d, %d) failed.\n", i, mPowertune[i]);
-                if(set_fanspeed(i, mFanSpeed[i]))
-                        printf("set_fanspeed(%d, %d) failed.\n", i, mFanSpeed[i]);
-		
+    if (mFanSpeed[i] > 0)
+      if(set_fanspeed(i, mFanSpeed[i]))
+        printf("set_fanspeed(%d, %d) failed.\n", i, mFanSpeed[i]);
 	}
-	
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
