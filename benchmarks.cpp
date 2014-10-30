@@ -441,7 +441,7 @@ void fermatTestBenchmark(cl_command_queue queue,
 }
 
 
-void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned groupsNum)
+void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned groupsNum, mpz_class *allPrimorials, unsigned mPrimorial)
 {
   printf("\n *** hashmod benchmark ***\n");  
   
@@ -452,7 +452,7 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
   PrimeMiner::block_t blockheader;
   
   hashmod.midstate.init(8*sizeof(cl_uint), CL_MEM_READ_ONLY);
-  hashmod.found.init(2048, CL_MEM_READ_WRITE);
+  hashmod.found.init(32768, CL_MEM_READ_WRITE);
   hashmod.primorialBitField.init(2048, CL_MEM_READ_WRITE);
   hashmod.count.init(1, CL_MEM_READ_WRITE);
 
@@ -466,7 +466,9 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
   int numhash = 64 * 131072;
 
   unsigned hashm[32];
+  unsigned multiplierSizes[128];
   memset(hashm, 0, sizeof(hashm));
+  memset(multiplierSizes, 0, sizeof(multiplierSizes));
   
   for (unsigned i = 0; i < iterationsNum; i++) {
     {
@@ -529,17 +531,19 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
       b.nonce = hashmod.found[i];      
       
       uint32_t primorialBitField = hashmod.primorialBitField[i];
+      uint32_t primorialIdx = primorialBitField >> 16;
       uint64_t realPrimorial = 1;
-      unsigned primorialIdx = 0;
-      for (unsigned j = 0; j < maxHashPrimorial; j++) {
-        if (primorialBitField & (1 << j)) {
-          primorialIdx = j;
+      for (unsigned j = 0; j < primorialIdx+1; j++) {
+        if (primorialBitField & (1 << j))
           realPrimorial *= gPrimes[j];
-        }
       }      
       
       mpz_class mpzRealPrimorial;        
       mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);            
+      primorialIdx = std::max(mPrimorial, primorialIdx) - mPrimorial;
+      mpz_class mpzHashMultiplier = allPrimorials[primorialIdx] / mpzRealPrimorial;
+      unsigned hashMultiplierSize = mpz_sizeinbase(mpzHashMultiplier.get_mpz_t(), 2);      
+      multiplierSizes[hashMultiplierSize]++;
       
       SHA_256 sha;
       sha.init();
@@ -582,12 +586,22 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
       printf("   * [%u] %.3lf (%.3lf%%)\n", i, (double)hashm[i] / iterationsNum, (double)hashm[i] / (double)totalHashes * 100.0);
   }
   printf("\n");
-  
+ 
+  uint64_t totalSize = 0;
+  unsigned hashes = 0;
+  for (unsigned i = 0; i < 128; i++) {
+    if (multiplierSizes[i]) {
+      hashes += multiplierSizes[i];
+      totalSize += multiplierSizes[i] * i;
+    }
+  }
+  printf("average size: %.3lf\n", totalSize / (double)hashes);  
 }
 
 void sieveTestBenchmark(cl_command_queue queue,
                         cl_kernel *kernels,
                         unsigned groupsNum,
+                        mpz_class *allPrimorial,
                         unsigned mPrimorial,
                         config_t mConfig,
                         unsigned mDepth,
@@ -608,8 +622,7 @@ void sieveTestBenchmark(cl_command_queue queue,
   clBuffer<cl_uint> sieveOff[2];  
   clBuffer<PrimeMiner::fermat_t> sieveBuffers[64][FERMAT_PIPELINES];
   clBuffer<cl_uint> candidatesCountBuffers[64];
- 
-  mpz_class primorial[maxHashPrimorial];  
+
   cl_mem primeBuf[maxHashPrimorial];
   cl_mem primeBuf2[maxHashPrimorial];
   
@@ -621,12 +634,6 @@ void sieveTestBenchmark(cl_command_queue queue,
     primeBuf2[i] = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                   mConfig.PCOUNT*2*sizeof(cl_uint), &gPrimes2[2*(mPrimorial+i)+2], &error);
     OCL(error);
-    
-    mpz_class p = 1;
-    for(unsigned j = 0; j <= mPrimorial+i; j++)
-      p *= gPrimes[j];
-    
-    primorial[i] = p;
   }
   
   clBuffer<cl_uint> modulosBuf[maxHashPrimorial];
@@ -712,18 +719,18 @@ void sieveTestBenchmark(cl_command_queue queue,
     hash.time = blockheader.time;
     hash.nonce = hashmod.found[i];
     uint32_t primorialBitField = hashmod.primorialBitField[i];
+    uint32_t primorialIdx = primorialBitField >> 16;
     uint64_t realPrimorial = 1;
-    unsigned primorialIdx = 0;
-    for (unsigned j = 0; j < maxHashPrimorial; j++) {
-      if (primorialBitField & (1 << j)) {
-        primorialIdx = j;
+    for (unsigned j = 0; j < primorialIdx+1; j++) {
+      if (primorialBitField & (1 << j))
         realPrimorial *= gPrimes[j];
-      }
     }      
     
-    primorialIdx = std::max(mPrimorial, primorialIdx) - mPrimorial;
-    
     mpz_class mpzRealPrimorial;        
+    mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);            
+    primorialIdx = std::max(mPrimorial, primorialIdx) - mPrimorial;
+    mpz_class mpzHashMultiplier = allPrimorial[primorialIdx] / mpzRealPrimorial;
+    unsigned hashMultiplierSize = mpz_sizeinbase(mpzHashMultiplier.get_mpz_t(), 2);      
     mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);        
     
     PrimeMiner::block_t b = blockheader;
@@ -751,7 +758,7 @@ void sieveTestBenchmark(cl_command_queue queue,
 
     mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
     hash.primorialIdx = primorialIdx;
-    hash.primorial = primorial[primorialIdx] / mpzRealPrimorial;
+    hash.primorial = mpzHashMultiplier;
     hash.shash = mpzHash * hash.primorial;      
     
     unsigned hid = hashes.push(hash);
@@ -901,12 +908,13 @@ void sieveTestBenchmark(cl_command_queue queue,
 void runBenchmarks(cl_context context,
                    cl_program program,
                    cl_device_id deviceId,
-                   unsigned primorial,
+                   unsigned mPrimorial,
                    unsigned depth)
 {
   char deviceName[128] = {0};
   cl_uint computeUnits;
   clBuffer<config_t> mConfig;
+  mpz_class allPrimorials[maxHashPrimorial];
 
   clGetDeviceInfo(deviceId, CL_DEVICE_NAME, sizeof(deviceName), deviceName, 0);
   clGetDeviceInfo(deviceId, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(computeUnits), &computeUnits, 0);
@@ -940,6 +948,16 @@ void runBenchmarks(cl_context context,
     clFinish(queue);
   }  
   
+  {
+    for (unsigned i = 0; i < maxHashPrimorial - mPrimorial; i++) {
+      mpz_class p = 1;
+      for(unsigned j = 0; j <= mPrimorial+i; j++)
+        p *= gPrimes[j];
+      
+      allPrimorials[i] = p;
+    }    
+  }  
+  
   multiplyBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 262144, true);  
    
   multiplyBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 262144, true);
@@ -950,7 +968,7 @@ void runBenchmarks(cl_context context,
   fermatTestBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 131072);
   fermatTestBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 131072);   
 
-  hashmodBenchmark(queue, kernels.get(), 0);
-  sieveTestBenchmark(queue, kernels.get(), computeUnits*4, primorial, *mConfig.HostData, depth, true);
-  sieveTestBenchmark(queue, kernels.get(), computeUnits*4, primorial, *mConfig.HostData, depth, false);  
+  hashmodBenchmark(queue, kernels.get(), 0, allPrimorials, mPrimorial);
+  sieveTestBenchmark(queue, kernels.get(), computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
+  sieveTestBenchmark(queue, kernels.get(), computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);  
 }

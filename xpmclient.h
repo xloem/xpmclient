@@ -24,7 +24,7 @@
 #define MSO 128*1024  // max sieve output
 #define MFS 2*SW*MSO  // max fermat size
 
-const unsigned maxHashPrimorial = 19;
+const unsigned maxHashPrimorial = 16;
 
 extern unsigned gPrimes[96*1024];
 extern std::vector<unsigned> gPrimes2;

@@ -19,7 +19,7 @@ __constant uint k[] = {
 
 __constant uint h_init[] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
 
-#define HashPrimorial 14
+#define HashPrimorial 19
 
 #ifdef BITALIGN
   #pragma OPENCL EXTENSION cl_amd_media_ops : enable
@@ -190,6 +190,10 @@ __constant uint32_t offsets32[] = {
 };
 
 // * using 24-bit arithmetic with primes 53,67 can produce wrong results!
+
+__constant unsigned gPrimes[] = {
+  2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73
+};
 
 uint32_t sum24(const uint32_t *data, unsigned size, __constant uint32_t *moddata)
 {
@@ -365,6 +369,7 @@ void sha256UsePrecalc(const uint *msg,
   s[7] += h;
 }
 
+
 __attribute__((reqd_work_group_size(256, 1, 1)))
 __kernel void bhashmodUsePrecalc(__global uint *found,
                         __global uint *fcount,
@@ -438,17 +443,32 @@ __kernel void bhashmodUsePrecalc(__global uint *found,
       }
     }
     
-#pragma unroll
+    unsigned lastBit = 0;
+#pragma unroll    
     for (unsigned i = 0; i < HashPrimorial-5; i++) {
       unsigned isDivisor =
         divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
-        primorialBitField |= (isDivisor << indexes[i]);
-      count += isDivisor;
+      primorialBitField |= (isDivisor << indexes[i]);
+      lastBit = isDivisor ? i+5 : lastBit;
     }
 
-    if (count >= 8) {
+    const unsigned limit13 = 26;
+    const unsigned limit14 = 33;
+    
+    uint64_t prod = 1;
+    for (unsigned i = 0; i < 14; i++)
+      prod *= ((primorialBitField & (1 << i)) ? 1 : gPrimes[i]);
+    
+    if (lastBit <= 13 && (64-clz(prod)) < limit13) {
       const uint index = atomic_inc(fcount);
-      resultPrimorial[index] = primorialBitField;
+      resultPrimorial[index] = (primorialBitField & 0xFFFF) | (13u << 16);
+      found[index] = id;
+    }
+    
+    prod *= ((primorialBitField & (1 << 14)) ? 1 : gPrimes[14]);
+    if ((64-clz(prod)) < limit14) {
+      const uint index = atomic_inc(fcount);
+      resultPrimorial[index] = (primorialBitField & 0xFFFF) | (14u << 16);
       found[index] = id;
     }
   }

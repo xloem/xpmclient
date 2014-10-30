@@ -294,8 +294,8 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	}
 	
 	hashmod.midstate.init(8*sizeof(cl_uint), CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY);
-	hashmod.found.init(2048, CL_MEM_ALLOC_HOST_PTR);
-  hashmod.primorialBitField.init(2048, CL_MEM_ALLOC_HOST_PTR);
+	hashmod.found.init(128, CL_MEM_ALLOC_HOST_PTR);
+  hashmod.primorialBitField.init(128, CL_MEM_ALLOC_HOST_PTR);
 	hashmod.count.init(1, CL_MEM_ALLOC_HOST_PTR);
 	hashBuf.init(PW*mConfig.N, CL_MEM_READ_WRITE);
 	
@@ -453,18 +453,18 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				hash.time = blockheader.time;
 				hash.nonce = hashmod.found[i];
         uint32_t primorialBitField = hashmod.primorialBitField[i];
+        uint32_t primorialIdx = primorialBitField >> 16;
         uint64_t realPrimorial = 1;
-        unsigned primorialIdx = 0;
-        for (unsigned i = 0; i < maxHashPrimorial; i++) {
-          if (primorialBitField & (1 << i)) {
-            primorialIdx = i;
-            realPrimorial *= gPrimes[i];
-          }
-        }
+        for (unsigned j = 0; j < primorialIdx+1; j++) {
+          if (primorialBitField & (1 << j))
+            realPrimorial *= gPrimes[j];
+        }      
         
-        primorialIdx = std::max(mPrimorial, primorialIdx) - mPrimorial;
-
         mpz_class mpzRealPrimorial;        
+        mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);            
+        primorialIdx = std::max(mPrimorial, primorialIdx) - mPrimorial;
+        mpz_class mpzHashMultiplier = primorial[primorialIdx] / mpzRealPrimorial;
+        unsigned hashMultiplierSize = mpz_sizeinbase(mpzHashMultiplier.get_mpz_t(), 2);      
         mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);        
 				
 				block_t b = blockheader;
@@ -493,7 +493,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				}
 				
 				hash.primorialIdx = primorialIdx;
-				hash.primorial = primorial[primorialIdx] / mpzRealPrimorial;
+        hash.primorial = mpzHashMultiplier;
         hash.shash = mpzHash * hash.primorial;       
 
         unsigned hid = hashes.push(hash);

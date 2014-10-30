@@ -930,7 +930,6 @@ void FermatTest352(uint4 *restrict limbs,
     remaining -= windowSize;
   }
 
-  barrier(CLK_LOCAL_MEM_FENCE);
   redcHalf352(redcl, limbs, inverted);
 }
 
@@ -1016,7 +1015,6 @@ void FermatTest320(uint4 *restrict limbs, uint4 *redcl)
     remaining -= windowSize;
   }
   
-  barrier(CLK_LOCAL_MEM_FENCE);  
   redcHalf320(redcl, limbs, inverted);
 }
 

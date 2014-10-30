@@ -7,6 +7,7 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
 )
 
 include(FindDependencies)
+find_package(Protobuf REQUIRED)
 
 include_directories(
   ${GMP_INCLUDE_DIRECTORY}
@@ -15,6 +16,7 @@ include_directories(
   ${PROTOBUF_INCLUDE_DIRECTORY}
   ${OPENCL_INCLUDE_DIRECTORY}
   ${CMAKE_SOURCE_DIR}/config4cpp/include
+  ${CMAKE_BINARY_DIR}
 )
 
 if (WIN32)
@@ -34,15 +36,17 @@ endif()
 file(GLOB config4cppFiles "${CMAKE_SOURCE_DIR}/config4cpp/src/*.cpp")
 add_library(config4cpp ${config4cppFiles})
 
+PROTOBUF_GENERATE_CPP(ProtoSources ProtoHeaders ${CMAKE_SOURCE_DIR}/protocol.proto)
+
 add_executable(xpmclient
   adl.cpp
   baseclient.cpp
   prime.cpp
   primes.cpp
-  protocol.pb.cpp
   sha256.cpp
   xpmclient.cpp
   benchmarks.cpp
+  ${ProtoSources}
 )
 
 SET_TARGET_PROPERTIES(xpmclient PROPERTIES
