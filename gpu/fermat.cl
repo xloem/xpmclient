@@ -880,11 +880,12 @@ void FermatTest352(uint4 *restrict limbs,
                       uint4 *redcl)
 {
   uint2 bitSize;
-//   uint4 redcl0, redcl1, redcl2;
   uint32_t inverted = invert_limb(limbs[0].x);  
   
-//   uint4 q0 = 0, q1 = 0;  
-  uint4 q[2] = {0, 0};
+  uint4 q[2];
+  q[0] = 0;
+  q[1] = 0;
+  
   {
     uint4 dl4 = {0, 0, 0, 0};    
     uint4 dl3 = {0, 0, 0, 1};
@@ -910,14 +911,18 @@ void FermatTest352(uint4 *restrict limbs,
   }
   
   const int windowSize = 7;  
-  uint32_t *data = (uint32_t*)limbs;
   int remaining = (bitSize.x-1)*32 + bitSize.y;
+  
+  uint32_t data[12];
+  for (unsigned i = 0; i < 11; i++)
+    data[i] = ((uint32_t*)limbs)[i];  
+  data[0]--;  
   
   while (remaining > 0) {
     int bitPos = max(remaining-windowSize, 0);
     int size = min(remaining, windowSize);
     
-    uint64_t v64 = *(uint64_t*)(data+bitPos/32) - (remaining <= windowSize ? 1 : 0);
+    uint64_t v64 = *(uint64_t*)(data+bitPos/32);
     v64 >>= bitPos % 32;
     uint32_t index = ((uint32_t)v64) & ((1 << size) - 1);
 
@@ -940,7 +945,6 @@ void redcify320(unsigned shiftCount,
                 uint32_t *result,
                 uint32_t windowSize)
 {
-  uint4 mr0, mr1, mr2, mr3;
   uint4 q[2];
   q[0] = quotient[0];
   q[1] = quotient[1];
@@ -968,9 +972,11 @@ void FermatTest320(uint4 *restrict limbs, uint4 *redcl)
 {
   uint2 bitSize;
   uint32_t inverted = invert_limb(limbs[0].x);  
+
+  uint4 q[2];
+  q[0] = 0;
+  q[1] = 0;
   
-//   uint4 q0 = 0, q1 = 0;  
-  uint4 q[2] = {0, 0};
   {
     uint4 dl4 = {0, 0, 0, 0};    
     uint4 dl3 = {0, 0, 0, 0};
@@ -994,16 +1000,20 @@ void FermatTest320(uint4 *restrict limbs, uint4 *redcl)
       bitSize.y = 32;
     }
   }
-  
-  uint32_t *data = (uint32_t*)limbs;
+
   int remaining = (bitSize.x-1)*32 + bitSize.y;
-  
   const int windowSize = 5;
+  
+  uint32_t data[11];
+  for (unsigned i = 0; i < 10; i++)
+    data[i] = ((uint32_t*)limbs)[i];  
+  data[0]--;  
+  
   while (remaining > 0) {
     int bitPos = max(remaining-windowSize, 0);
     int size = min(remaining, windowSize);
     
-    uint64_t v64 = *(uint64_t*)(data+bitPos/32) - (remaining <= windowSize ? 1 : 0);
+    uint64_t v64 = *(uint64_t*)(data+bitPos/32);
     v64 >>= bitPos % 32;
     uint32_t index = ((uint32_t)v64) & ((1 << size) - 1);
 

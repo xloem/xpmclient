@@ -9,25 +9,17 @@ __kernel void squareBenchmark320(__global uint32_t *m1,
     uint32_t op1[OperandSize];
     for (unsigned j = 0; j < OperandSize; j++)
       op1[j] = m1[i*GmpOperandSize + j];  
-    
-    uint4 result[6];    
-    
-    uint4 op1v[3] = {
-      (uint4){op1[0], op1[1], op1[2], op1[3]}, 
-      (uint4){op1[4], op1[5], op1[6], op1[7]}, 
-      (uint4){op1[8], op1[9], 0, 0}
-    };
+
+      uint32_t result[20];
 
     for (unsigned repeatNum = 0; repeatNum < 512; repeatNum++) {
-      sqrProductScan320(result, op1v);
-      op1v[0] = result[0];
-      op1v[1] = result[1];
-      op1v[2].xy = result[2].xy;
+      sqrProductScan320(result, op1);
+      for (unsigned k = 0; k < 10; k++)
+        op1[k] = result[k+10];
     }
-    
-    uint32_t *pResult = (uint32_t*)result;
+
     for (unsigned j = 0; j < OperandSize*2; j++)
-      out[i*OperandSize*2 + j] = pResult[j];
+      out[i*OperandSize*2 + j] = result[j];
   }
 #undef GmpOperandSize
 #undef OperandSize
@@ -44,25 +36,16 @@ __kernel void squareBenchmark352(__global uint32_t *m1,
     uint32_t op1[OperandSize];
     for (unsigned j = 0; j < OperandSize; j++)
       op1[j] = m1[i*GmpOperandSize + j];  
-    
-    uint4 result[6];    
-    
-    uint4 op1v[3] = {
-      (uint4){op1[0], op1[1], op1[2], op1[3]}, 
-      (uint4){op1[4], op1[5], op1[6], op1[7]}, 
-      (uint4){op1[8], op1[9], op1[10], 0}
-    };
 
+    uint32_t result[22];
     for (unsigned repeatNum = 0; repeatNum < 512; repeatNum++) {
-      sqrProductScan352(result, op1v);
-      op1v[0] = result[0];
-      op1v[1] = result[1];
-      op1v[2].xyz = result[2].xyz;
+      sqrProductScan352(result, op1);
+      for (unsigned k = 0; k < 11; k++)
+        op1[k] = result[k+11];      
     }
-    
-    uint32_t *pResult = (uint32_t*)result;
+
     for (unsigned j = 0; j < OperandSize*2; j++)
-      out[i*OperandSize*2 + j] = pResult[j];
+      out[i*OperandSize*2 + j] = result[j];
   }
 #undef GmpOperandSize
 #undef OperandSize
@@ -86,30 +69,16 @@ __kernel void multiplyBenchmark320(__global uint32_t *m1,
     for (unsigned j = 0; j < OperandSize; j++)
       op2[j] = m2[i*GmpOperandSize + j];    
     
-    uint4 result[6];    
-    
-    uint4 op1v[3] = {
-      (uint4){op1[0], op1[1], op1[2], op1[3]}, 
-      (uint4){op1[4], op1[5], op1[6], op1[7]}, 
-      (uint4){op1[8], op1[9], 0, 0}
-    };
-    
-    uint4 op2v[3] = {
-      (uint4){op2[0], op2[1], op2[2], op2[3]}, 
-      (uint4){op2[4], op2[5], op2[6], op2[7]}, 
-      (uint4){op2[8], op2[9], 0, 0}
-    };   
+    uint32_t result[20];
 
     for (unsigned repeatNum = 0; repeatNum < 512; repeatNum++) {
-      mulProductScan320to320(result, op1v, op2v);
-      op1v[0] = result[0];
-      op1v[1] = result[1];
-      op1v[2].xy = result[2].xy;
+      mulProductScan320to320(result, op1, op2);
+      for (unsigned k = 0; k < 10; k++)
+        op1[k] = result[k+10];      
     }
-    
-    uint32_t *pResult = (uint32_t*)result;
+
     for (unsigned j = 0; j < OperandSize*2; j++)
-      out[i*OperandSize*2 + j] = pResult[j];
+      out[i*OperandSize*2 + j] = result[j];
   }
 #undef GmpOperandSize
 #undef OperandSize
@@ -131,30 +100,16 @@ __kernel void multiplyBenchmark352(__global uint32_t *m1,
     for (unsigned j = 0; j < OperandSize; j++)
       op2[j] = m2[i*GmpOperandSize + j];    
     
-    uint4 result[6];    
-    
-    uint4 op1v[3] = {
-      (uint4){op1[0], op1[1], op1[2], op1[3]}, 
-      (uint4){op1[4], op1[5], op1[6], op1[7]}, 
-      (uint4){op1[8], op1[9], op1[10], 0}
-    };
-    
-    uint4 op2v[3] = {
-      (uint4){op2[0], op2[1], op2[2], op2[3]}, 
-      (uint4){op2[4], op2[5], op2[6], op2[7]}, 
-      (uint4){op2[8], op2[9], op2[10], 0}
-    };   
+    uint32_t result[22];    
 
     for (unsigned repeatNum = 0; repeatNum < 512; repeatNum++) {
-      mulProductScan352to352(result, op1v, op2v);
-      op1v[0] = result[0];
-      op1v[1] = result[1];
-      op1v[2].xyz = result[2].xyz;
+      mulProductScan352to352(result, op1, op2);
+      for (unsigned k = 0; k < 11; k++)
+        op1[k] = result[k+11];         
     }
-    
-    uint32_t *pResult = (uint32_t*)&result;
+
     for (unsigned j = 0; j < OperandSize*2; j++)
-      out[i*OperandSize*2 + j] = pResult[j];
+      out[i*OperandSize*2 + j] = result[j];
   }
   
 #undef GmpOperandSize

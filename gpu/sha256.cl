@@ -454,22 +454,44 @@ __kernel void bhashmodUsePrecalc(__global uint *found,
 
     const unsigned limit13 = 26;
     const unsigned limit14 = 33;
+    const unsigned limit15 = 35;
     
-    uint64_t prod = 1;
-    for (unsigned i = 0; i < 14; i++)
-      prod *= ((primorialBitField & (1 << i)) ? 1 : gPrimes[i]);
+    uint32_t prod13l = 1;
+    for (unsigned i = 0; i < 8; i++)
+      prod13l = mul24(prod13l, select(gPrimes[i], 1u, primorialBitField & (1u << i)));
+    prod13l *= select(gPrimes[8], 1u, primorialBitField & (1u << 8));
     
-    if (lastBit <= 13 && (64-clz(prod)) < limit13) {
+    uint64_t prod13 = prod13l;
+    for (unsigned i = 9; i < 14; i++)
+      prod13 *= select(gPrimes[i], 1u, primorialBitField & (1u << i));
+    
+    uint64_t prod14 = prod13 * select(gPrimes[14], 1u, primorialBitField & (1u << 14));
+    uint64_t prod15 = prod14 * select(gPrimes[15], 1u, primorialBitField & (1u << 15));
+
+    int p13isValid = ((64-clz(prod13)) < limit13);
+    
+    int p14Unique = !(p13isValid & (prod14 == prod13));
+    int p14isValid = ((64-clz(prod14)) < limit14) & p14Unique;
+    
+    int p15Unique = !(p13isValid & (prod15 == prod13)) & !(p14isValid & (prod15 == prod14));
+    int p15isValid = ((64-clz(prod15)) < limit15) & p15Unique;
+    
+    if (p13isValid) {
       const uint index = atomic_inc(fcount);
       resultPrimorial[index] = (primorialBitField & 0xFFFF) | (13u << 16);
       found[index] = id;
     }
     
-    prod *= ((primorialBitField & (1 << 14)) ? 1 : gPrimes[14]);
-    if ((64-clz(prod)) < limit14) {
+    if (p14isValid) {
       const uint index = atomic_inc(fcount);
       resultPrimorial[index] = (primorialBitField & 0xFFFF) | (14u << 16);
       found[index] = id;
     }
+    
+    if (p15isValid) {
+      const uint index = atomic_inc(fcount);
+      resultPrimorial[index] = (primorialBitField & 0xFFFF) | (15u << 16);
+      found[index] = id;
+    }    
   }
 }

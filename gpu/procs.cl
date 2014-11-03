@@ -1597,16 +1597,16 @@ void mulProductScan320to96(uint32_t *out, uint32_t *op1, uint32_t *op2)
     accLow = accHi;
     accHi = 0;
   }
-  {
-    accLow += op1[9]*op2[2];
-    accHi += mul_hi(op1[9], op2[2]);
-    out[11] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  out[12] = accLow;
+//   {
+//     accLow += op1[9]*op2[2];
+//     accHi += mul_hi(op1[9], op2[2]);
+//     out[11] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   out[12] = accLow;
 }
 void mulProductScan320to128(uint32_t *out, uint32_t *op1, uint32_t *op2)
 {
@@ -1766,27 +1766,27 @@ void mulProductScan320to128(uint32_t *out, uint32_t *op1, uint32_t *op2)
     accLow = accHi;
     accHi = 0;
   }
-  {
-    accLow += op1[8]*op2[3];
-    accHi += mul_hi(op1[8], op2[3]);
-    accLow += op1[9]*op2[2];
-    accHi += mul_hi(op1[9], op2[2]);
-    out[11] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  {
-    accLow += op1[9]*op2[3];
-    accHi += mul_hi(op1[9], op2[3]);
-    out[12] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  out[13] = accLow;
+//   {
+//     accLow += op1[8]*op2[3];
+//     accHi += mul_hi(op1[8], op2[3]);
+//     accLow += op1[9]*op2[2];
+//     accHi += mul_hi(op1[9], op2[2]);
+//     out[11] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   {
+//     accLow += op1[9]*op2[3];
+//     accHi += mul_hi(op1[9], op2[3]);
+//     out[12] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   out[13] = accLow;
 }
 void mulProductScan320to192(uint32_t *out, uint32_t *op1, uint32_t *op2)
 {
@@ -1972,55 +1972,55 @@ void mulProductScan320to192(uint32_t *out, uint32_t *op1, uint32_t *op2)
     accLow = accHi;
     accHi = 0;
   }
-  {
-    accLow += op1[6]*op2[5];
-    accHi += mul_hi(op1[6], op2[5]);
-    accLow += op1[7]*op2[4];
-    accHi += mul_hi(op1[7], op2[4]);
-    accLow += op1[8]*op2[3];
-    accHi += mul_hi(op1[8], op2[3]);
-    accLow += op1[9]*op2[2];
-    accHi += mul_hi(op1[9], op2[2]);
-    out[11] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  {
-    accLow += op1[7]*op2[5];
-    accHi += mul_hi(op1[7], op2[5]);
-    accLow += op1[8]*op2[4];
-    accHi += mul_hi(op1[8], op2[4]);
-    accLow += op1[9]*op2[3];
-    accHi += mul_hi(op1[9], op2[3]);
-    out[12] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  {
-    accLow += op1[8]*op2[5];
-    accHi += mul_hi(op1[8], op2[5]);
-    accLow += op1[9]*op2[4];
-    accHi += mul_hi(op1[9], op2[4]);
-    out[13] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  {
-    accLow += op1[9]*op2[5];
-    accHi += mul_hi(op1[9], op2[5]);
-    out[14] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  out[15] = accLow;
+//   {
+//     accLow += op1[6]*op2[5];
+//     accHi += mul_hi(op1[6], op2[5]);
+//     accLow += op1[7]*op2[4];
+//     accHi += mul_hi(op1[7], op2[4]);
+//     accLow += op1[8]*op2[3];
+//     accHi += mul_hi(op1[8], op2[3]);
+//     accLow += op1[9]*op2[2];
+//     accHi += mul_hi(op1[9], op2[2]);
+//     out[11] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   {
+//     accLow += op1[7]*op2[5];
+//     accHi += mul_hi(op1[7], op2[5]);
+//     accLow += op1[8]*op2[4];
+//     accHi += mul_hi(op1[8], op2[4]);
+//     accLow += op1[9]*op2[3];
+//     accHi += mul_hi(op1[9], op2[3]);
+//     out[12] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   {
+//     accLow += op1[8]*op2[5];
+//     accHi += mul_hi(op1[8], op2[5]);
+//     accLow += op1[9]*op2[4];
+//     accHi += mul_hi(op1[9], op2[4]);
+//     out[13] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   {
+//     accLow += op1[9]*op2[5];
+//     accHi += mul_hi(op1[9], op2[5]);
+//     out[14] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   out[15] = accLow;
 }
 void monSqr352(uint32_t *op, uint32_t *mod, uint32_t invm)
 {
@@ -3867,16 +3867,16 @@ void mulProductScan352to96(uint32_t *out, uint32_t *op1, uint32_t *op2)
     accLow = accHi;
     accHi = 0;
   }
-  {
-    accLow += op1[10]*op2[2];
-    accHi += mul_hi(op1[10], op2[2]);
-    out[12] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  out[13] = accLow;
+//   {
+//     accLow += op1[10]*op2[2];
+//     accHi += mul_hi(op1[10], op2[2]);
+//     out[12] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   out[13] = accLow;
 }
 void mulProductScan352to128(uint32_t *out, uint32_t *op1, uint32_t *op2)
 {
@@ -4051,27 +4051,27 @@ void mulProductScan352to128(uint32_t *out, uint32_t *op1, uint32_t *op2)
     accLow = accHi;
     accHi = 0;
   }
-  {
-    accLow += op1[9]*op2[3];
-    accHi += mul_hi(op1[9], op2[3]);
-    accLow += op1[10]*op2[2];
-    accHi += mul_hi(op1[10], op2[2]);
-    out[12] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  {
-    accLow += op1[10]*op2[3];
-    accHi += mul_hi(op1[10], op2[3]);
-    out[13] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  out[14] = accLow;
+//   {
+//     accLow += op1[9]*op2[3];
+//     accHi += mul_hi(op1[9], op2[3]);
+//     accLow += op1[10]*op2[2];
+//     accHi += mul_hi(op1[10], op2[2]);
+//     out[12] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   {
+//     accLow += op1[10]*op2[3];
+//     accHi += mul_hi(op1[10], op2[3]);
+//     out[13] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   out[14] = accLow;
 }
 void mulProductScan352to192(uint32_t *out, uint32_t *op1, uint32_t *op2)
 {
@@ -4276,55 +4276,55 @@ void mulProductScan352to192(uint32_t *out, uint32_t *op1, uint32_t *op2)
     accLow = accHi;
     accHi = 0;
   }
-  {
-    accLow += op1[7]*op2[5];
-    accHi += mul_hi(op1[7], op2[5]);
-    accLow += op1[8]*op2[4];
-    accHi += mul_hi(op1[8], op2[4]);
-    accLow += op1[9]*op2[3];
-    accHi += mul_hi(op1[9], op2[3]);
-    accLow += op1[10]*op2[2];
-    accHi += mul_hi(op1[10], op2[2]);
-    out[12] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  {
-    accLow += op1[8]*op2[5];
-    accHi += mul_hi(op1[8], op2[5]);
-    accLow += op1[9]*op2[4];
-    accHi += mul_hi(op1[9], op2[4]);
-    accLow += op1[10]*op2[3];
-    accHi += mul_hi(op1[10], op2[3]);
-    out[13] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  {
-    accLow += op1[9]*op2[5];
-    accHi += mul_hi(op1[9], op2[5]);
-    accLow += op1[10]*op2[4];
-    accHi += mul_hi(op1[10], op2[4]);
-    out[14] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  {
-    accLow += op1[10]*op2[5];
-    accHi += mul_hi(op1[10], op2[5]);
-    out[15] = accLow;
-    Int.v64 = accLow;
-    accHi += Int.v32.y;
-    accLow = accHi;
-    accHi = 0;
-  }
-  out[16] = accLow;
+//   {
+//     accLow += op1[7]*op2[5];
+//     accHi += mul_hi(op1[7], op2[5]);
+//     accLow += op1[8]*op2[4];
+//     accHi += mul_hi(op1[8], op2[4]);
+//     accLow += op1[9]*op2[3];
+//     accHi += mul_hi(op1[9], op2[3]);
+//     accLow += op1[10]*op2[2];
+//     accHi += mul_hi(op1[10], op2[2]);
+//     out[12] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   {
+//     accLow += op1[8]*op2[5];
+//     accHi += mul_hi(op1[8], op2[5]);
+//     accLow += op1[9]*op2[4];
+//     accHi += mul_hi(op1[9], op2[4]);
+//     accLow += op1[10]*op2[3];
+//     accHi += mul_hi(op1[10], op2[3]);
+//     out[13] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   {
+//     accLow += op1[9]*op2[5];
+//     accHi += mul_hi(op1[9], op2[5]);
+//     accLow += op1[10]*op2[4];
+//     accHi += mul_hi(op1[10], op2[4]);
+//     out[14] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   {
+//     accLow += op1[10]*op2[5];
+//     accHi += mul_hi(op1[10], op2[5]);
+//     out[15] = accLow;
+//     Int.v64 = accLow;
+//     accHi += Int.v32.y;
+//     accLow = accHi;
+//     accHi = 0;
+//   }
+//   out[16] = accLow;
 }
 sqrProductScan320(uint32_t *out, uint32_t *op)
 {

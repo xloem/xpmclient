@@ -282,10 +282,10 @@ void multiplyBenchmark(cl_command_queue queue,
     for (unsigned i = 0; i < elementsNum; i++) {
       unsigned gmpLimbsNum = cpuM1[i].get_mpz_t()->_mp_size;
       mp_limb_t *Operand1 = cpuM1[i].get_mpz_t()->_mp_d;
-      mp_limb_t *target = (mp_limb_t*)&cpuR[i*mulOperandSize*2];
+      uint32_t *target = &cpuR[i*mulOperandSize*2];
       for (unsigned j = 0; j < MulOpsNum; j++) {
-        mpn_sqr(target, Operand1, gmpLimbsNum);
-        memcpy(Operand1, target, mulOperandSize*sizeof(uint32_t));
+        mpn_sqr((mp_limb_t*)target, Operand1, gmpLimbsNum);
+        memcpy(Operand1, target+mulOperandSize, mulOperandSize*sizeof(uint32_t));
       }
     }
   } else {
@@ -293,10 +293,10 @@ void multiplyBenchmark(cl_command_queue queue,
       unsigned gmpLimbsNum = cpuM1[i].get_mpz_t()->_mp_size;
       mp_limb_t *Operand1 = cpuM1[i].get_mpz_t()->_mp_d;
       mp_limb_t *Operand2 = cpuM2[i].get_mpz_t()->_mp_d;
-      mp_limb_t *target = (mp_limb_t*)&cpuR[i*mulOperandSize*2];
+      uint32_t *target = &cpuR[i*mulOperandSize*2];
       for (unsigned j = 0; j < MulOpsNum; j++) {
-        mpn_mul_n(target, Operand1, Operand2, gmpLimbsNum);
-        memcpy(Operand1, target, mulOperandSize*sizeof(uint32_t));
+        mpn_mul_n((mp_limb_t*)target, Operand1, Operand2, gmpLimbsNum);
+        memcpy(Operand1, target+mulOperandSize, mulOperandSize*sizeof(uint32_t));
       }
     }
   }
@@ -465,9 +465,7 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
   unsigned totalHashes = 0;
   int numhash = 64 * 131072;
 
-  unsigned hashm[32];
   unsigned multiplierSizes[128];
-  memset(hashm, 0, sizeof(hashm));
   memset(multiplierSizes, 0, sizeof(multiplierSizes));
   
   for (unsigned i = 0; i < iterationsNum; i++) {
@@ -572,20 +570,12 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
       unsigned multiplierCount = 0;
       for (unsigned j = 0; j < 32; j++)
         multiplierCount += ((multiplierBitField & (1 << j)) != 0);
-      
-      hashm[multiplierCount]++;
     }
   }
   
   double averageHashes = (double)totalHashes / iterationsNum;
   printf(" MHash per second: %.3lf\n", iterationsNum*numhash / (double)totalTime);
   printf(" Hash per iteration: %.3lf (%.6lf %%)\n", averageHashes, averageHashes*100/numhash);
-  printf(" Hashes by multipliers count:\n");
-  for (unsigned i = 0; i < 32; i++) {
-    if (hashm[i])
-      printf("   * [%u] %.3lf (%.3lf%%)\n", i, (double)hashm[i] / iterationsNum, (double)hashm[i] / (double)totalHashes * 100.0);
-  }
-  printf("\n");
  
   uint64_t totalSize = 0;
   unsigned hashes = 0;
@@ -595,7 +585,7 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
       totalSize += multiplierSizes[i] * i;
     }
   }
-  printf("average size: %.3lf\n", totalSize / (double)hashes);  
+  printf(" Average hash multiplier size: %.3lf\n", totalSize / (double)hashes);  
 }
 
 void sieveTestBenchmark(cl_command_queue queue,
