@@ -1,13 +1,13 @@
 Primecoin XPM GPU Miner for xpmpool (aka. madPrimeMiner)
 ==============
 
-See: https://bitcointalk.org/index.php?topic=598542.0
+See: https://bitcointalk.org/index.php?topic=831708.0
 --------------
 
 The miner works with:
-- OpenCL (AMD only)
+- OpenCL (AMD or NVidia)
 - ZEROMQ message system & CZMQ library (+ libsodium on Linux)
-- Google protobuf protocol (2.4 required)
+- Google protobuf protocol
 - GMP
 - CMake build system
 
@@ -17,9 +17,11 @@ How to compile:
 - Run cmake and make:
 
 cmake ../xpmclient -DOPENCL_LIBRARY=/opt/AMDAPP/lib/x86_64/libOpenCL.so
+
 make -j5
 
 "../xpmclient" - directory with client source;
+
 /opt/AMDAPP/lib/x86_64/libOpenCL.so - path to OpenCL library in AMD APP SDK directory
 
 For static build on linux (without additional dependencies) run:
@@ -33,7 +35,6 @@ For cross-compiling for Windows using mingw:
 cmake ../xpmclient -DCMAKE_TOOLCHAIN_FILE=../xpmclient/cmake/Toolchain-cross-mingw32-linux.cmake -DInstallPrefix=/opt/mingw32 -DOPENCL_LIBRARY=/opt/mingw32/lib/x86/OpenCL.lib
 
 /opt/mingw32 - install directory for mingw builds of libraries ZMQ, CZMQ, GMP, protobuf
+
 /opt/mingw32/lib/x86/OpenCL.lib - path to OpenCL library for Win32
 
-
-See xpmpool repo. for protocol definitions (if you need use another protobuf version).
