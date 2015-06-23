@@ -590,6 +590,7 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
 
 void sieveTestBenchmark(cl_command_queue queue,
                         cl_kernel *kernels,
+                        unsigned defaultGroupSize,
                         unsigned groupsNum,
                         mpz_class *allPrimorial,
                         unsigned mPrimorial,
@@ -773,10 +774,6 @@ void sieveTestBenchmark(cl_command_queue queue,
   clSetKernelArg(mSieveSetup, 0, sizeof(cl_mem), &sieveOff[0].DeviceData);
   clSetKernelArg(mSieveSetup, 1, sizeof(cl_mem), &sieveOff[1].DeviceData);
   clSetKernelArg(mSieveSetup, 3, sizeof(cl_mem), &hashBuf.DeviceData);
-  clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData);
-  clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[0].DeviceData);
-  clSetKernelArg(mSieve, 3, sizeof(cl_mem), &sieveBuf[1].DeviceData);
-  clSetKernelArg(mSieve, 4, sizeof(cl_mem), &sieveOff[1].DeviceData);          
   clSetKernelArg(mSieveSearch, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData);
   clSetKernelArg(mSieveSearch, 1, sizeof(cl_mem), &sieveBuf[1].DeviceData);
   clSetKernelArg(mSieveSearch, 7, sizeof(cl_uint), &mDepth);
@@ -802,9 +799,20 @@ void sieveTestBenchmark(cl_command_queue queue,
     }
 
     {
-      size_t globalSize[] = { 256*mConfig.STRIPES/2, mConfig.WIDTH, 2 };
-      clEnqueueNDRangeKernel(queue, mSieve, 3, 0, globalSize, 0, 0, 0, 0);
+      size_t globalSize[] = { defaultGroupSize*mConfig.STRIPES/2, mConfig.WIDTH };
+      size_t localSize[] = { defaultGroupSize, 1 };
+      clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData);
+      clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[0].DeviceData);      
+      OCL(clEnqueueNDRangeKernel(queue, mSieve, 2, 0, globalSize, localSize, 0, 0, 0));
     }
+    
+    {
+      size_t globalSize[] = { defaultGroupSize*mConfig.STRIPES/2, mConfig.WIDTH };
+      size_t localSize[] = { defaultGroupSize, 1 };
+      clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[1].DeviceData);
+      clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[1].DeviceData);      
+      OCL(clEnqueueNDRangeKernel(queue, mSieve, 2, 0, globalSize, localSize, 0, 0, 0));
+    }    
 
     candidatesCountBuffers[i][0] = 0;
     candidatesCountBuffers[i][1] = 0;    
@@ -899,7 +907,8 @@ void runBenchmarks(cl_context context,
                    cl_program program,
                    cl_device_id deviceId,
                    unsigned mPrimorial,
-                   unsigned depth)
+                   unsigned depth,
+                   unsigned defaultGroupSize)
 {
   char deviceName[128] = {0};
   cl_uint computeUnits;
@@ -959,6 +968,6 @@ void runBenchmarks(cl_context context,
   fermatTestBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 131072);   
 
   hashmodBenchmark(queue, kernels.get(), 0, allPrimorials, mPrimorial);
-  sieveTestBenchmark(queue, kernels.get(), computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
-  sieveTestBenchmark(queue, kernels.get(), computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);  
+  sieveTestBenchmark(queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
+  sieveTestBenchmark(queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);  
 }

@@ -5,7 +5,9 @@
  *      Author: mad
  */
 
+#ifndef __NVIDIA
 #define BITALIGN
+#endif
 
 __constant uint k[] = {
    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -24,7 +26,7 @@ __constant uint h_init[] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x5
 #ifdef BITALIGN
   #pragma OPENCL EXTENSION cl_amd_media_ops : enable
   #define Zrotr(a, b) amd_bitalign((uint)a, (uint)a, (uint)(32 - b))
-  #ifdef BFI_INT
+    #ifdef BFI_INT
     #define Ch(x, y, z) amd_bytealign(x, y, z)
     #define Ma(x, y, z) amd_bytealign(z ^ x, y, x)
   #else
@@ -43,72 +45,132 @@ __constant uint h_init[] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x5
 #define ZR30(n) ((Zrotr((n), 30) ^ Zrotr((n), 19) ^ Zrotr((n), 10)))
 
 
-void sha256(	const uint* msg,
-				uint* s )
+void sha256(const uint *restrict msg, uint *restrict s)
 {
-	uint w[64];
-	
+#define ROUND(num) {\
+  const uint temp1 = h + ZR26(e) + Ch(e, f, g) + k[num] + w[num];\
+  const uint temp2 = ZR30(a) + Ma(a, b, c);\
+  h = g;\
+  g = f;\
+  f = e;\
+  e = d + temp1;\
+  d = c;\
+  c = b;\
+  b = a;\
+  a = temp1 + temp2;\
+}  
+  
+  uint w[64];
+  
 #pragma unroll  
-	for(int i = 0; i < 16; ++i)
-		w[i] = msg[i];
-	
+  for(int i = 0; i < 16; ++i)
+    w[i] = msg[i];
+  
 #pragma unroll  
-	for(int i = 16; i < 64; ++i){
-		
-		const uint s0 = ZR25(w[i-15]);
-		const uint s1 = ZR15(w[i-2]);
-		w[i] = w[i-16] + s0 + w[i-7] + s1;
-		
-	}
-	
-	uint a = s[0];
-	uint b = s[1];
-	uint c = s[2];
-	uint d = s[3];
-	uint e = s[4];
-	uint f = s[5];
-	uint g = s[6];
-	uint h = s[7];
-	
-#pragma unroll  
-	for(int i = 0; i < 64; ++i){
-		
-		const uint S1 = ZR26(e);
-		//const uint ch = (e & f) ^ ((~e) & g);
-		const uint ch = Ch(e, f, g);
-		const uint temp1 = h + S1 + ch + k[i] + w[i];
-		const uint S0 = ZR30(a);
-		//const uint maj = (a & b) ^ (a & c) ^ (b & c);
-		const uint maj = Ma(a, b, c);
-		const uint temp2 = S0 + maj;
-		
-		h = g;
-		g = f;
-		f = e;
-		e = d + temp1;
-		d = c;
-		c = b;
-		b = a;
-		a = temp1 + temp2;
-		
-	}
-	
-	s[0] += a;
-	s[1] += b;
-	s[2] += c;
-	s[3] += d;
-	s[4] += e;
-	s[5] += f;
-	s[6] += g;
-	s[7] += h;
-	
+  for(int i = 16; i < 64; ++i){
+    
+    const uint s0 = ZR25(w[i-15]);
+    const uint s1 = ZR15(w[i-2]);
+    w[i] = w[i-16] + s0 + w[i-7] + s1;
+    
+  }
+  
+  uint a = s[0];
+  uint b = s[1];
+  uint c = s[2];
+  uint d = s[3];
+  uint e = s[4];
+  uint f = s[5];
+  uint g = s[6];
+  uint h = s[7];
+  
+
+
+  ROUND(0)
+  ROUND(1)
+  ROUND(2)
+  ROUND(3)
+  ROUND(4)
+  ROUND(5)
+  ROUND(6)
+  ROUND(7)  
+  ROUND(8)  
+  ROUND(9)  
+  ROUND(10)  
+  ROUND(11)  
+  ROUND(12)  
+  ROUND(13)  
+  ROUND(14)  
+  ROUND(15)    
+  
+  ROUND(16)
+  ROUND(17)
+  ROUND(18)
+  ROUND(19)
+  ROUND(20)
+  ROUND(21)
+  ROUND(22)
+  ROUND(23)  
+  ROUND(24)  
+  ROUND(25)  
+  ROUND(26)  
+  ROUND(27)  
+  ROUND(28)  
+  ROUND(29)  
+  ROUND(30)  
+  ROUND(31)    
+
+  ROUND(32)
+  ROUND(33)
+  ROUND(34)
+  ROUND(35)
+  ROUND(36)
+  ROUND(37)
+  ROUND(38)
+  ROUND(39)  
+  ROUND(40)  
+  ROUND(41)  
+  ROUND(42)  
+  ROUND(43)  
+  ROUND(44)  
+  ROUND(45)  
+  ROUND(46)  
+  ROUND(47)    
+
+  ROUND(48)
+  ROUND(49)
+  ROUND(50)
+  ROUND(51)
+  ROUND(52)
+  ROUND(53)
+  ROUND(54)
+  ROUND(55)  
+  ROUND(56)  
+  ROUND(57)  
+  ROUND(58)  
+  ROUND(59)  
+  ROUND(60)  
+  ROUND(61)  
+  ROUND(62)  
+  ROUND(63)      
+  
+  s[0] += a;
+  s[1] += b;
+  s[2] += c;
+  s[3] += d;
+  s[4] += e;
+  s[5] += f;
+  s[6] += g;
+  s[7] += h;
+  
+#undef ROUND
 }
 
 
 uint sha2_pack(uint val) {
-	
-	return ((val & 0xFF) << 24) | ((val & 0xFF00) << 8) | ((val & 0xFF0000) >> 8) | ((val & 0xFF000000) >> 24);
-	
+  
+  return ((val & 0xFF) << 24) | ((val & 0xFF00) << 8) | ((val & 0xFF0000) >> 8) | ((val & 0xFF000000) >> 24);
+  
 }
 
 __constant uint32_t indexesOne[] = { 1, 2, 3, 5, 6 };
@@ -203,7 +265,11 @@ uint32_t sum24(const uint32_t *data, unsigned size, __constant uint32_t *moddata
 #pragma unroll
   for (unsigned i = 0, bitPos = 24; bitPos < size24; bitPos += 24, i++) {
     uint64_t v64 = *(uint64_t*)(data+bitPos/32) >> (bitPos%32);
-    acc = mad24((uint32_t)v64, moddata[i], acc);
+#ifdef __NVIDIA
+    acc = mad24(v64 & 0xFFFFFF, moddata[i], acc);    
+#else
+    acc = mad24((uint32_t)v64, moddata[i], acc);    
+#endif
   }
   
   return acc;
@@ -226,48 +292,48 @@ unsigned divisionCheck24(const uint32_t *data,
 
 
 __kernel void bhashmod(__global uint* found,
-						__global uint* fcount,
-						__global uint* resultPrimorial,
-						__constant uint* midstate,
-						uint merkle, uint time, uint nbits )
+            __global uint* fcount,
+            __global uint* resultPrimorial,
+            __constant uint* midstate,
+            uint merkle, uint time, uint nbits )
 {
-	const uint id = get_global_id(0);
+  const uint id = get_global_id(0);
 
-	uint msg[16];
-	msg[0] = merkle;
-	msg[1] = time;
-	msg[2] = nbits;
-	msg[3] = sha2_pack(id);
-	msg[4] = sha2_pack(0x80);
+  uint msg[16];
+  msg[0] = merkle;
+  msg[1] = time;
+  msg[2] = nbits;
+  msg[3] = sha2_pack(id);
+  msg[4] = sha2_pack(0x80);
 #pragma unroll  
-	for(int i = 5; i < 15; ++i)
-		msg[i] = 0;
-	msg[15] = 640;
-	
-	uint state[9];
+  for(int i = 5; i < 15; ++i)
+    msg[i] = 0;
+  msg[15] = 640;
+  
+  uint state[9];
 #pragma unroll  
-	for(int i = 0; i < 8; ++i)
-		state[i] = midstate[i];
-	
-	sha256(msg, state);
-	
+  for(int i = 0; i < 8; ++i)
+    state[i] = midstate[i];
+  
+  sha256(msg, state);
+  
 #pragma unroll  
-	for(int i = 0; i < 8; ++i)
-		msg[i] = state[i];
-	msg[8] = sha2_pack(0x80);
-	msg[15] = 256;
-	
+  for(int i = 0; i < 8; ++i)
+    msg[i] = state[i];
+  msg[8] = sha2_pack(0x80);
+  msg[15] = 256;
+  
 #pragma unroll  
-	for(int i = 0; i < 8; ++i)
-		state[i] = h_init[i];
-	
-	sha256(msg, state);
-	
+  for(int i = 0; i < 8; ++i)
+    state[i] = h_init[i];
+  
+  sha256(msg, state);
+  
 #pragma unroll  
-	for(int i = 0; i < 8; ++i)
-		state[i] = sha2_pack(state[i]);
-	
-	if (state[7] & (1u << 31)) {
+  for(int i = 0; i < 8; ++i)
+    state[i] = sha2_pack(state[i]);
+  
+  if (state[7] & (1u << 31)) {
     uint32_t count = !(state[0] & 0x1);
     uint32_t primorialBitField = count;
     state[8] = 0;
@@ -291,35 +357,54 @@ __kernel void bhashmod(__global uint* found,
     }
 
     if (count >= 8) {
-			const uint index = atomic_inc(fcount);
+      const uint index = atomic_inc(fcount);
       resultPrimorial[index] = primorialBitField;
-			found[index] = id;
-		}
-	}
+      found[index] = id;
+    }
+  }
 }
 
-void sha256UsePrecalc(const uint *msg,
-                      uint *s,
+void sha256UsePrecalc(const uint *restrict msg,
+                      uint *restrict s,
                       const uint32_t *WData, int WSize,
                       const uint32_t *new1Data, int new1Size,
                       const uint32_t *new2Data, int new2Size,
                       const uint32_t *temp2Data, int tmp2Size)
 {
+#define ROUND(num) {\
+  const uint temp1 = h + ZR26(e) + Ch(e, f, g) + k[num] + w[num];\
+  const uint temp2 = ZR30(a) + Ma(a, b, c);\
+  h = g;\
+  g = f;\
+  f = e;\
+  if (num < new2Size)\
+    e = new2Data[num];\
+  else\
+    e = d + temp1;\
+  d = c;\
+  c = b;\
+  b = a;\
+  if (num < new1Size)\
+    a = new1Data[num];\
+  else if (num < tmp2Size)\
+    a = temp1 + temp2Data[num];\
+  else\
+    a = temp1 + temp2;\
+  }
+  
   uint w[64];
   
 #pragma unroll  
   for(int i = 0; i < 16; ++i)
     w[i] = msg[i];
   
-#pragma unroll    
-  for (int i = 0; i < WSize; i++)
-    w[i+16] = WData[i];
-  
 #pragma unroll  
-  for(int i = 16+WSize; i < 64; ++i){
+  for(int i = 16; i < 64; ++i){
+    
     const uint s0 = ZR25(w[i-15]);
     const uint s1 = ZR15(w[i-2]);
     w[i] = w[i-16] + s0 + w[i-7] + s1;
+    
   }
   
   uint a = s[0];
@@ -331,33 +416,75 @@ void sha256UsePrecalc(const uint *msg,
   uint g = s[6];
   uint h = s[7];
   
-#pragma unroll  
-  for(int i = 0; i < 64; ++i){
-    const uint S1 = ZR26(e);
-    const uint ch = Ch(e, f, g);
-     
-    const uint temp1 = h + S1 + ch + k[i] + w[i];
-    const uint S0 = ZR30(a);
-    const uint maj = Ma(a, b, c);
-    const uint temp2 = S0 + maj;
-    
-    h = g;
-    g = f;
-    f = e;
-    if (i < new2Size)
-      e = new2Data[i];
-    else
-      e = d + temp1;
-    d = c;
-    c = b;
-    b = a;
-    if (i < new1Size)
-      a = new1Data[i];
-    else if (i < tmp2Size)
-      a = temp1 + temp2Data[i];
-    else
-      a = temp1 + temp2;
-  }
+
+
+  ROUND(0)
+  ROUND(1)
+  ROUND(2)
+  ROUND(3)
+  ROUND(4)
+  ROUND(5)
+  ROUND(6)
+  ROUND(7)  
+  ROUND(8)  
+  ROUND(9)  
+  ROUND(10)  
+  ROUND(11)  
+  ROUND(12)  
+  ROUND(13)  
+  ROUND(14)  
+  ROUND(15)    
+  
+  ROUND(16)
+  ROUND(17)
+  ROUND(18)
+  ROUND(19)
+  ROUND(20)
+  ROUND(21)
+  ROUND(22)
+  ROUND(23)  
+  ROUND(24)  
+  ROUND(25)  
+  ROUND(26)  
+  ROUND(27)  
+  ROUND(28)  
+  ROUND(29)  
+  ROUND(30)  
+  ROUND(31)    
+
+  ROUND(32)
+  ROUND(33)
+  ROUND(34)
+  ROUND(35)
+  ROUND(36)
+  ROUND(37)
+  ROUND(38)
+  ROUND(39)  
+  ROUND(40)  
+  ROUND(41)  
+  ROUND(42)  
+  ROUND(43)  
+  ROUND(44)  
+  ROUND(45)  
+  ROUND(46)  
+  ROUND(47)    
+
+  ROUND(48)
+  ROUND(49)
+  ROUND(50)
+  ROUND(51)
+  ROUND(52)
+  ROUND(53)
+  ROUND(54)
+  ROUND(55)  
+  ROUND(56)  
+  ROUND(57)  
+  ROUND(58)  
+  ROUND(59)  
+  ROUND(60)  
+  ROUND(61)  
+  ROUND(62)  
+  ROUND(63)      
   
   s[0] += a;
   s[1] += b;
@@ -367,26 +494,28 @@ void sha256UsePrecalc(const uint *msg,
   s[5] += f;
   s[6] += g;
   s[7] += h;
+  
+#undef ROUND  
 }
 
 
-__attribute__((reqd_work_group_size(256, 1, 1)))
+__attribute__((reqd_work_group_size(LSIZE, 1, 1)))
 __kernel void bhashmodUsePrecalc(__global uint *found,
-                        __global uint *fcount,
-                        __global uint *resultPrimorial,
-                        __constant* midstate,
-                        uint merkle,
-                        uint time,
-                        uint nbits,
-                        uint W0,
-                        uint W1,
-                        uint new1_0,
-                        uint new1_1,
-                        uint new1_2,
-                        uint new2_0,
-                        uint new2_1,
-                        uint new2_2,
-                        uint temp2_3)
+                                 __global uint *fcount,
+                                 __global uint *resultPrimorial,
+                                 __constant* midstate,
+                                 uint merkle,
+                                 uint time,
+                                 uint nbits,
+                                 uint W0,
+                                 uint W1,
+                                 uint new1_0,
+                                 uint new1_1,
+                                 uint new1_2,
+                                 uint new2_0,
+                                 uint new2_1,
+                                 uint new2_2,
+                                 uint temp2_3)
 {
   const uint id = get_global_id(0);
   
@@ -397,37 +526,37 @@ __kernel void bhashmodUsePrecalc(__global uint *found,
   msg[3] = sha2_pack(id);
   msg[4] = sha2_pack(0x80);
   
-#pragma unroll  
+  #pragma unroll  
   for(int i = 5; i < 15; ++i)
     msg[i] = 0;
   msg[15] = 640;
   
   uint state[9];
-#pragma unroll  
+  #pragma unroll  
   for(int i = 0; i < 8; ++i)
     state[i] = midstate[i];
-
+  
   uint32_t W[2] = {W0, W1};
   uint32_t new1[3] = {new1_0, new1_1, new1_2};
   uint32_t new2[3] = {new2_0, new2_1, new2_2};
   uint32_t temp2[4] = {0, 0, 0, temp2_3};  
-
+  
   sha256UsePrecalc(msg, state, W, 2, new1, 3, new2, 3, temp2, 4);
   
-#pragma unroll  
+  #pragma unroll  
   for(int i = 0; i < 8; ++i)
     msg[i] = state[i];
   msg[8] = sha2_pack(0x80);
   msg[15] = 256;
   
-#pragma unroll  
+  #pragma unroll  
   for(int i = 0; i < 8; ++i)
     state[i] = h_init[i];
   
   sha256(msg, state);
   for(int i = 0; i < 8; ++i)
     state[i] = sha2_pack(state[i]);
-
+  
   if (state[7] & (1u << 31)) {
     uint32_t count = !(state[0] & 0x1);
     uint32_t primorialBitField = count;
@@ -435,7 +564,7 @@ __kernel void bhashmodUsePrecalc(__global uint *found,
     
     {
       uint32_t acc = sum24(state, 8, modulos24one);
-#pragma unroll
+      #pragma unroll
       for (unsigned i = 0; i < 5; i++) {
         unsigned isDivisor = check24(acc, divisors24one[i], multipliers32one[i], offsets32one[i]);
         primorialBitField |= (isDivisor << indexesOne[i]);
@@ -444,17 +573,17 @@ __kernel void bhashmodUsePrecalc(__global uint *found,
     }
     
     unsigned lastBit = 0;
-#pragma unroll    
+    #pragma unroll    
     for (unsigned i = 0; i < HashPrimorial-5; i++) {
       unsigned isDivisor =
-        divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
+      divisionCheck24(state, 8, divisors24[i], &modulos24[i*11], multipliers32[i], offsets32[i]);
       primorialBitField |= (isDivisor << indexes[i]);
       lastBit = isDivisor ? i+5 : lastBit;
     }
-
+    
     const unsigned limit13 = 26;
     const unsigned limit14 = 33;
-    const unsigned limit15 = 35;
+    const unsigned limit15 = 36;
     
     uint32_t prod13l = 1;
     for (unsigned i = 0; i < 8; i++)
@@ -467,7 +596,7 @@ __kernel void bhashmodUsePrecalc(__global uint *found,
     
     uint64_t prod14 = prod13 * select(gPrimes[14], 1u, primorialBitField & (1u << 14));
     uint64_t prod15 = prod14 * select(gPrimes[15], 1u, primorialBitField & (1u << 15));
-
+    
     int p13isValid = ((64-clz(prod13)) < limit13);
     
     int p14Unique = !(p13isValid & (prod14 == prod13));

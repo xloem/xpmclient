@@ -184,7 +184,7 @@ public:
   };
 	
 	
-	PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth);
+  PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth, unsigned LSize);
 	~PrimeMiner();
 	
 	bool Initialize(cl_device_id dev);
@@ -219,6 +219,7 @@ private:
 	unsigned mHashPrimorial;
 	unsigned mBlockSize;
 	cl_uint mDepth;
+  unsigned mLSize;  
 	
 	cl_command_queue mSmall;
 	cl_command_queue mBig;
@@ -243,7 +244,7 @@ public:
 	
 	XPMClient(zctx_t* ctx);
 	~XPMClient();
-	
+  
 	bool Initialize(Configuration* cfg, bool benchmarkOnly = false);
 	
 	void NotifyBlock(const proto::Block& block);
@@ -257,7 +258,11 @@ public:
 	void setup_adl();
 	
 private:
-	
+  enum PlatformType {
+    ptAMD = 0,
+    ptNVidia
+  };
+  
 	zctx_t* mCtx;
 	
 	std::vector<std::pair<PrimeMiner*, void*> > mWorkers;
@@ -279,7 +284,11 @@ private:
    
   int exitType; 
 	
-	
+  void dumpSieveConstants(unsigned weaveDepth,
+                          unsigned threadsNum,
+                          unsigned windowSize,
+                          unsigned *primes,
+                          std::ostream &file);
 	
 };
 

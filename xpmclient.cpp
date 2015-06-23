@@ -32,7 +32,7 @@ cl_program gProgram = 0;
 std::vector<unsigned> gPrimes2;
 
 
-PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth) {
+PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth, unsigned LSize) {
 	
 	mID = id;
 	mThreads = threads;
@@ -41,6 +41,7 @@ PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigne
 	mPrimorial = prim;
   mSievePerRound = sievePerRound;
 	mDepth = depth;
+  mLSize = LSize;  
 	
 	mBlockSize = 0;
 	mConfig = {0};
@@ -343,10 +344,6 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	OCL(clSetKernelArg(mSieveSetup, 0, sizeof(cl_mem), &sieveOff[0].DeviceData));
 	OCL(clSetKernelArg(mSieveSetup, 1, sizeof(cl_mem), &sieveOff[1].DeviceData));
 	OCL(clSetKernelArg(mSieveSetup, 3, sizeof(cl_mem), &hashBuf.DeviceData));
-  OCL(clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData));
-  OCL(clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[0].DeviceData));
-  OCL(clSetKernelArg(mSieve, 3, sizeof(cl_mem), &sieveBuf[1].DeviceData));
-  OCL(clSetKernelArg(mSieve, 4, sizeof(cl_mem), &sieveOff[1].DeviceData));          
 	OCL(clSetKernelArg(mSieveSearch, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData));
 	OCL(clSetKernelArg(mSieveSearch, 1, sizeof(cl_mem), &sieveBuf[1].DeviceData));
   OCL(clSetKernelArg(mSieveSearch, 7, sizeof(cl_uint), &mDepth));  
@@ -553,9 +550,20 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 				}
 
         {
-					size_t globalSize[] = { 256*mConfig.STRIPES/2, mConfig.WIDTH, 2 };
-					OCL(clEnqueueNDRangeKernel(mSmall, mSieve, 3, 0, globalSize, 0, 0, 0, 0));
- 				}
+          OCL(clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData));
+          OCL(clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[0].DeviceData));
+          size_t globalSize[] = { mLSize*mConfig.STRIPES/2, mConfig.WIDTH};
+          size_t localSize[] = { mLSize, 1 };          
+          OCL(clEnqueueNDRangeKernel(mSmall, mSieve, 2, 0, globalSize, localSize, 0, 0, 0));
+        }
+        
+        {
+          OCL(clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[1].DeviceData));
+          OCL(clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[1].DeviceData));              
+          size_t globalSize[] = { mLSize*mConfig.STRIPES/2, mConfig.WIDTH};
+          size_t localSize[] = { mLSize, 1 };          
+          OCL(clEnqueueNDRangeKernel(mSmall, mSieve, 2, 0, globalSize, localSize, 0, 0, 0));
+        }         
 
 				candidatesCountBuffers[i][widx].copyToDevice(mSmall, false);
          
@@ -736,6 +744,29 @@ XPMClient::~XPMClient() {
 	
 }
 
+void XPMClient::dumpSieveConstants(unsigned weaveDepth,
+                                   unsigned threadsNum,
+                                   unsigned windowSize,
+                                   unsigned *primes,
+                                   std::ostream &file) 
+{
+  unsigned ranges[3] = {0, 0, 0};
+  for (unsigned i = 0; i < weaveDepth/threadsNum; i++) {
+    unsigned prime = primes[i*threadsNum];
+    if (ranges[0] == 0 && windowSize/prime <= 2)
+      ranges[0] = i;
+    if (ranges[1] == 0 && windowSize/prime <= 1)
+      ranges[1] = i;
+    if (ranges[2] == 0 && windowSize/prime == 0)
+      ranges[2] = i;
+  }
+  
+  file << "__constant uint sieveRanges[3] = {";
+  file << ranges[0] << ", ";
+  file << ranges[1] << ", " ;
+  file << ranges[2];
+  file << "};\n";  
+}
 
 bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	
@@ -752,18 +783,28 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	
 	const char *platformId = cfg->lookupString("", "platform");
   const char *platformName = "";
-  if (strcmp(platformId, "amd") == 0)
+  unsigned clKernelLSize = 0;
+  unsigned clKernelLSizeLog2 = 0;
+  PlatformType platformType;
+  if (strcmp(platformId, "amd") == 0) {
     platformName = "AMD Accelerated Parallel Processing";
-  else if (strcmp(platformId, "nvidia") == 0)
+    platformType = ptAMD;    
+    clKernelLSize = 256;
+    clKernelLSizeLog2 = 8;
+  } else if (strcmp(platformId, "nvidia") == 0) {
     platformName = "NVIDIA CUDA";
-	
-	cl_platform_id platforms[10];
-	cl_uint numplatforms;
-	OCLR(clGetPlatformIDs(10, platforms, &numplatforms), false);
-	if(!numplatforms){
-		printf("ERROR: no OpenCL platform found.\n");
-		return false;
-	}
+    platformType = ptNVidia;    
+    clKernelLSize = 1024;
+    clKernelLSizeLog2 = 10;
+  }
+  
+  cl_platform_id platforms[10];
+  cl_uint numplatforms;
+  OCLR(clGetPlatformIDs(10, platforms, &numplatforms), false);
+  if(!numplatforms){
+    printf("ERROR: no OpenCL platform found.\n");
+    return false;
+  }  
 	
 	int iplatform = -1;
 	for(unsigned i = 0; i < numplatforms; ++i){
@@ -796,7 +837,6 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	int depth = 5 - cpuload;
 	depth = std::max(depth, 2);
 	depth = std::min(depth, 5);
-	//printf("CPU load = %d\n", cpuload);
 	
   exitType = cfg->lookupInt("", "onCrash", 0);
   
@@ -804,6 +844,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
   unsigned clKernelStripes = cfg->lookupInt("", "sieveSize", 420);
   unsigned clKernelPCount = cfg->lookupInt("", "weaveDepth", 40960);
   unsigned clKernelWidth = cfg->lookupInt("", "width", clKernelTarget*2);
+  unsigned clKernelWindowSize = cfg->lookupInt("", "windowSize", 4096);
 
 	std::vector<bool> usegpu(mNumDevices, true);
 	std::vector<int> hashprim(mNumDevices, 5);
@@ -822,7 +863,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 		StringVector ccorespeed;
 		StringVector cmemspeed;
 		StringVector cpowertune;
-                StringVector cfanspeed;
+    StringVector cfanspeed;
+    
 		try {
 			cfg->lookupList("", "devices", cdevices);
 			cfg->lookupList("", "sieveprimorial", cprimorial);
@@ -883,6 +925,19 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 		OCLR(error, false);
 	}
 	
+	// generate kernel configuration file
+  {
+    std::ofstream config("gpu/config.cl", std::fstream::trunc);
+    config << "#define STRIPES " << clKernelStripes << '\n';
+    config << "#define WIDTH " << clKernelWidth << '\n';
+    config << "#define PCOUNT " << clKernelPCount << '\n';
+    config << "#define TARGET " << clKernelTarget << '\n';
+    config << "#define SIZE " << clKernelWindowSize << '\n';
+    config << "#define LSIZE " << clKernelLSize << '\n';
+    config << "#define LSIZELOG2 " << clKernelLSizeLog2 << '\n';
+    dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config);
+  }
+	
 	// compile
 	std::ifstream testfile("kernel.bin");
 	if(!testfile){
@@ -890,9 +945,14 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 		printf("Compiling ...\n");
 		std::string sourcefile;
     {
-      std::ifstream t("gpu/procs.cl");
+      std::ifstream t("gpu/config.cl");
       std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
       sourcefile = str;
+    }       
+    {
+      std::ifstream t("gpu/procs.cl");
+      std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+      sourcefile.append(str);
     }    
 		{
 			std::ifstream t("gpu/fermat.cl");
@@ -925,11 +985,11 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 		const char* sources[] = { sourcefile.c_str(), 0 };
 		gProgram = clCreateProgramWithSource(gContext, 1, sources, 0, &error);
 		OCLR(error, false);   
-    
-    char arguments[1024];
-    sprintf(arguments,
-            "-DSTRIPES=%u -DWIDTH=%u -DPCOUNT=%u -DTARGET=%u",
-            clKernelStripes, clKernelWidth, clKernelPCount, clKernelTarget);
+
+    char arguments[1024] = {0};
+    if (platformType == ptNVidia) {
+      strcat(arguments, " -D__NVIDIA -cl-nv-verbose");
+    }
     
     if (clBuildProgram(gProgram, gpus.size(), &gpus[0], arguments, 0, 0) != CL_SUCCESS) {    
       size_t logSize;
@@ -996,7 +1056,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
   if (benchmarkOnly) {
     for (unsigned i = 0; i < gpus.size(); i++) {
       if (binstatus[i] == CL_SUCCESS) {
-        runBenchmarks(gContext, gProgram, gpus[i], primorial[i], depth);
+        runBenchmarks(gContext, gProgram, gpus[i], primorial[i], depth, clKernelLSize);
       }
     }
     
@@ -1006,7 +1066,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
       std::pair<PrimeMiner*,void*> worker;
       if(binstatus[i] == CL_SUCCESS){
       
-        PrimeMiner* miner = new PrimeMiner(i, gpus.size(), hashprim[i], primorial[i], sievePerRound[i], depth);
+        PrimeMiner* miner = new PrimeMiner(i, gpus.size(), hashprim[i], primorial[i], sievePerRound[i], depth, clKernelLSize);
         miner->Initialize(gpus[i]);
         config_t config = miner->getConfig();
         if (config.TARGET != clKernelTarget ||

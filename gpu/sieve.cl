@@ -5,77 +5,19 @@
  *      Author: mad
  */
 
-
-
-
-/*
-#define SIZE 4096
-#define LSIZE 256
-#define STRIPES 420
-#define WIDTH 20
-#define PCOUNT 40960
-#define SCOUNT PCOUNT
-#define TARGET 10
-#define PRIMORIAL 13
-
-typedef struct {
-	
-	uint index;
-	uint origin;
-	uint chainpos;
-	uint type;
-	uint hashid;
-	
-} fermat_t;*/
-
-
-
-
-#define LSIZE 256
-#define LSIZELOG2 8
-#define S1COUNT 256
-#define S1RUNS 17
+#define S1RUNS (sizeof(nps_all)/sizeof(uint))
 #define NLIFO 4
 
-__constant uint P[] =
-	{	2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97,101,103,107,109,113,127,131,137,139,149,
-		151,157,163,167,173,179,181,191,193,197,199,211,223,227,229,233,239,241,251,257,263,269,271,277,281,283,293,307,
-		311,313,317,331,337,347,349,353,359,367,373,379,383,389,397,401,409,419,421,431,433,439,443,449,457,461,463,467,
-		479,487,491,499,503,509,521,523,541,547,557,563,569,571,577,587,593,599,601,607,613,617,619,631,641,643,647,653,
-		659,661,673,677,683,691,701,709,719,727,733,739,743,751,757,761,769,773,787,797,809,811,821,823,827,829,839,853,
-		857,859,863,877,881,883,887,907,911,919,929,937,941,947,953,967,971,977,983,991,997,1009,1013,1019,1021,1031,
-		1033,1039,1049,1051,1061,1063,1069,1087,1091,1093,1097,1103,1109,1117,1123,1129,1151,1153,1163,1171,1181,1187,
-		1193,1201,1213,1217,1223,1229,1231,1237,1249,1259,1277,1279,1283,1289,1291,1297,1301,1303,1307,1319,1321,1327,
-		1361,1367,1373,1381,1399,1409,1423,1427,1429,1433,1439,1447,1451,1453,1459,1471,1481,1483,1487,1489,1493,1499,
-		1511,1523,1531,1543,1549,1553,1559,1567,1571,1579,1583,1597,1601,1607,1609,1613,1619,1621,1627,1637,1657,1663,
-		1667,1669,1693,1697,1699,1709,1721,1723,1733,1741,1747,1753,1759,1777,1783,1787,1789,1801,1811,1823,1831,1847,
-		1861,1867,1871,1873,1877,1879,1889,1901,1907,1913,1931,1933,1949,1951,1973,1979,1987 };
-
-__constant uint count_all[] = { 19, 12, 25, 20, 18, 25, 20, 16, 13, 11, 10,
-								16, 13, 11, 9, 
-								15, 12,
-								18 };
-
-/*__constant uint nps_all[] = { 1, 1, 2, 2, 2, 3, 3, 3, 3,
-							  4, 4, 4, 
-							  5, 5, 5,
-							  6,
-							  6, 6, 6, 6,
-							  NLIFO	};*/
-
-__constant uint nps_all[] = { 2, 2, 2, 2, 3, 3, 3, 3, 3, 3,
-							  4, 4, 4, 4,
-							  5, 5,
-							  6 };
-
-__constant uint32_t count[] = {33, 25, 20, 18, 25, 20, 16, 13, 11, 10, 16, 13, 11, 9, 15, 12, 18};
+#ifdef __NVIDIA
+__constant uint nps_all[] = { 4, 4, 5, 6, 7, 8, 8, 8 };
+#else
+__constant uint nps_all[] = { 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 6 };
+#endif
 
 __attribute__((reqd_work_group_size(LSIZE, 1, 1)))
-__kernel void sieve(	__global uint4* gsieve_all,
+__kernel void sieve(	__global uint* gsieve_all,
 						__global const uint* offset_all,
-						__global const uint2* primes,
-            __global uint4* gsieve_all2,
-            __global const uint* offset_all2)
+						__global const uint2* primes)
 {
 	
 	__local uint sieve[SIZE];
@@ -83,12 +25,11 @@ __kernel void sieve(	__global uint4* gsieve_all,
 	const uint id = get_local_id(0);
 	const uint stripe = get_group_id(0);
 	const uint line = get_group_id(1);
-  const uint type = get_group_id(2);
 	
 	const uint entry = SIZE*32*(stripe+STRIPES/2);
 	const float fentry = entry;
-	
-  __global const uint* offset = (type == 0) ? &offset_all[PCOUNT*line] : &offset_all2[PCOUNT*line];
+  
+  __global const uint* offset = &offset_all[PCOUNT*line];
 	
 	for(uint i = 0; i < SIZE/LSIZE; ++i)
 		sieve[i*LSIZE+id] = 0;
@@ -128,7 +69,8 @@ __kernel void sieve(	__global uint4* gsieve_all,
 			const uint prime = lprime[b%2];
 			const float fiprime = lfiprime[b%2];
 			uint pos = lpos[b%2];
-			
+      uint orb = (lpos[b%2] >> 31) ^ 0x1;      
+      
 			pos = mad24((uint)(fentry * fiprime), prime, pos) - entry;
 			pos = mad24((uint)((int)pos < (int)0), prime, pos);
 			pos = mad24(lpoff, prime, pos);
@@ -139,11 +81,12 @@ __kernel void sieve(	__global uint4* gsieve_all,
       //  pos = mad24(var, prime, pos);
       //}
 
+#ifndef __NVIDIA
       uint32_t sieve32 = (uint32_t)sieve + pos;      
       uint4 vpos = {sieve32,
-      mad24(var, prime, sieve32),
-      mad24(var*2, prime, sieve32),
-      mad24(var*3, prime, sieve32)};
+                    mad24(var, prime, sieve32),
+                    mad24(var*2, prime, sieve32),
+                    mad24(var*3, prime, sieve32)};
       
       while (vpos.x < SIZE*32) {
         uint4 ptr = vpos >> 3;
@@ -155,7 +98,32 @@ __kernel void sieve(	__global uint4* gsieve_all,
         atomic_or((__local uint32_t*)ptr.w, bit.w);
         
         vpos = mad24(var*4, prime, vpos);
-      }      
+      }
+#else
+      uint4 vpos = {pos,
+                    mad24(var, prime, pos),
+                    mad24(var*2, prime, pos),
+                    mad24(var*3, prime, pos)};
+      
+      const uint add = var*4*prime;
+      
+      while (vpos.w < SIZE*32) {
+        uint4 bit = (uint4){orb, orb, orb, orb} << vpos;
+        uint4 offset = vpos >> 5;
+        atomic_or(&sieve[offset.x], bit.x);
+        atomic_or(&sieve[offset.y], bit.y);
+        atomic_or(&sieve[offset.z], bit.z);
+        atomic_or(&sieve[offset.w], bit.w);        
+        vpos += add;
+      }    
+           
+      if (vpos.x < SIZE*32)
+        atomic_or(&sieve[vpos.x >> 5], orb << vpos.x);
+      if (vpos.y < SIZE*32)
+        atomic_or(&sieve[vpos.y >> 5], orb << vpos.y);
+      if (vpos.z < SIZE*32)
+        atomic_or(&sieve[vpos.z >> 5], orb << vpos.z);
+#endif
 		}
 	}
 	
@@ -181,6 +149,7 @@ __kernel void sieve(	__global uint4* gsieve_all,
 	
 	uint lpos = 0;
   
+#ifndef __NVIDIA
 #pragma unroll
   for(uint ip = 1; ip < 48; ++ip){
     const uint prime = plifo[lpos];
@@ -190,20 +159,20 @@ __kernel void sieve(	__global uint4* gsieve_all,
 		pos = mad24((uint)(fentry * fiprime), prime, pos) - entry;
 		pos = mad24((uint)((int)pos < (int)0), prime, pos);
 
-		if(ip < 18) {
+    if(ip < sieveRanges[0]) {
       while (pos < SIZE*32) {
         atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos); pos = mad24(1u, prime, pos);
         atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos); pos = mad24(1u, prime, pos);
         atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos); pos = mad24(1u, prime, pos);
         atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos); pos = mad24(1u, prime, pos);        
       }      
-		}else if(ip < 26){
+    }else if(ip < sieveRanges[1]){
       atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
 			pos += prime;
       atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
 			pos += prime;
       atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
-		}else if(ip < 48){
+    }else if(ip < sieveRanges[2]){
       atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
   		pos += prime;
       atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
@@ -228,7 +197,7 @@ __kernel void sieve(	__global uint4* gsieve_all,
 	barrier(CLK_LOCAL_MEM_FENCE);
 
 #pragma unroll
-	for(uint ip = 48; ip < SCOUNT/LSIZE; ++ip){
+  for(uint ip = sieveRanges[2]; ip < SCOUNT/LSIZE; ++ip){
     
     const uint prime = plifo[lpos];
     const float fiprime = as_float(fiplifo[lpos]);
@@ -255,22 +224,86 @@ __kernel void sieve(	__global uint4* gsieve_all,
     lpos = lpos % NLIFO;
     
   }	
+#else
+  #pragma unroll
+  for(uint ip = 1; ip < SCOUNT/LSIZE; ++ip){
+    
+    const uint prime = plifo[lpos];
+    const float fiprime = as_float(fiplifo[lpos]);
+    uint pos = olifo[lpos];
+    
+    pos = mad24((uint)(fentry * fiprime), prime, pos) - entry;
+    pos = mad24((uint)((int)pos < (int)0), prime, pos);
+    
+    uint index = pos >> 5;
+    
+    if(ip < sieveRanges[0]){
+      uint2 vpos = {pos,
+                    mad24(1u, prime, pos)};
+      
+      const uint add = 2*prime;                    
+      while (vpos.y < SIZE*32) {
+        uint2 bit = (uint2){1u, 1u} << vpos;
+        uint2 offset = vpos >> 5;
+        atomic_or(&sieve[offset.x], bit.x);
+        atomic_or(&sieve[offset.y], bit.y);
+        vpos += add;
+      }    
+      
+      if (vpos.x < SIZE*32)
+        atomic_or(&sieve[vpos.x >> 5], 1 << vpos.x);
+    }else if(ip < sieveRanges[1]){
+      if(index < SIZE){
+        atomic_or(&sieve[index], 1u << pos);
+        pos += prime;
+        index = pos >> 5;
+        if(index < SIZE){
+          atomic_or(&sieve[index], 1u << pos);
+          pos += prime;
+          index = pos >> 5;
+          if(index < SIZE){
+            atomic_or(&sieve[index], 1u << pos);
+          }
+        }
+      }
+    }else if(ip < sieveRanges[2]){
+      if(index < SIZE){
+        atomic_or(&sieve[index], 1u << pos);
+        pos += prime;
+        index = pos >> 5;
+        if(index < SIZE){
+          atomic_or(&sieve[index], 1u << pos);
+        }
+      }
+    }else{
+      if(index < SIZE){
+        atomic_or(&sieve[index], 1u << pos);
+      }
+    }
+    
+    if(ip+NLIFO < SCOUNT/LSIZE){
+      
+      pprimes += LSIZE;
+      poffset += LSIZE;
+      
+      const uint2 tmp = *pprimes;
+      plifo[lpos] = tmp.x;
+      fiplifo[lpos] = tmp.y;
+      olifo[lpos] = *poffset;
+      
+    }
+    
+    lpos++;
+    lpos = lpos % NLIFO;
+    
+  }
+#endif
 	
 	barrier(CLK_LOCAL_MEM_FENCE);
 	
-  __global uint4* gsieve = (type == 0) ? &gsieve_all[SIZE*(STRIPES/2*line + stripe)/4] : &gsieve_all2[SIZE*(STRIPES/2*line + stripe)/4];
-	
-	for(uint i = 0; i < SIZE/LSIZE/4; i++){
-		
-		uint4 tmp;
-		tmp.x = sieve[4*(i*LSIZE+id)];
-		tmp.y = sieve[4*(i*LSIZE+id)+1];
-		tmp.z = sieve[4*(i*LSIZE+id)+2];
-		tmp.w = sieve[4*(i*LSIZE+id)+3];
-		gsieve[i*LSIZE+id] = tmp;
-		
-	}
-	
+  __global uint *gsieve = &gsieve_all[SIZE*(STRIPES/2*line + stripe)];
+  for (uint i = id; i < SIZE; i += LSIZE)
+    gsieve[i] = sieve[i];
 }
 
 __kernel void s_sieve(	__global const uint* gsieve1,
