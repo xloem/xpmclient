@@ -441,7 +441,12 @@ void fermatTestBenchmark(cl_command_queue queue,
 }
 
 
-void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned groupsNum, mpz_class *allPrimorials, unsigned mPrimorial)
+void hashmodBenchmark(cl_command_queue queue,
+                      cl_kernel *kernels,
+                      unsigned defaultGroupSize,
+                      unsigned groupsNum,
+                      mpz_class *allPrimorials,
+                      unsigned mPrimorial)
 {
   printf("\n *** hashmod benchmark ***\n");  
   
@@ -482,7 +487,7 @@ void hashmodBenchmark(cl_command_queue queue, cl_kernel *kernels, unsigned group
     hashmod.count.copyToDevice(queue, false);
     
     size_t globalSize[] = { numhash, 1, 1 };
-    size_t localSize[] = { 256, 1 };
+    size_t localSize[] = { defaultGroupSize, 1 };
  
     hashmod.count[0] = 0;
     hashmod.count.copyToDevice(queue);
@@ -672,6 +677,7 @@ void sieveTestBenchmark(cl_command_queue queue,
   hashmod.count.copyToDevice(queue, false);
     
   size_t globalSize[] = { numhash, 1, 1 };
+  size_t localSize[] = { defaultGroupSize, 1 };    
  
   hashmod.count[0] = 0;
   hashmod.count.copyToDevice(queue);
@@ -684,16 +690,16 @@ void sieveTestBenchmark(cl_command_queue queue,
                                          1,
                                          0,
                                          globalSize,
-                                         0,
+                                         localSize,
                                          0,
                                          0, &event)) != CL_SUCCESS) {
-      fprintf(stderr, "clEnqueueNDRangeKernel error!\n");
+      fprintf(stderr, "[mHashMod] clEnqueueNDRangeKernel error!\n");
       return;
     }
         
     cl_int error;
     if ((error = clWaitForEvents(1, &event)) != CL_SUCCESS) {
-      fprintf(stderr, "clWaitForEvents error %i!\n", error);
+      fprintf(stderr, "[mHashMod] clWaitForEvents error %i!\n", error);
       return;
     }
       
@@ -826,11 +832,12 @@ void sieveTestBenchmark(cl_command_queue queue,
       clSetKernelArg(mSieveSearch, 5, sizeof(cl_int), &hid);
       clSetKernelArg(mSieveSearch, 6, sizeof(cl_uint), &multiplierSize);
       size_t globalSize[] = { mConfig.SIZE*mConfig.STRIPES/2, 1, 1 };
-      clEnqueueNDRangeKernel(queue, mSieveSearch, 1, 0, globalSize, 0, 0, 0, 0);
+      size_t localSize[] = { 256, 1 };
+      OCL(clEnqueueNDRangeKernel(queue, mSieveSearch, 1, 0, globalSize, localSize, 0, 0, 0));
           
       candidatesCountBuffers[i].copyToHost(queue, false);   
     }
-   
+  
     if (checkCandidates) {
       sieveBuf[0].copyToHost(queue);
       sieveBuf[1].copyToHost(queue);
@@ -956,18 +963,18 @@ void runBenchmarks(cl_context context,
       allPrimorials[i] = p;
     }    
   }  
-  
+
   multiplyBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 262144, true);  
-   
+
   multiplyBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 262144, true);
   multiplyBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 262144, false);
   multiplyBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 262144, true);    
-  multiplyBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 262144, false);  
+  multiplyBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 262144, false);
 
   fermatTestBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 131072);
-  fermatTestBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 131072);   
+  fermatTestBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 131072);
 
-  hashmodBenchmark(queue, kernels.get(), 0, allPrimorials, mPrimorial);
+  hashmodBenchmark(queue, kernels.get(), defaultGroupSize, 0, allPrimorials, mPrimorial);
   sieveTestBenchmark(queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
-  sieveTestBenchmark(queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);  
+  sieveTestBenchmark(queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);
 }

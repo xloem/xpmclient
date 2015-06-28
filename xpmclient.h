@@ -62,7 +62,7 @@ struct config_t {
 	cl_uint WIDTH;
 	cl_uint PCOUNT;
 	cl_uint TARGET;
-	
+  cl_uint WINDOWSIZE_;
 };
 
 
@@ -262,6 +262,8 @@ private:
     ptAMD = 0,
     ptNVidia
   };
+  
+  PlatformType platformType;
   
 	zctx_t* mCtx;
 	

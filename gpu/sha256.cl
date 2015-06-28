@@ -87,7 +87,7 @@ void sha256(const uint *restrict msg, uint *restrict s)
 
 
   ROUND(0)
-  ROUND(1)
+  ROUND(1) 
   ROUND(2)
   ROUND(3)
   ROUND(4)

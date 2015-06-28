@@ -190,12 +190,13 @@ void PrimeMiner::FermatDispatch(pipeline_t &fermat,
     if(count > mBlockSize){                 
       fermat.bsize = count - (count % mBlockSize);
       size_t globalSize[] = { fermat.bsize, 1, 1 };
+      size_t localSize[] = { 64, 1, 1 };
       OCL(clSetKernelArg(mFermatSetup, 0, sizeof(cl_mem), &fermat.input.DeviceData));      
       OCL(clSetKernelArg(mFermatSetup, 1, sizeof(cl_mem), &fermat.buffer[ridx].info.DeviceData));
       OCL(clEnqueueNDRangeKernel(mBig, mFermatSetup, 1, 0, globalSize, 0, 0, 0, 0));
       OCL(clSetKernelArg(fermatKernel, 0, sizeof(cl_mem), &fermat.output.DeviceData));
       OCL(clSetKernelArg(fermatKernel, 1, sizeof(cl_mem), &fermat.input.DeviceData));      
-      OCL(clEnqueueNDRangeKernel(mBig, fermatKernel, 1, 0, globalSize, 0, 0, 0, 0));
+      OCL(clEnqueueNDRangeKernel(mBig, fermatKernel, 1, 0, globalSize, localSize, 0, 0, 0));
       OCL(clSetKernelArg(mFermatCheck, 0, sizeof(cl_mem), &fermat.buffer[widx].info.DeviceData));
       OCL(clSetKernelArg(mFermatCheck, 1, sizeof(cl_mem), &fermat.buffer[widx].count.DeviceData));
       OCL(clSetKernelArg(mFermatCheck, 4, sizeof(cl_mem), &fermat.output.DeviceData));      
@@ -507,18 +508,18 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
       int numhash = ((int)(16*mSievePerRound) - (int)hashes.remaining()) * 65536;
 
 			if(numhash > 0){
-				
-				numhash += mBlockSize - numhash % mBlockSize;
+        numhash += mLSize - numhash % mLSize;
 				if(blockheader.nonce > (1u << 31)){
 					blockheader.time += mThreads;
 					blockheader.nonce = 1;
           simplePrecalcSHA256(&blockheader, hashmod.midstate, mBig, mHashMod);
 				}
-				
+
 				size_t globalOffset[] = { blockheader.nonce, 1, 1 };
 				size_t globalSize[] = { numhash, 1, 1 };
+        size_t localSize[] = { mLSize, 1 };      
 				hashmod.count.copyToDevice(mBig, false);
-				OCL(clEnqueueNDRangeKernel(mBig, mHashMod, 1, globalOffset, globalSize, 0, 0, 0, 0));
+        OCL(clEnqueueNDRangeKernel(mBig, mHashMod, 1, globalOffset, globalSize, localSize, 0, 0, 0));
 				hashmod.found.copyToHost(mBig, false);
         hashmod.primorialBitField.copyToHost(mBig, false);
 				hashmod.count.copyToHost(mBig, false);
@@ -740,7 +741,8 @@ XPMClient::~XPMClient() {
 	if(gProgram) OCL(clReleaseProgram(gProgram));
 	if(gContext) OCL(clReleaseContext(gContext));
 	
-	clear_adl(mNumDevices);
+  if (platformType == ptAMD)
+  	clear_adl(mNumDevices);
 	
 }
 
@@ -785,10 +787,17 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
   const char *platformName = "";
   unsigned clKernelLSize = 0;
   unsigned clKernelLSizeLog2 = 0;
-  PlatformType platformType;
+  bool amdLegacy = false;
+  
   if (strcmp(platformId, "amd") == 0) {
     platformName = "AMD Accelerated Parallel Processing";
     platformType = ptAMD;    
+    clKernelLSize = 256;
+    clKernelLSizeLog2 = 8;
+  } else if (strcmp(platformId, "amd legacy") == 0) {
+    platformName = "AMD Accelerated Parallel Processing";
+    platformType = ptAMD;    
+    amdLegacy = true;
     clKernelLSize = 256;
     clKernelLSizeLog2 = 8;
   } else if (strcmp(platformId, "nvidia") == 0) {
@@ -989,6 +998,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
     char arguments[1024] = {0};
     if (platformType == ptNVidia) {
       strcat(arguments, " -D__NVIDIA -cl-nv-verbose");
+    } else if (amdLegacy) {
+      strcat(arguments, " -D__AMDLEGACY");
     }
     
     if (clBuildProgram(gProgram, gpus.size(), &gpus[0], arguments, 0, 0) != CL_SUCCESS) {    
@@ -1051,7 +1062,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	OCLR(error, false);
 	OCLR(clBuildProgram(gProgram, gpus.size(), &gpus[0], 0, 0, 0), false);
 
-  setup_adl();  
+  if (platformType == ptAMD)
+    setup_adl();
   
   if (benchmarkOnly) {
     for (unsigned i = 0; i < gpus.size(); i++) {
@@ -1072,7 +1084,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
         if (config.TARGET != clKernelTarget ||
             config.PCOUNT != clKernelPCount ||
             config.STRIPES != clKernelStripes ||
-            config.WIDTH != clKernelWidth) {
+            config.WIDTH != clKernelWidth ||
+            config.WINDOWSIZE_ != clKernelWindowSize) {
           printf("Existing OpenCL kernel (kernel.bin) incompatible with configuration\n");
           printf("Please remove kernel.bin file and restart miner\n");
           exit(1);
