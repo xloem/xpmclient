@@ -587,6 +587,30 @@ public:
         else
             *this = 0;
     }
+    
+    friend inline const uint256 operator<<(const uint256& a, unsigned int shift);
+    friend inline const uint256 operator>>(const uint256& a, unsigned int shift);
+    
+    uint32_t GetCompact(bool fNegative) const {
+      int nSize = (256 + 7) / 8;
+      uint32_t nCompact = 0;
+      if (nSize <= 3) {
+          nCompact = Get64() << 8 * (3 - nSize);
+      } else {
+          uint256 bn = *this >> 8u * (nSize - 3);
+          nCompact = bn.Get64();
+    }
+      // The 0x00800000 bit denotes the sign.
+      // Thus, if it is already set, divide the mantissa by 256 and increase the exponent.
+      if (nCompact & 0x00800000) {
+          nCompact >>= 8;
+          nSize++;
+      }
+
+      nCompact |= nSize << 24;
+      nCompact |= (fNegative && (nCompact & 0x007fffff) ? 0x00800000 : 0);
+      return nCompact;
+    }    
 };
 
 inline bool operator==(const uint256& a, uint64 b)                           { return (base_uint256)a == b; }

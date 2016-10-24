@@ -12,7 +12,7 @@
 #include <CL/cl.h>
 #include <stdio.h>
 #include <string.h>
-
+#include <vector>
 
 extern cl_context gContext;
 
@@ -115,7 +115,12 @@ public:
 };
 
 
-
+bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus);
+bool clCompileKernel(const std::vector<cl_device_id> &gpus, 
+                     const char *binaryName,
+                     const std::vector<const char*> &sources,
+                     const char *arguments,
+                     std::vector<cl_int> &binstatus);
 
 
 

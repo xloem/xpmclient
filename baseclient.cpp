@@ -10,7 +10,7 @@
 #include "baseclient.h"
 #include "sysinfo.h"
 
-#include "xpmclient.h"
+// #include "xpmclient.h"
 #include "prime.h"
 
 #include <iostream>
@@ -42,16 +42,7 @@ static bool gExit = false;
 
 static std::map<unsigned, int> gSharesSent;
 static std::map<unsigned, share_t> gShares;
-
-
-
-
-
-static double GetPrimeDifficulty(unsigned int nBits)
-{
-    return ((double) nBits / (double) (1 << nFractionalBits));
-}
-
+static BaseClient *gClient;
 
 
 static bool ConnectBitcoin() {
@@ -408,8 +399,8 @@ gBlock.set_height(0);
 	
 	gWorkers = zsocket_new(gCtx, ZMQ_PULL);
 	zsocket_bind(gWorkers, "inproc://shares");
-	
-	gClient = new XPMClient(gCtx);
+
+  gClient = createClient(gCtx);
   
   bool benchmarkOnly = false;
   if (argc >= 2 && (strcmp(argv[1], "-b") == 0 || strcmp(argv[1], "--benchmark") == 0))
@@ -526,4 +517,20 @@ gBlock.set_height(0);
 	
 	return EXIT_SUCCESS;
 	
+}
+
+BaseClient::BaseClient(zctx_t *ctx)
+{
+  mCtx = ctx;
+  mBlockPub = zsocket_new(mCtx, ZMQ_PUB);
+  mWorkPub = zsocket_new(mCtx, ZMQ_PUB);
+  mStatsPull = zsocket_new(mCtx, ZMQ_PULL);
+ 
+  zsocket_bind(mBlockPub, "inproc://blocks");
+  zsocket_bind(mWorkPub, "inproc://work");
+  zsocket_bind(mStatsPull, "inproc://stats");
+ 
+  mPaused = true;
+  mNumDevices = 0;
+  mStatCounter = 0;
 }

@@ -25,8 +25,10 @@ using namespace pool;
 #include <config4cpp/Configuration.h>
 using namespace config4cpp;
 
+class BaseClient;
 
-
+double GetPrimeDifficulty(unsigned int nBits);
+BaseClient *createClient(zctx_t *ctx);
 
 extern std::string gClientName;
 extern unsigned gClientID;
@@ -137,19 +139,47 @@ static void SendPub(const C& sig, void* socket) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+class BaseClient {
+public:
+  
+  BaseClient(zctx_t *ctx);
+  virtual ~BaseClient() {}
+  
+  virtual bool Initialize(Configuration* cfg, bool benchmarkOnly = false) = 0;
+  virtual void NotifyBlock(const proto::Block& block) = 0;
+  virtual void TakeWork(const proto::Work& work) = 0;
+  virtual int GetStats(proto::ClientStats& stats) = 0;
+  virtual void Toggle() = 0;
+  virtual void setup_adl() = 0;
+  
+protected:
+  enum PlatformType {
+    ptAMD = 0,
+    ptNVidia
+  };
+  
+  PlatformType platformType;
+  
+  zctx_t* mCtx;
+  
+  std::map<int,int> mDeviceMap;
+  std::map<int,int> mDeviceMapRev;
+  
+  void* mBlockPub;
+  void* mWorkPub;
+  void* mStatsPull;
+  
+  unsigned mNumDevices;
+  unsigned mStatCounter;
+  bool mPaused;
+  
+  std::vector<int> mCoreFreq;
+  std::vector<int> mMemFreq;
+  std::vector<int> mPowertune;
+  std::vector<int> mFanSpeed;
+   
+  int exitType; 
+};
 
 
 #endif /* BASECLIENT_H_ */

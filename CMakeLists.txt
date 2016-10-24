@@ -38,6 +38,24 @@ add_library(config4cpp ${config4cppFiles})
 
 PROTOBUF_GENERATE_CPP(ProtoSources ProtoHeaders ${CMAKE_SOURCE_DIR}/protocol.proto)
 
+set(LIBRARIES
+  ${CZMQ_LIBRARY}
+  ${ZMQ_LIBRARY}
+  ${SODIUM_LIBRARY}
+  ${GMP_LIBRARY}
+  ${PROTOBUF_LIBRARY}
+  ${OPENCL_LIBRARY}
+  config4cpp
+)
+
+if (WIN32)
+  set(LIBRARIES ${LIBRARIES} ws2_32)
+else()
+  set(LIBRARIES ${LIBRARIES} dl rt pthread)
+endif()
+
+# XPM GPU Client
+
 add_executable(xpmclient
   adl.cpp
   baseclient.cpp
@@ -53,21 +71,52 @@ SET_TARGET_PROPERTIES(xpmclient PROPERTIES
   COMPILE_FLAGS "-std=c++0x"
 )
 
-target_link_libraries(xpmclient
-  ${CZMQ_LIBRARY}
-  ${ZMQ_LIBRARY}
-  ${SODIUM_LIBRARY}
-  ${GMP_LIBRARY}
-  ${PROTOBUF_LIBRARY}
-  ${OPENCL_LIBRARY}
-  config4cpp
+target_link_libraries(xpmclient ${LIBRARIES})
+
+if (STATIC_BUILD)
+  set_target_properties(xpmclient PROPERTIES LINK_SEARCH_END_STATIC 1)
+endif()
+
+# ZCash CPU Client
+
+add_executable(zcashcpuclient
+  baseclient.cpp
+  sha256.cpp
+  zcashcpuclient.cpp
+  zcash/equihash_original.cpp
+  zcash/sha256.cpp
+  ${ProtoSources}
 )
 
-if (WIN32)
-  target_link_libraries(xpmclient ws2_32)
-else()
-  target_link_libraries(xpmclient dl rt)
-  if (STATIC_BUILD)
-    set_target_properties(xpmclient PROPERTIES LINK_SEARCH_END_STATIC 1)
-  endif()
+SET_TARGET_PROPERTIES(zcashcpuclient PROPERTIES
+  COMPILE_FLAGS "-std=c++0x"
+)
+
+target_link_libraries(zcashcpuclient ${LIBRARIES})
+
+if (STATIC_BUILD)
+  set_target_properties(zcashcpuclient PROPERTIES LINK_SEARCH_END_STATIC 1)
+endif()
+
+# ZCash GPU Client
+add_definitions(-DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4) 
+
+add_executable(zcashgpuclient
+  adl.cpp
+  baseclient.cpp
+  opencl.cpp
+  sha256.cpp
+  zcash/zcashgpuclient.cpp
+  zcash/blake2b.cpp
+  ${ProtoSources}
+)
+
+SET_TARGET_PROPERTIES(zcashgpuclient PROPERTIES
+  COMPILE_FLAGS "-std=c++0x -msse -msse2 -msse3" 
+)
+
+target_link_libraries(zcashgpuclient ${LIBRARIES})
+
+if (STATIC_BUILD)
+  set_target_properties(zcashgpuclient PROPERTIES LINK_SEARCH_END_STATIC 1)
 endif()

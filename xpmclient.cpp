@@ -23,14 +23,21 @@ extern "C" {
 #define steady_clock monotonic_clock
 #endif  
 
-XPMClient* gClient = 0;
-
 cl_context gContext = 0;
 cl_program gProgram = 0;
 
 
 std::vector<unsigned> gPrimes2;
 
+double GetPrimeDifficulty(unsigned int nBits)
+{
+    return ((double) nBits / (double) (1 << nFractionalBits));
+}
+
+BaseClient *createClient(zctx_t *ctx)
+{
+  return new XPMClient(ctx);
+}
 
 PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth, unsigned LSize) {
 	
@@ -708,21 +715,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 
 
 
-XPMClient::XPMClient(zctx_t* ctx) {
-	
-	mCtx = ctx;
-	mBlockPub = zsocket_new(mCtx, ZMQ_PUB);
-	mWorkPub = zsocket_new(mCtx, ZMQ_PUB);
-	mStatsPull = zsocket_new(mCtx, ZMQ_PULL);
-	
-	zsocket_bind(mBlockPub, "inproc://blocks");
-	zsocket_bind(mWorkPub, "inproc://work");
-	zsocket_bind(mStatsPull, "inproc://stats");
-	
-	mPaused = true;
-	mNumDevices = 0;
-	mStatCounter = 0;
-	
+XPMClient::XPMClient(zctx_t* ctx) : BaseClient(ctx) {
 }
 
 XPMClient::~XPMClient() {
@@ -1085,7 +1078,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
             config.PCOUNT != clKernelPCount ||
             config.STRIPES != clKernelStripes ||
             config.WIDTH != clKernelWidth ||
-            config.WINDOWSIZE_ != clKernelWindowSize) {
+            config.SIZE != clKernelWindowSize) {
           printf("Existing OpenCL kernel (kernel.bin) incompatible with configuration\n");
           printf("Please remove kernel.bin file and restart miner\n");
           exit(1);

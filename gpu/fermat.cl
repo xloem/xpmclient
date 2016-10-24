@@ -53,7 +53,6 @@ typedef struct {
 	uint WIDTH_;
 	uint PCOUNT_;
 	uint TARGET_;
-	uint WINDOWSIZE_;
 } config_t;
 
 

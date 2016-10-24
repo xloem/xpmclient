@@ -62,7 +62,6 @@ struct config_t {
 	cl_uint WIDTH;
 	cl_uint PCOUNT;
 	cl_uint TARGET;
-  cl_uint WINDOWSIZE_;
 };
 
 
@@ -239,53 +238,22 @@ private:
 
 
 
-class XPMClient {
+class XPMClient : public BaseClient {
 public:
 	
 	XPMClient(zctx_t* ctx);
-	~XPMClient();
+	virtual ~XPMClient();
   
 	bool Initialize(Configuration* cfg, bool benchmarkOnly = false);
-	
 	void NotifyBlock(const proto::Block& block);
-	
 	void TakeWork(const proto::Work& work);
-	
 	int GetStats(proto::ClientStats& stats);
-	
 	void Toggle();
-	
 	void setup_adl();
 	
 private:
-  enum PlatformType {
-    ptAMD = 0,
-    ptNVidia
-  };
-  
-  PlatformType platformType;
-  
-	zctx_t* mCtx;
-	
-	std::vector<std::pair<PrimeMiner*, void*> > mWorkers;
-	std::map<int,int> mDeviceMap;
-	std::map<int,int> mDeviceMapRev;
-	
-	void* mBlockPub;
-	void* mWorkPub;
-	void* mStatsPull;
-	
-	unsigned mNumDevices;
-	unsigned mStatCounter;
-	bool mPaused;
-	
-	std::vector<int> mCoreFreq;
-	std::vector<int> mMemFreq;
-	std::vector<int> mPowertune;
-  std::vector<int> mFanSpeed;
-   
-  int exitType; 
-	
+  std::vector<std::pair<PrimeMiner*, void*> > mWorkers;
+
   void dumpSieveConstants(unsigned weaveDepth,
                           unsigned threadsNum,
                           unsigned windowSize,
@@ -293,21 +261,5 @@ private:
                           std::ostream &file);
 	
 };
-
-
-
-extern XPMClient* gClient;
-
-
-
-
-
-
-
-
-
-
-
-
 
 #endif /* XPMCLIENT_H_ */
