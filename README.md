@@ -1,7 +1,8 @@
 Primecoin XPM GPU Miner for xpmpool (aka. madPrimeMiner)
 ==============
 
-See: https://bitcointalk.org/index.php?topic=831708.0
+XPM Miner topic: https://bitcointalk.org/index.php?topic=831708.0
+ZCash Miner topic: https://bitcointalk.org/index.php?topic=1660023.0
 --------------
 
 The miner works with:
@@ -16,17 +17,19 @@ How to compile:
 - Create directory for build client
 - Run cmake and make:
 
-cmake ../xpmclient -DOPENCL_LIBRARY=/opt/AMDAPP/lib/x86_64/libOpenCL.so
+Ubuntu building commands:
 
+sudo apt-get install libprotobuf-dev protobuf-compiler libzmq5-dev libczmq-dev libgmp-dev libssl-dev libsodium-dev
+cmake ../xpmclient -DOPENCL_LIBRARY=/usr/lib/x86_64-linux-gnu/libOpenCL.so -DOPENCL_INCLUDE_DIRECTORY=/opt/AMDAPPSDK-3.0/include
 make -j5
 
 "../xpmclient" - directory with client source;
 
-/opt/AMDAPP/lib/x86_64/libOpenCL.so - path to OpenCL library in AMD APP SDK directory
+/usr/lib/x86_64-linux-gnu/libOpenCL.so - path to OpenCL library in AMD APP SDK directory
 
 For static build on linux (without additional dependencies) run:
 
-cmake ../xpmclient -DInstallPrefix=/opt/x86_64-Linux-static -DSTATIC_BUILD=1 -DOPENCL_LIBRARY=/opt/AMDAPP/lib/x86_64/libOpenCL.so
+cmake ../xpmclient -DInstallPrefix=/opt/x86_64-Linux-static -DSTATIC_BUILD=1 -DOPENCL_LIBRARY=/usr/lib/x86_64-linux-gnu/libOpenCL.so -DOPENCL_INCLUDE_DIRECTORY=/opt/AMDAPPSDK-3.0/include
 
 /opt/x86_64-Linux-static - directory with static builds of ZMQ, CZMQ, GMP, protobuf
 
