@@ -5,7 +5,6 @@
 
 #define NUMCPUs 1
 
-#include "/data/build/inc/printhex.h"
 
 double GetPrimeDifficulty(unsigned int nBits)
 {
@@ -118,8 +117,6 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
       else
         hashTarget <<= 8*(exponent-3);
       
-      fprintf(stderr, "header hash=");
-      printhex(stderr, &header.data, sizeof(header.data), '\n');
       crypto_generichash_blake2b_update(&state, (unsigned char*)&header.data, sizeof(header.data));
       
       sha.init();
@@ -138,7 +135,6 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
     std::function<bool(std::vector<unsigned char>)> validBlock = [this, &nonceu32, &current_sha, &hashTarget](const std::vector<unsigned char> &soln) {
       uint256 headerHash;
       fprintf(stderr, "\n\nnonce: %u, solution:\n", nonceu32);
-      printhex(stderr, &soln[0], soln.size(), '\n');
       current_sha.update(&soln[0], soln.size());
       current_sha.final((unsigned char*)&headerHash);
       current_sha.init();
