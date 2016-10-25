@@ -20,7 +20,9 @@ How to compile:
 Ubuntu building commands:
 
 sudo apt-get install libprotobuf-dev protobuf-compiler libzmq5-dev libczmq-dev libgmp-dev libssl-dev libsodium-dev
+
 cmake ../xpmclient -DOPENCL_LIBRARY=/usr/lib/x86_64-linux-gnu/libOpenCL.so -DOPENCL_INCLUDE_DIRECTORY=/opt/AMDAPPSDK-3.0/include
+
 make -j5
 
 "../xpmclient" - directory with client source;
