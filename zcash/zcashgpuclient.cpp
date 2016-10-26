@@ -660,7 +660,7 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
     if (!clCompileKernel(gContext[i],
                          gpus[i],
                          kernelName,
-                         { "zcash/gpu/equihash.bin" },
+                         { "zcash/gpu/equihash.cl" },
                          "-I./zcash/gpu -DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4 -DUNROLL",
                          &binstatus[i],
                          &gProgram[i])); 
