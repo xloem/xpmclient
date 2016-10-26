@@ -19,6 +19,9 @@ struct stats_t {
 };
 
 struct MinerInstance {
+  cl_context _context;
+  cl_program _program;
+  
   cl_command_queue queue;
   clBuffer<blake2b_state> blake2bState;
   clBuffer<uint32_t> heap0;
@@ -34,7 +37,8 @@ struct MinerInstance {
   
   uint256 nonce;
   
-  bool init(cl_device_id dev, unsigned threadsNum, unsigned threadsPerBlock);
+  MinerInstance() {}
+  bool init(cl_context context, cl_program program, cl_device_id dev, unsigned threadsNum, unsigned threadsPerBlock);
 };
 
 class ZCashMiner {
@@ -129,7 +133,12 @@ public:
   
 public:
   ZCashMiner(unsigned id);
-  bool Initialize(cl_device_id dev, unsigned pipelines, unsigned threadsNum, unsigned threadsPerBlock);
+  bool Initialize(cl_context context,
+                  cl_program program,
+                  cl_device_id dev,
+                  unsigned pipelines,
+                  unsigned threadsNum,
+                  unsigned threadsPerBlock);
   static void InvokeMining(void *args, zctx_t *ctx, void *pipe);
   void Mining(zctx_t *ctx, void *pipe);
   void cancel() { _cancel = true; }

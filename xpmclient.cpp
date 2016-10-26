@@ -23,9 +23,7 @@ extern "C" {
 #define steady_clock monotonic_clock
 #endif  
 
-cl_context gContext = 0;
-cl_program gProgram = 0;
-
+cl_platform_id gPlatform = 0;
 
 std::vector<unsigned> gPrimes2;
 
@@ -53,6 +51,7 @@ PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigne
 	mBlockSize = 0;
 	mConfig = {0};
 	
+  _context = 0;
 	mBig = 0;
 	mSmall = 0;
 	mHashMod = 0;
@@ -70,6 +69,7 @@ PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigne
 
 PrimeMiner::~PrimeMiner() {
 	
+  if (_context) OCL(clReleaseContext(_context));
 	if(mBig) OCL(clReleaseCommandQueue(mBig));
 	if(mSmall) OCL(clReleaseCommandQueue(mSmall));
 	
@@ -85,29 +85,30 @@ PrimeMiner::~PrimeMiner() {
 }
 
 
-bool PrimeMiner::Initialize(cl_device_id dev) {
+bool PrimeMiner::Initialize(cl_context context, cl_program program, cl_device_id dev) {
 	
 	cl_int error;
+  _context = context;
   
-  mHashMod = clCreateKernel(gProgram, "bhashmodUsePrecalc", &error);
-	mSieveSetup = clCreateKernel(gProgram, "setup_sieve", &error);
-	mSieve = clCreateKernel(gProgram, "sieve", &error);
-	mSieveSearch = clCreateKernel(gProgram, "s_sieve", &error);
-	mFermatSetup = clCreateKernel(gProgram, "setup_fermat", &error);
-	mFermatKernel352 = clCreateKernel(gProgram, "fermat_kernel", &error);
-  mFermatKernel320 = clCreateKernel(gProgram, "fermat_kernel320", &error);  
-	mFermatCheck = clCreateKernel(gProgram, "check_fermat", &error);
+  mHashMod = clCreateKernel(program, "bhashmodUsePrecalc", &error);
+	mSieveSetup = clCreateKernel(program, "setup_sieve", &error);
+	mSieve = clCreateKernel(program, "sieve", &error);
+	mSieveSearch = clCreateKernel(program, "s_sieve", &error);
+	mFermatSetup = clCreateKernel(program, "setup_fermat", &error);
+	mFermatKernel352 = clCreateKernel(program, "fermat_kernel", &error);
+  mFermatKernel320 = clCreateKernel(program, "fermat_kernel320", &error);  
+	mFermatCheck = clCreateKernel(program, "check_fermat", &error);
 	OCLR(error, false);
 	
-	mBig = clCreateCommandQueue(gContext, dev, 0, &error);
-	mSmall = clCreateCommandQueue(gContext, dev, 0, &error);
+	mBig = clCreateCommandQueue(context, dev, 0, &error);
+	mSmall = clCreateCommandQueue(context, dev, 0, &error);
 	OCLR(error, false);
 	
 	{
 		clBuffer<config_t> config;
-		config.init(1);
+		config.init(context, 1);
 		
-		cl_kernel getconf = clCreateKernel(gProgram, "getconfig", &error);
+		cl_kernel getconf = clCreateKernel(program, "getconfig", &error);
 		OCLR(error, false);
 		
 		OCLR(clSetKernelArg(getconf, 0, sizeof(cl_mem), &config.DeviceData), false);
@@ -141,12 +142,12 @@ void PrimeMiner::FermatInit(pipeline_t &fermat, unsigned mfs)
 {
   fermat.current = 0;
   fermat.bsize = 0;
-  fermat.input.init(mfs*mConfig.N, CL_MEM_HOST_NO_ACCESS);
-  fermat.output.init(mfs, CL_MEM_HOST_NO_ACCESS);
+  fermat.input.init(_context, mfs*mConfig.N, CL_MEM_HOST_NO_ACCESS);
+  fermat.output.init(_context, mfs, CL_MEM_HOST_NO_ACCESS);
 
   for(int i = 0; i < 2; ++i){
-    fermat.buffer[i].info.init(mfs, CL_MEM_HOST_NO_ACCESS);
-    fermat.buffer[i].count.init(1, CL_MEM_ALLOC_HOST_PTR);
+    fermat.buffer[i].info.init(_context, mfs, CL_MEM_HOST_NO_ACCESS);
+    fermat.buffer[i].count.init(_context, 1, CL_MEM_ALLOC_HOST_PTR);
   }
 }
 
@@ -280,10 +281,10 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
   
   for (unsigned i = 0; i < maxHashPrimorial - mPrimorial; i++) {
     cl_int error = 0;
-    primeBuf[i] = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    primeBuf[i] = clCreateBuffer(_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                  mConfig.PCOUNT*sizeof(cl_uint), &gPrimes[mPrimorial+i+1], &error);
     OCL(error);
-    primeBuf2[i] = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    primeBuf2[i] = clCreateBuffer(_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                   mConfig.PCOUNT*2*sizeof(cl_uint), &gPrimes2[2*(mPrimorial+i)+2], &error);
     OCL(error);
     
@@ -302,28 +303,28 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 		printf("GPU %d: sieve size = %s (%d bits)\n", mID, sievesize.get_str(10).c_str(), sievebits);
 	}
 	
-	hashmod.midstate.init(8*sizeof(cl_uint), CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY);
-	hashmod.found.init(128, CL_MEM_ALLOC_HOST_PTR);
-  hashmod.primorialBitField.init(128, CL_MEM_ALLOC_HOST_PTR);
-	hashmod.count.init(1, CL_MEM_ALLOC_HOST_PTR);
-	hashBuf.init(PW*mConfig.N, CL_MEM_READ_WRITE);
+	hashmod.midstate.init(_context, 8*sizeof(cl_uint), CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY);
+	hashmod.found.init(_context, 128, CL_MEM_ALLOC_HOST_PTR);
+  hashmod.primorialBitField.init(_context, 128, CL_MEM_ALLOC_HOST_PTR);
+	hashmod.count.init(_context, 1, CL_MEM_ALLOC_HOST_PTR);
+	hashBuf.init(_context, PW*mConfig.N, CL_MEM_READ_WRITE);
 	
 	for(int sieveIdx = 0; sieveIdx < SW; ++sieveIdx) {
     for(int instIdx = 0; instIdx < 2; ++instIdx){    
       for (int pipelineIdx = 0; pipelineIdx < FERMAT_PIPELINES; pipelineIdx++)
-        sieveBuffers[sieveIdx][pipelineIdx][instIdx].init(MSO, CL_MEM_HOST_NO_ACCESS);
+        sieveBuffers[sieveIdx][pipelineIdx][instIdx].init(_context, MSO, CL_MEM_HOST_NO_ACCESS);
       
-      candidatesCountBuffers[sieveIdx][instIdx].init(FERMAT_PIPELINES, CL_MEM_ALLOC_HOST_PTR);
+      candidatesCountBuffers[sieveIdx][instIdx].init(_context, FERMAT_PIPELINES, CL_MEM_ALLOC_HOST_PTR);
     }
   }
 	
 	for(int k = 0; k < 2; ++k){
-		sieveBuf[k].init(mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, CL_MEM_HOST_NO_ACCESS);
-		sieveOff[k].init(mConfig.PCOUNT*mConfig.WIDTH, CL_MEM_HOST_NO_ACCESS);
+		sieveBuf[k].init(_context, mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, CL_MEM_HOST_NO_ACCESS);
+		sieveOff[k].init(_context, mConfig.PCOUNT*mConfig.WIDTH, CL_MEM_HOST_NO_ACCESS);
 	}
 	
-	final.info.init(MFS/(4*mDepth), CL_MEM_ALLOC_HOST_PTR);
-  final.count.init(1, CL_MEM_ALLOC_HOST_PTR);	
+	final.info.init(_context, MFS/(4*mDepth), CL_MEM_ALLOC_HOST_PTR);
+  final.count.init(_context, 1, CL_MEM_ALLOC_HOST_PTR);	
 	
 	FermatInit(fermat320, MFS);
   FermatInit(fermat352, MFS);  
@@ -332,7 +333,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
   unsigned modulosBufferSize = mConfig.PCOUNT*(mConfig.N-1);   
   for (unsigned bufIdx = 0; bufIdx < maxHashPrimorial-mPrimorial; bufIdx++) {
     clBuffer<cl_uint> &current = modulosBuf[bufIdx];
-    current.init(modulosBufferSize, CL_MEM_READ_ONLY);
+    current.init(_context, modulosBufferSize, CL_MEM_READ_ONLY);
     for (unsigned i = 0; i < mConfig.PCOUNT; i++) {
       mpz_class X = 1;
       for (unsigned j = 0; j < mConfig.N-1; j++) {
@@ -731,9 +732,6 @@ XPMClient::~XPMClient() {
 	zsocket_destroy(mCtx, mWorkPub);
 	zsocket_destroy(mCtx, mStatsPull);
 	
-	if(gProgram) OCL(clReleaseProgram(gProgram));
-	if(gContext) OCL(clReleaseContext(gContext));
-	
   if (platformType == ptAMD)
   	clear_adl(mNumDevices);
 	
@@ -764,7 +762,9 @@ void XPMClient::dumpSieveConstants(unsigned weaveDepth,
 }
 
 bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
-	
+  cl_context gContext[64] = {0};
+  cl_program gProgram[64] = {0};
+  
 	{
 		int np = sizeof(gPrimes)/sizeof(unsigned);
 		gPrimes2.resize(np*2);
@@ -799,42 +799,12 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
     clKernelLSize = 1024;
     clKernelLSizeLog2 = 10;
   }
-  
-  cl_platform_id platforms[10];
-  cl_uint numplatforms;
-  OCLR(clGetPlatformIDs(10, platforms, &numplatforms), false);
-  if(!numplatforms){
-    printf("ERROR: no OpenCL platform found.\n");
+
+  std::vector<cl_device_id> allgpus;
+  if (!clInitialize(platformName, allgpus))
     return false;
-  }  
-	
-	int iplatform = -1;
-	for(unsigned i = 0; i < numplatforms; ++i){
-		char name[1024] = {0};
-		OCLR(clGetPlatformInfo(platforms[i], CL_PLATFORM_NAME, sizeof(name), name, 0), false);
-		printf("found platform[%d] name = '%s'\n", i, name);
-    if(!strcmp(name, platformName)){
-			iplatform = i;
-			break;
-		}
-	}
-	
-	if(iplatform < 0){
-		printf("ERROR: %s found.\n", platformName);
-		return false;
-	}
-	
-	cl_platform_id platform = platforms[iplatform];
-	
-	cl_device_id devices[10];
-	clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 10, devices, &mNumDevices);
-	printf("Found %d devices\n", mNumDevices);
-	
-	if(!mNumDevices){
-		printf("ERROR: no OpenCL GPU devices found.\n");
-		return false;
-	}
-	
+  mNumDevices = allgpus.size();
+  
 	int cpuload = cfg->lookupInt("", "cpuload", 1);
 	int depth = 5 - cpuload;
 	depth = std::max(depth, 2);
@@ -910,7 +880,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 			printf("Using device %d as GPU %d\n", i, (int)gpus.size());
 			mDeviceMap[i] = gpus.size();
 			mDeviceMapRev[gpus.size()] = i;
-			gpus.push_back(devices[i]);
+			gpus.push_back(allgpus[i]);
 		}else{
 			mDeviceMap[i] = -1;
 		}
@@ -920,10 +890,10 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 		return false;
 	};
 	
-	{
-		cl_context_properties props[] = { CL_CONTEXT_PLATFORM, (cl_context_properties)platform, 0 };
+	for (size_t i = 0; i < allgpus.size(); i++) {
+		cl_context_properties props[] = { CL_CONTEXT_PLATFORM, (cl_context_properties)gPlatform, 0 };
 		cl_int error;
-		gContext = clCreateContext(props, gpus.size(), &gpus[0], 0, 0, &error);
+		gContext[i] = clCreateContext(props, 1, &gpus[i], 0, 0, &error);
 		OCLR(error, false);
 	}
 	
@@ -939,121 +909,26 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
     config << "#define LSIZELOG2 " << clKernelLSizeLog2 << '\n';
     dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config);
   }
-	
-	// compile
-	std::ifstream testfile("kernel.bin");
-	if(!testfile){
-		
-		printf("Compiling ...\n");
-		std::string sourcefile;
-    {
-      std::ifstream t("gpu/config.cl");
-      std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-      sourcefile = str;
-    }       
-    {
-      std::ifstream t("gpu/procs.cl");
-      std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-      sourcefile.append(str);
-    }    
-		{
-			std::ifstream t("gpu/fermat.cl");
-			std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-			sourcefile.append(str);
-		}
-		{
-			std::ifstream t("gpu/sieve.cl");
-			std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-			sourcefile.append(str);
-		}
-		{
-			std::ifstream t("gpu/sha256.cl");
-			std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-			sourcefile.append(str);
-		}
-		{
-      std::ifstream t("gpu/benchmarks.cl");
-      std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-      sourcefile.append(str);
-    }
-		printf("Source: %d bytes\n", (unsigned)sourcefile.size());
-		
-		if(sourcefile.size() < 1){
-			fprintf(stderr, "Source files not found or empty.\n");
-			return false;
-		}
-		
-		cl_int error;
-		const char* sources[] = { sourcefile.c_str(), 0 };
-		gProgram = clCreateProgramWithSource(gContext, 1, sources, 0, &error);
-		OCLR(error, false);   
 
-    char arguments[1024] = {0};
-    if (platformType == ptNVidia) {
-      strcat(arguments, " -D__NVIDIA -cl-nv-verbose");
-    } else if (amdLegacy) {
-      strcat(arguments, " -D__AMDLEGACY");
-    }
-    
-    if (clBuildProgram(gProgram, gpus.size(), &gpus[0], arguments, 0, 0) != CL_SUCCESS) {    
-      size_t logSize;
-      clGetProgramBuildInfo(gProgram, devices[0], CL_PROGRAM_BUILD_LOG, 0, 0, &logSize);
-      
-      std::unique_ptr<char[]> log(new char[logSize]);
-      clGetProgramBuildInfo(gProgram, devices[0], CL_PROGRAM_BUILD_LOG, logSize, log.get(), 0);
-      printf("%s\n", log.get());
-      
-      exit(1);
-    }    
-		
-		size_t binsizes[10];
-		OCLR(clGetProgramInfo(gProgram, CL_PROGRAM_BINARY_SIZES, sizeof(binsizes), binsizes, 0), false);
-		size_t binsize = binsizes[0];
-		if(!binsize){
-			printf("No binary available!\n");
-			return false;
-		}
-		
-		printf("binsize = %d bytes\n", (int)binsize);
-		char* binary = new char[binsize+1];
-    unsigned char* binaries[] = { (unsigned char*)binary, (unsigned char*)binary,(unsigned char*)binary,(unsigned char*)binary, (unsigned char*)binary};
-		OCLR(clGetProgramInfo(gProgram, CL_PROGRAM_BINARIES, sizeof(binaries), binaries, 0), false);
-		{
-			std::ofstream bin("kernel.bin", std::ofstream::binary | std::ofstream::trunc);
-			bin.write(binary, binsize);
-			bin.close();
-		}
-		OCLR(clReleaseProgram(gProgram), false);
-		delete [] binary;
-		
-	}
-	
-	std::ifstream bfile("kernel.bin", std::ifstream::binary);
-	if(!bfile){
-		printf("ERROR: kernel.bin not found.\n");
-		return false;
-	}
-	
-	bfile.seekg(0, bfile.end);
-	int binsize = bfile.tellg();
-	bfile.seekg(0, bfile.beg);
-	if(!binsize){
-		printf("ERROR: kernel.bin empty\n");
-		return false;
-	}
-	
-	std::vector<char> binary(binsize+1);
-	bfile.read(&binary[0], binsize);
-	bfile.close();
-	//printf("binsize = %d bytes\n", binsize);
-	
-	std::vector<size_t> binsizes(gpus.size(), binsize);
-	std::vector<cl_int> binstatus(gpus.size());
-	std::vector<const unsigned char*> binaries(gpus.size(), (const unsigned char*)&binary[0]);
-	cl_int error;
-	gProgram = clCreateProgramWithBinary(gContext, gpus.size(), &gpus[0], &binsizes[0], &binaries[0], &binstatus[0], &error);
-	OCLR(error, false);
-	OCLR(clBuildProgram(gProgram, gpus.size(), &gpus[0], 0, 0, 0), false);
+  const char *arguments = "";
+  if (platformType == ptAMD && amdLegacy)
+    arguments = "-D__AMDLEGACY";
+  else if (platformType == ptNVidia)
+    arguments = "-D__NVIDIA -cl-nv-verbose";
+  
+  std::vector<cl_int> binstatus;
+  binstatus.resize(gpus.size());	
+  for (size_t i = 0; i < gpus.size(); i++) {
+    char kernelName[64];
+    sprintf(kernelName, "kernelxpm_gpu%u.cl", (unsigned)i);
+    if (!clCompileKernel(gContext[i],
+                         gpus[i],
+                         kernelName,
+                         { "xpm/gpu/config.cl", "xpm/gpu/procs.cl", "xpm/gpu/fermat.cl", "xpm/gpu/sieve.cl", "xpm/gpu/sha256.cl", "xpm/gpu/benchmarks.cl"},
+                         arguments,
+                         &binstatus[i],
+                         &gProgram[i])); 
+  }
 
   if (platformType == ptAMD)
     setup_adl();
@@ -1061,7 +936,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
   if (benchmarkOnly) {
     for (unsigned i = 0; i < gpus.size(); i++) {
       if (binstatus[i] == CL_SUCCESS) {
-        runBenchmarks(gContext, gProgram, gpus[i], primorial[i], depth, clKernelLSize);
+        runBenchmarks(gContext[0], gProgram[0], gpus[i], primorial[i], depth, clKernelLSize);
       }
     }
     
@@ -1072,7 +947,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
       if(binstatus[i] == CL_SUCCESS){
       
         PrimeMiner* miner = new PrimeMiner(i, gpus.size(), hashprim[i], primorial[i], sievePerRound[i], depth, clKernelLSize);
-        miner->Initialize(gpus[i]);
+        miner->Initialize(gContext[i], gProgram[i], gpus[i]);
         config_t config = miner->getConfig();
         if (config.TARGET != clKernelTarget ||
             config.PCOUNT != clKernelPCount ||

@@ -173,7 +173,8 @@ bool sieveResultsTest(uint32_t *primes,
    
 } 
  
-void multiplyBenchmark(cl_command_queue queue,
+void multiplyBenchmark(cl_context context,
+                       cl_command_queue queue,
                        cl_kernel *kernels,
                        unsigned groupsNum,                       
                        unsigned mulOperandSize,
@@ -187,10 +188,10 @@ void multiplyBenchmark(cl_command_queue queue,
   clBuffer<uint32_t> mR;
   clBuffer<uint32_t> cpuR;
   
-  m1.init(limbsNum, CL_MEM_READ_WRITE);
-  m2.init(limbsNum, CL_MEM_READ_WRITE);
-  mR.init(limbsNum*2, CL_MEM_READ_WRITE);
-  cpuR.init(limbsNum*2, CL_MEM_READ_WRITE);
+  m1.init(context, limbsNum, CL_MEM_READ_WRITE);
+  m2.init(context, limbsNum, CL_MEM_READ_WRITE);
+  mR.init(context, limbsNum*2, CL_MEM_READ_WRITE);
+  cpuR.init(context, limbsNum*2, CL_MEM_READ_WRITE);
 
   memset(&m1.get(0), 0, limbsNum*sizeof(uint32_t));
   memset(&m2.get(0), 0, limbsNum*sizeof(uint32_t));
@@ -326,7 +327,8 @@ void multiplyBenchmark(cl_command_queue queue,
 }
 
 
-void fermatTestBenchmark(cl_command_queue queue,
+void fermatTestBenchmark(cl_context context,
+                         cl_command_queue queue,
                          cl_kernel *kernels,
                          unsigned groupsNum, 
                          unsigned operandSize,
@@ -338,9 +340,9 @@ void fermatTestBenchmark(cl_command_queue queue,
   clBuffer<uint32_t> gpuResults;
   clBuffer<uint32_t> cpuResults;
   
-  numbers.init(numberLimbsNum, CL_MEM_READ_WRITE);
-  gpuResults.init(numberLimbsNum, CL_MEM_READ_WRITE);
-  cpuResults.init(numberLimbsNum, CL_MEM_READ_WRITE);
+  numbers.init(context, numberLimbsNum, CL_MEM_READ_WRITE);
+  gpuResults.init(context, numberLimbsNum, CL_MEM_READ_WRITE);
+  cpuResults.init(context, numberLimbsNum, CL_MEM_READ_WRITE);
   
   for (unsigned i = 0; i < elementsNum; i++) {
     for (unsigned j = 0; j < operandSize; j++)
@@ -441,7 +443,8 @@ void fermatTestBenchmark(cl_command_queue queue,
 }
 
 
-void hashmodBenchmark(cl_command_queue queue,
+void hashmodBenchmark(cl_context context,
+                      cl_command_queue queue,
                       cl_kernel *kernels,
                       unsigned defaultGroupSize,
                       unsigned groupsNum,
@@ -456,10 +459,10 @@ void hashmodBenchmark(cl_command_queue queue,
   PrimeMiner::search_t hashmod;
   PrimeMiner::block_t blockheader;
   
-  hashmod.midstate.init(8*sizeof(cl_uint), CL_MEM_READ_ONLY);
-  hashmod.found.init(32768, CL_MEM_READ_WRITE);
-  hashmod.primorialBitField.init(2048, CL_MEM_READ_WRITE);
-  hashmod.count.init(1, CL_MEM_READ_WRITE);
+  hashmod.midstate.init(context, 8*sizeof(cl_uint), CL_MEM_READ_ONLY);
+  hashmod.found.init(context, 32768, CL_MEM_READ_WRITE);
+  hashmod.primorialBitField.init(context, 2048, CL_MEM_READ_WRITE);
+  hashmod.count.init(context, 1, CL_MEM_READ_WRITE);
 
   clSetKernelArg(mHashMod, 0, sizeof(cl_mem), &hashmod.found.DeviceData);
   clSetKernelArg(mHashMod, 1, sizeof(cl_mem), &hashmod.count.DeviceData);
@@ -593,7 +596,8 @@ void hashmodBenchmark(cl_command_queue queue,
   printf(" Average hash multiplier size: %.3lf\n", totalSize / (double)hashes);  
 }
 
-void sieveTestBenchmark(cl_command_queue queue,
+void sieveTestBenchmark(cl_context context,
+                        cl_command_queue queue,
                         cl_kernel *kernels,
                         unsigned defaultGroupSize,
                         unsigned groupsNum,
@@ -624,10 +628,10 @@ void sieveTestBenchmark(cl_command_queue queue,
   
   for (unsigned i = 0; i < maxHashPrimorial - mPrimorial; i++) {
     cl_int error = 0;
-    primeBuf[i] = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    primeBuf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                  mConfig.PCOUNT*sizeof(cl_uint), &gPrimes[mPrimorial+i+1], &error);
     OCL(error);
-    primeBuf2[i] = clCreateBuffer(gContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+    primeBuf2[i] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                   mConfig.PCOUNT*2*sizeof(cl_uint), &gPrimes2[2*(mPrimorial+i)+2], &error);
     OCL(error);
   }
@@ -636,7 +640,7 @@ void sieveTestBenchmark(cl_command_queue queue,
   unsigned modulosBufferSize = mConfig.PCOUNT*(mConfig.N-1);   
   for (unsigned bufIdx = 0; bufIdx < maxHashPrimorial-mPrimorial; bufIdx++) {
     clBuffer<cl_uint> &current = modulosBuf[bufIdx];
-    current.init(modulosBufferSize, CL_MEM_READ_ONLY);
+    current.init(context, modulosBufferSize, CL_MEM_READ_ONLY);
     for (unsigned i = 0; i < mConfig.PCOUNT; i++) {
       mpz_class X = 1;
       for (unsigned j = 0; j < mConfig.N-1; j++) {
@@ -649,11 +653,11 @@ void sieveTestBenchmark(cl_command_queue queue,
     current.copyToDevice(queue);
   }  
   
-  hashmod.midstate.init(8*sizeof(cl_uint), CL_MEM_READ_ONLY);
-  hashmod.found.init(2048, CL_MEM_READ_WRITE);
-  hashmod.primorialBitField.init(2048, CL_MEM_READ_WRITE);
-  hashmod.count.init(1, CL_MEM_READ_WRITE);
-  hashBuf.init(PW*mConfig.N, CL_MEM_READ_WRITE);
+  hashmod.midstate.init(context, 8*sizeof(cl_uint), CL_MEM_READ_ONLY);
+  hashmod.found.init(context, 2048, CL_MEM_READ_WRITE);
+  hashmod.primorialBitField.init(context, 2048, CL_MEM_READ_WRITE);
+  hashmod.count.init(context, 1, CL_MEM_READ_WRITE);
+  hashBuf.init(context, PW*mConfig.N, CL_MEM_READ_WRITE);
 
   clSetKernelArg(mHashMod, 0, sizeof(cl_mem), &hashmod.found.DeviceData);
   clSetKernelArg(mHashMod, 1, sizeof(cl_mem), &hashmod.count.DeviceData);
@@ -767,14 +771,14 @@ void sieveTestBenchmark(cl_command_queue queue,
   
   for(int sieveIdx = 0; sieveIdx < 64; ++sieveIdx) {
     for (int pipelineIdx = 0; pipelineIdx < FERMAT_PIPELINES; pipelineIdx++)
-      sieveBuffers[sieveIdx][pipelineIdx].init(MSO, CL_MEM_READ_WRITE);
+      sieveBuffers[sieveIdx][pipelineIdx].init(context, MSO, CL_MEM_READ_WRITE);
       
-    candidatesCountBuffers[sieveIdx].init(FERMAT_PIPELINES, CL_MEM_READ_WRITE);
+    candidatesCountBuffers[sieveIdx].init(context, FERMAT_PIPELINES, CL_MEM_READ_WRITE);
   }  
   
   for(int k = 0; k < 2; ++k){
-    sieveBuf[k].init(mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, CL_MEM_READ_WRITE);
-    sieveOff[k].init(mConfig.PCOUNT*mConfig.WIDTH, CL_MEM_READ_WRITE);
+    sieveBuf[k].init(context, mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, CL_MEM_READ_WRITE);
+    sieveOff[k].init(context, mConfig.PCOUNT*mConfig.WIDTH, CL_MEM_READ_WRITE);
   }  
 
   clSetKernelArg(mSieveSetup, 0, sizeof(cl_mem), &sieveOff[0].DeviceData);
@@ -945,9 +949,9 @@ void runBenchmarks(cl_context context,
   
   // Get miner config
   {
-    mConfig.init(1);
+    mConfig.init(context, 1);
     
-    cl_kernel getconf = clCreateKernel(gProgram, "getconfig", &error);
+    cl_kernel getconf = clCreateKernel(program, "getconfig", &error);
     clSetKernelArg(getconf, 0, sizeof(cl_mem), &mConfig.DeviceData);
     clEnqueueTask(queue, getconf, 0, 0, 0);
     mConfig.copyToHost(queue, true);
@@ -964,17 +968,17 @@ void runBenchmarks(cl_context context,
     }    
   }  
 
-  multiplyBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 262144, true);  
+  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, true);  
 
-  multiplyBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 262144, true);
-  multiplyBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 262144, false);
-  multiplyBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 262144, true);    
-  multiplyBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 262144, false);
+  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, true);
+  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, false);
+  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 352/32, 262144, true);    
+  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 352/32, 262144, false);
 
-  fermatTestBenchmark(queue, kernels.get(), computeUnits*4, 320/32, 131072);
-  fermatTestBenchmark(queue, kernels.get(), computeUnits*4, 352/32, 131072);
+  fermatTestBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 131072);
+  fermatTestBenchmark(context, queue, kernels.get(), computeUnits*4, 352/32, 131072);
 
-  hashmodBenchmark(queue, kernels.get(), defaultGroupSize, 0, allPrimorials, mPrimorial);
-  sieveTestBenchmark(queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
-  sieveTestBenchmark(queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);
+  hashmodBenchmark(context, queue, kernels.get(), defaultGroupSize, 0, allPrimorials, mPrimorial);
+  sieveTestBenchmark(context, queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
+  sieveTestBenchmark(context, queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);
 }

@@ -5,8 +5,8 @@ extern "C" {
 }
 #include <gmpxx.h>
 
-cl_context gContext = 0;
-cl_program gProgram = 0;
+cl_platform_id gPlatform = 0;
+
 
 double GetPrimeDifficulty(unsigned int nBits)
 {
@@ -155,25 +155,29 @@ static void GetIndices(proof solution, uint8_t *out)
 ZCashMiner::ZCashMiner(unsigned id) : mID(id) {}
 
 
-bool MinerInstance::init(cl_device_id dev,
+bool MinerInstance::init(cl_context context,
+                         cl_program program, 
+                         cl_device_id dev,
                          unsigned int threadsNum,
                          unsigned int threadsPerBlock)
 {
   cl_int error;
   
-  queue = clCreateCommandQueue(gContext, dev, 0, &error);
+  _context = context;
+  _program = program;
+  queue = clCreateCommandQueue(context, dev, 0, &error);
   
-  blake2bState.init(1, CL_MEM_READ_WRITE);
-  heap0.init(sizeof(digit0)/sizeof(uint32_t), CL_MEM_HOST_NO_ACCESS);
-  heap1.init(sizeof(digit1)/sizeof(uint32_t), CL_MEM_HOST_NO_ACCESS);
-  nslots.init(2, CL_MEM_READ_WRITE);
-  sols.init(MAXSOLS, CL_MEM_READ_WRITE);  
-  numSols.init(1, CL_MEM_READ_WRITE);
+  blake2bState.init(context, 1, CL_MEM_READ_WRITE);
+  heap0.init(context, sizeof(digit0)/sizeof(uint32_t), CL_MEM_HOST_NO_ACCESS);
+  heap1.init(context, sizeof(digit1)/sizeof(uint32_t), CL_MEM_HOST_NO_ACCESS);
+  nslots.init(context, 2, CL_MEM_READ_WRITE);
+  sols.init(context, MAXSOLS, CL_MEM_READ_WRITE);  
+  numSols.init(context, 1, CL_MEM_READ_WRITE);
   
-  _digitHKernel = clCreateKernel(gProgram, "digitH", &error);
-  _digitOKernel = clCreateKernel(gProgram, "digitOdd", &error);    
-  _digitEKernel = clCreateKernel(gProgram, "digitEven", &error);  
-  _digitKKernel = clCreateKernel(gProgram, "digitK", &error);     
+  _digitHKernel = clCreateKernel(program, "digitH", &error);
+  _digitOKernel = clCreateKernel(program, "digitOdd", &error);    
+  _digitEKernel = clCreateKernel(program, "digitEven", &error);  
+  _digitKKernel = clCreateKernel(program, "digitK", &error);     
   OCLR(clSetKernelArg(_digitHKernel, 0, sizeof(cl_mem), &blake2bState.DeviceData), 1);
   OCLR(clSetKernelArg(_digitHKernel, 1, sizeof(cl_mem), &heap0.DeviceData), 1);  
   OCLR(clSetKernelArg(_digitHKernel, 2, sizeof(cl_mem), &nslots.DeviceData), 1);  
@@ -188,7 +192,7 @@ bool MinerInstance::init(cl_device_id dev,
   for (unsigned i = 1; i <= 8; i++) {
     char kernelName[32];
     sprintf(kernelName, "digit_%u", i);
-    _digitKernels[i] = clCreateKernel(gProgram, kernelName, &error);
+    _digitKernels[i] = clCreateKernel(program, kernelName, &error);
     OCLR(clSetKernelArg(_digitKernels[i], 0, sizeof(cl_mem), &heap0.DeviceData), 1);
     OCLR(clSetKernelArg(_digitKernels[i], 1, sizeof(cl_mem), &heap1.DeviceData), 1);  
     OCLR(clSetKernelArg(_digitKernels[i], 2, sizeof(cl_mem), &nslots.DeviceData), 1);     
@@ -202,12 +206,17 @@ bool MinerInstance::init(cl_device_id dev,
 }
 
 
-bool ZCashMiner::Initialize(cl_device_id dev, unsigned pipelines, unsigned threadsNum, unsigned threadsPerBlock)
+bool ZCashMiner::Initialize(cl_context context,
+                            cl_program program,
+                            cl_device_id dev,
+                            unsigned pipelines,
+                            unsigned threadsNum,
+                            unsigned threadsPerBlock)
 {
   pipelinesNum = pipelines;
   miners = new MinerInstance[pipelines];
   for (unsigned i = 0; i < pipelines; i++)
-    miners[i].init(dev, threadsNum, threadsPerBlock);
+    miners[i].init(context, program, dev, threadsNum, threadsPerBlock);
   _threadsNum = threadsNum;
   _threadsPerBlocksNum = threadsPerBlock;
   printf("threads: %u, work size: %u\n", threadsNum, threadsPerBlock);
@@ -553,6 +562,9 @@ int ZCashGPUClient::GetStats(proto::ClientStats& stats)
 
 bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
 {
+  cl_context gContext[64] = {0};
+  cl_program gProgram[64] = {0};  
+  
   const char *platformId = cfg->lookupString("", "platform");
   const char *platformName = "";
   if (strcmp(platformId, "amd") == 0) {
@@ -631,21 +643,35 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
     return false;
   }
   
-  std::vector<cl_int> binstatus;
-  if (!clCompileKernel(allGpus,
-                       "equiw200k9.bin",
-                       { "zcash/gpu/equihash.cl" },
-                       "-I./zcash/gpu -DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4 -DUNROLL",
-                       binstatus)) {
-    return false;
+  // context create
+  for (unsigned i = 0; i < gpus.size(); i++) {
+    cl_context_properties props[] = { CL_CONTEXT_PLATFORM, (cl_context_properties)gPlatform, 0 };
+    cl_int error;
+    gContext[i] = clCreateContext(props, 1, &gpus[i], 0, 0, &error);
+    OCLR(error, false);
   }
   
+  std::vector<cl_int> binstatus;
+  binstatus.resize(gpus.size());
+  
+  for (size_t i = 0; i < gpus.size(); i++) {
+    char kernelName[64];
+    sprintf(kernelName, "equiw200k9_gpu%u.bin", (unsigned)i);
+    if (!clCompileKernel(gContext[i],
+                         gpus[i],
+                         kernelName,
+                         { "zcash/gpu/equihash.bin" },
+                         "-I./zcash/gpu -DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4 -DUNROLL",
+                         &binstatus[i],
+                         &gProgram[i])); 
+  }
+
   for(unsigned i = 0; i < gpus.size(); ++i) {
       std::pair<ZCashMiner*,void*> worker;
-      if(binstatus[i] == CL_SUCCESS){
+      if (binstatus[i] == CL_SUCCESS) {
       
         ZCashMiner *miner = new ZCashMiner(i);
-        if (!miner->Initialize(gpus[i], 2, threads[i], worksize[i]))
+        if (!miner->Initialize(gContext[i], gProgram[i], gpus[i], 2, threads[i], worksize[i]))
           return false;
         
         void *pipe = zthread_fork(mCtx, &ZCashMiner::InvokeMining, miner);

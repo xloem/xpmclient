@@ -4,7 +4,8 @@
 #include <memory>
 #include <stdio.h>
 
-extern cl_program gProgram;
+extern cl_platform_id gPlatform;
+// extern cl_program gProgram;
 
 bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
 {
@@ -37,11 +38,11 @@ bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
     return false;
   }
   
-  auto platform = platforms[platformIdx];
+  gPlatform = platforms[platformIdx];
   
   cl_uint numDevices = 0;
   cl_device_id devices[64];
-  clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, sizeof(devices)/sizeof(cl_device_id), devices, &numDevices);
+  clGetDeviceIDs(gPlatform, CL_DEVICE_TYPE_GPU, sizeof(devices)/sizeof(cl_device_id), devices, &numDevices);
   if (numDevices) {
     printf("<info> found %d devices\n", numDevices);
   } else {
@@ -52,25 +53,27 @@ bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
   for (decltype(numDevices) i = 0; i < numDevices; i++) {
     gpus.push_back(devices[i]);
   }
- 
-  {
-    cl_context_properties props[] = { CL_CONTEXT_PLATFORM, (cl_context_properties)platform, 0 };
-    cl_int error;
-    gContext = clCreateContext(props, gpus.size(), &gpus[0], 0, 0, &error);
-    OCLR(error, false);
-  }
   
   return true;
 }
 
-bool clCompileKernel(const std::vector<cl_device_id> &gpus,
+bool clCompileKernel(cl_context gContext,
+                     cl_device_id gpu,
                      const char *binaryName,
                      const std::vector<const char*> &sources,
                      const char *arguments,
-                     std::vector<cl_int> &binstatus)
+                     cl_int *binstatus,
+                     cl_program *gProgram)
 {
   std::ifstream testfile(binaryName);
+  
+//   size_t binsizes[64];
+
+//   const unsigned char *binaries[64];
+  
   if(!testfile) {
+    
+    
     printf("<info> compiling ...\n");
     
     std::string sourceFile;
@@ -88,34 +91,39 @@ bool clCompileKernel(const std::vector<cl_device_id> &gpus,
     
     cl_int error;
     const char *sources[] = { sourceFile.c_str(), 0 };
-    gProgram = clCreateProgramWithSource(gContext, 1, sources, 0, &error);
+    *gProgram = clCreateProgramWithSource(gContext, 1, sources, 0, &error);
     OCLR(error, false);
     
-    if (clBuildProgram(gProgram, gpus.size(), &gpus[0], arguments, 0, 0) != CL_SUCCESS) {    
+    if (clBuildProgram(*gProgram, 1, &gpu, arguments, 0, 0) != CL_SUCCESS) {    
       size_t logSize;
-      clGetProgramBuildInfo(gProgram, gpus[0], CL_PROGRAM_BUILD_LOG, 0, 0, &logSize);
+      clGetProgramBuildInfo(*gProgram, gpu, CL_PROGRAM_BUILD_LOG, 0, 0, &logSize);
       
       std::unique_ptr<char[]> log(new char[logSize]);
-      clGetProgramBuildInfo(gProgram, gpus[0], CL_PROGRAM_BUILD_LOG, logSize, log.get(), 0);
+      clGetProgramBuildInfo(*gProgram, gpu, CL_PROGRAM_BUILD_LOG, logSize, log.get(), 0);
       printf("%s\n", log.get());
 
       return false;
     }
     
-    size_t binsizes[64];
-    OCLR(clGetProgramInfo(gProgram, CL_PROGRAM_BINARY_SIZES, sizeof(binsizes), binsizes, 0), false);
-    size_t binsize = binsizes[0];
-    if(!binsize){
-      printf("<error> no binary available!\n");
-      return false;
-    }
+    size_t binsize;
+    OCLR(clGetProgramInfo(*gProgram, CL_PROGRAM_BINARY_SIZES, sizeof(size_t), &binsize, 0), false);
+//     for (size_t i = 0; i < 1; i++) {
+      if(!binsize) {
+        printf("<error> no binary available!\n");
+        return false;
+      }
+//     }
     
     printf("<info> binsize = %u bytes\n", (unsigned)binsize);
+//     std::unique_ptr<unsigned char[]> binary(new unsigned char[binsize+1]);
+    
+//     for (size_t i = 0; i < gpus.size(); i++)
     std::unique_ptr<unsigned char[]> binary(new unsigned char[binsize+1]);
-    unsigned char *binaries[64];
-    for (auto &b: binaries)
-      b = binary.get();
-    OCLR(clGetProgramInfo(gProgram, CL_PROGRAM_BINARIES, sizeof(binaries), binaries, 0), false);
+//       binaries[i] = new unsigned char[binsizes[i]];
+    
+//     for (auto &b: binaries)
+//       b = binary.get();
+    OCLR(clGetProgramInfo(*gProgram, CL_PROGRAM_BINARIES, sizeof(void*), &binary, 0), false);
     
     {
       std::ofstream bin(binaryName, std::ofstream::binary | std::ofstream::trunc);
@@ -123,7 +131,7 @@ bool clCompileKernel(const std::vector<cl_device_id> &gpus,
       bin.close();      
     }
    
-    OCLR(clReleaseProgram(gProgram), false);
+    OCLR(clReleaseProgram(*gProgram), false);
   }
   
   std::ifstream bfile(binaryName, std::ifstream::binary);
@@ -133,7 +141,7 @@ bool clCompileKernel(const std::vector<cl_device_id> &gpus,
   }  
   
   bfile.seekg(0, bfile.end);
-  int binsize = bfile.tellg();
+  size_t binsize = bfile.tellg();
   bfile.seekg(0, bfile.beg);
   if(!binsize){
     printf("<error> %s empty\n", binaryName);
@@ -145,11 +153,13 @@ bool clCompileKernel(const std::vector<cl_device_id> &gpus,
   bfile.close();
   
   cl_int error;
-  binstatus.resize(gpus.size(), 0);
-  std::vector<size_t> binsizes(gpus.size(), binsize);
-  std::vector<const unsigned char*> binaries(gpus.size(), (const unsigned char*)&binary[0]);
-  gProgram = clCreateProgramWithBinary(gContext, gpus.size(), &gpus[0], &binsizes[0], &binaries[0], &binstatus[0], &error);
+//   binstatus.resize(gpus.size(), 0);
+//   std::vector<size_t> binsizes(gpus.size(), binsize);
+//   std::vector<const unsigned char*> binaries(gpus.size(), (const unsigned char*)&binary[0]);
+  const unsigned char *binaryPtr = (const unsigned char*)&binary[0];
+  
+  *gProgram = clCreateProgramWithBinary(gContext, 1, &gpu, &binsize, &binaryPtr, binstatus, &error);
   OCLR(error, false);
-  OCLR(clBuildProgram(gProgram, gpus.size(), &gpus[0], 0, 0, 0), false);  
+  OCLR(clBuildProgram(*gProgram, 1, &gpu, 0, 0, 0), false);  
   return true;
 }

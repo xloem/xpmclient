@@ -29,12 +29,6 @@ const unsigned maxHashPrimorial = 16;
 extern unsigned gPrimes[96*1024];
 extern std::vector<unsigned> gPrimes2;
 
-extern cl_program gProgram;
-
-
-
-
-
 struct stats_t {
 	
 	unsigned id;
@@ -186,7 +180,7 @@ public:
   PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth, unsigned LSize);
 	~PrimeMiner();
 	
-	bool Initialize(cl_device_id dev);
+	bool Initialize(cl_context context, cl_program program, cl_device_id dev);
 	
 	static void InvokeMining(void *args, zctx_t *ctx, void *pipe);
   config_t getConfig() { return mConfig; }
@@ -220,6 +214,7 @@ private:
 	cl_uint mDepth;
   unsigned mLSize;  
 	
+  cl_context _context;
 	cl_command_queue mSmall;
 	cl_command_queue mBig;
 	

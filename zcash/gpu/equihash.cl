@@ -10,7 +10,7 @@ uint32_t tree_bucket(tree t)
   const uint32_t bucketMask = ((1u<<BUCKBITS)-1);
   return t & bucketMask;
 }
-
+;
 uint32_t tree_slotid0(tree t)
 {
   const uint32_t slotMask =  ((1u<<SLOTBITS)-1);

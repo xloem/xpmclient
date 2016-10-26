@@ -59,6 +59,7 @@ endif()
 add_executable(xpmclient
   adl.cpp
   baseclient.cpp
+  opencl.cpp
   prime.cpp
   primes.cpp
   sha256.cpp

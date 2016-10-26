@@ -14,7 +14,7 @@
 #include <string.h>
 #include <vector>
 
-extern cl_context gContext;
+// extern cl_context gContext;
 
 
 
@@ -62,7 +62,7 @@ public:
     
   }
   
-  void init(int size, cl_mem_flags flags = 0) {
+  void init(cl_context gContext, int size, cl_mem_flags flags = 0) {
     
     Size = size;
     
@@ -116,11 +116,13 @@ public:
 
 
 bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus);
-bool clCompileKernel(const std::vector<cl_device_id> &gpus, 
+bool clCompileKernel(cl_context gContext,
+                     cl_device_id gpu,
                      const char *binaryName,
                      const std::vector<const char*> &sources,
                      const char *arguments,
-                     std::vector<cl_int> &binstatus);
+                     cl_int *binstatus,
+                     cl_program *gProgram);
 
 
 
