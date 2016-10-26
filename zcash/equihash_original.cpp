@@ -20,7 +20,6 @@
 #include <stdexcept>
 
 #include <boost/optional.hpp>
-#include "/data/build/inc/printhex.h"
 
 EhSolverCancelledException solver_cancelled;
 
@@ -265,8 +264,6 @@ std::vector<unsigned char> FullStepRow<WIDTH>::GetIndices(size_t len, size_t len
     size_t minLen { (cBitLen+1)*lenIndices/(8*sizeof(eh_index)) };
     size_t bytePad { sizeof(eh_index) - ((cBitLen+1)+7)/8 };
     std::vector<unsigned char> ret(minLen);
-    fprintf(stderr, "lenIndices: %u minLen: %u\n", (unsigned)lenIndices, (unsigned)minLen);
-    printhex(stderr, hash+len, lenIndices, '\n');
     CompressArray(hash+len, lenIndices, ret.data(), minLen, cBitLen+1, bytePad);
     return ret;
 }
