@@ -1,4 +1,5 @@
 #include "zcashgpuclient.h"
+#include "equihash_original.h"
 #include "../sha256.h"
 extern "C" {
 #include "../adl.h"
@@ -113,8 +114,12 @@ static int inline digit(cl_command_queue clQueue, cl_kernel kernel, size_t nthre
   return 0;
 }
 
-static void CompressArray(const unsigned char* in, size_t in_len,
-                   unsigned char* out, size_t out_len, size_t bit_len, size_t byte_pad)
+static void CompressArrayInternal(const unsigned char* in,
+                                  size_t in_len,
+                                  unsigned char* out,
+                                  size_t out_len,
+                                  size_t bit_len,
+                                  size_t byte_pad)
 {
     size_t in_width { (bit_len+7)/8 + byte_pad };
     uint32_t bit_len_mask { ((uint32_t)1 << bit_len) - 1 };
@@ -149,7 +154,7 @@ static void CompressArray(const unsigned char* in, size_t in_len,
 static void GetIndices(proof solution, uint8_t *out)
 {
   size_t bytePad { sizeof(uint32_t) - ((COLLISION_BIT_LENGTH+1)+7)/8 };
-  CompressArray((uint8_t*)solution, PROOFSIZE, out, COMPRESSED_PROOFSIZE, COLLISION_BIT_LENGTH+1, bytePad); 
+  CompressArrayInternal((uint8_t*)solution, PROOFSIZE, out, COMPRESSED_PROOFSIZE, COLLISION_BIT_LENGTH+1, bytePad); 
 }
 
 ZCashMiner::ZCashMiner(unsigned id) : mID(id) {}
@@ -178,9 +183,8 @@ bool MinerInstance::init(cl_context context,
   _digitOKernel = clCreateKernel(program, "digitOdd", &error);    
   _digitEKernel = clCreateKernel(program, "digitEven", &error);  
   _digitKKernel = clCreateKernel(program, "digitK", &error);     
-  OCLR(clSetKernelArg(_digitHKernel, 0, sizeof(cl_mem), &blake2bState.DeviceData), 1);
-  OCLR(clSetKernelArg(_digitHKernel, 1, sizeof(cl_mem), &heap0.DeviceData), 1);  
-  OCLR(clSetKernelArg(_digitHKernel, 2, sizeof(cl_mem), &nslots.DeviceData), 1);  
+  OCLR(clSetKernelArg(_digitHKernel, 0, sizeof(cl_mem), &heap0.DeviceData), 1);  
+  OCLR(clSetKernelArg(_digitHKernel, 1, sizeof(cl_mem), &nslots.DeviceData), 1); 
   
   OCLR(clSetKernelArg(_digitOKernel, 1, sizeof(cl_mem), &heap0.DeviceData), 1);
   OCLR(clSetKernelArg(_digitOKernel, 2, sizeof(cl_mem), &heap1.DeviceData), 1);
@@ -205,6 +209,16 @@ bool MinerInstance::init(cl_context context,
   OCLR(clSetKernelArg(_digitKKernel, 4, sizeof(cl_mem), &numSols.DeviceData), 1);       
 }
 
+
+bool ZCashMiner::CheckEquihashSolution(const CBlockHeader *pblock, const uint8_t *proof, size_t size)
+{
+  crypto_generichash_blake2b_state state;
+  Eh200_9.InitialiseState(state);
+  crypto_generichash_blake2b_update(&state, (const uint8_t*)&pblock->data, sizeof(pblock->data));
+  crypto_generichash_blake2b_update(&state, (const uint8_t*)pblock->nNonce.begin(), 32);
+  std::vector<uint8_t> proofForCheck(proof, proof+size);
+  return Eh200_9.IsValidSolution(state, proofForCheck);
+}
 
 bool ZCashMiner::Initialize(cl_context context,
                             cl_program program,
@@ -273,6 +287,7 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
   uint256 shareTarget;
   SHA_256 sha;  
   bool run = true;
+//   crypto_generichash_blake2b_state initialCtx;
   blake2b_state initialCtx;
   time_t statsTimeLabel = time(0);
   
@@ -357,16 +372,30 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
     MinerInstance &miner = miners[currentInstance];
     clFlush(miner.queue);
     
+    blake2b_state blakeData = initialCtx;
     miner.nonce = header.nNonce;
-    *miner.blake2bState.HostData = initialCtx;
-    setnonce(miner.blake2bState.HostData, header.nNonce.begin());
+    setnonce(&blakeData, header.nNonce.begin());
+    
     memset(miner.nslots.HostData, 0, 2*sizeof(bsizes));
     *miner.numSols.HostData = 0;
-    miner.blake2bState.copyToDevice(miner.queue, false);
     miner.nslots.copyToDevice(miner.queue, false);
     miner.numSols.copyToDevice(miner.queue, false);
     
-    digit(miner.queue, miner._digitHKernel, _threadsNum, _threadsPerBlocksNum);
+    OCL(clSetKernelArg(miner._digitHKernel, 2, sizeof(cl_ulong), &blakeData.h[0]));  
+    OCL(clSetKernelArg(miner._digitHKernel, 3, sizeof(cl_ulong), &blakeData.h[1]));  
+    OCL(clSetKernelArg(miner._digitHKernel, 4, sizeof(cl_ulong), &blakeData.h[2]));  
+    OCL(clSetKernelArg(miner._digitHKernel, 5, sizeof(cl_ulong), &blakeData.h[3]));  
+    OCL(clSetKernelArg(miner._digitHKernel, 6, sizeof(cl_ulong), &blakeData.h[4]));  
+    OCL(clSetKernelArg(miner._digitHKernel, 7, sizeof(cl_ulong), &blakeData.h[5]));  
+    OCL(clSetKernelArg(miner._digitHKernel, 8, sizeof(cl_ulong), &blakeData.h[6]));  
+    OCL(clSetKernelArg(miner._digitHKernel, 9, sizeof(cl_ulong), &blakeData.h[7]));    
+  
+    uint32_t *blake2bBufPtr = (uint32_t*)blakeData.buf;
+    OCL(clSetKernelArg(miner._digitHKernel, 10, sizeof(cl_uint), &blake2bBufPtr[0]));    
+    OCL(clSetKernelArg(miner._digitHKernel, 11, sizeof(cl_uint), &blake2bBufPtr[1]));    
+    OCL(clSetKernelArg(miner._digitHKernel, 12, sizeof(cl_uint), &blake2bBufPtr[2]));      
+    digit(miner.queue, miner._digitHKernel, _threadsNum, _threadsPerBlocksNum);    
+    
 #if BUCKBITS == 16 && RESTBITS == 4 && defined XINTREE && defined(UNROLL)
     for (unsigned i = 1; i <= 8; i++)
       digit(miner.queue, miner._digitKernels[i], _threadsNum, _threadsPerBlocksNum);
@@ -384,7 +413,7 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
     }
 #endif
 
-    digit(miner.queue, miner._digitKKernel, _threadsNum, _threadsPerBlocksNum);
+    digit(miner.queue, miner._digitKKernel, _threadsNum, _threadsPerBlocksNum); 
 
     if (readyInstance >= 0) {
       MinerInstance &readyMiner = miners[readyInstance];
@@ -435,6 +464,13 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
         }
       
         if (isShare) {
+          // check equihash
+          bool isValid = CheckEquihashSolution(&header, compressed, COMPRESSED_PROOFSIZE);
+          if (!isValid) {
+            printf(" * GPU %d found invalid share\n");          
+            continue;
+          }
+          
           share.set_hash(headerHash.GetHex());
           share.set_merkle(work.merkle()); 
           share.set_time(header.data.nTime);

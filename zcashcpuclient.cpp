@@ -109,7 +109,7 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
       header.data.nBits = work.bits();
       header.nNonce = 0; 
       
-      EhInitialiseState(work.n(), work.k(), state);
+      Eh200_9.InitialiseState(state);
       hashTarget = work.bits() & 0x007FFFFF;
       unsigned exponent = work.bits() >> 24;
       if (exponent <= 3)
@@ -154,8 +154,7 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
     };    
     
     try {
-      if (EhOptimisedSolve(work.n(), work.k(), curr_state, validBlock, cancelled))
-        break;
+
     } catch (EhSolverCancelledException&) {
       ;
     }

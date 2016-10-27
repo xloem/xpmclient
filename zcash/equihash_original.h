@@ -7,7 +7,7 @@
 #define BITCOIN_EQUIHASH_H
 
 #include "sha256.h"
-// #include "utilstrencodings.h"
+#include <string>
 
 #include "sodium.h"
 
@@ -20,7 +20,7 @@
 
 #include <stdarg.h>
 
-#include <boost/static_assert.hpp>
+//#include <boost/static_assert.hpp>
 
 typedef crypto_generichash_blake2b_state eh_HashState;
 typedef uint32_t eh_index;
@@ -190,11 +190,6 @@ inline constexpr size_t equihash_solution_size(unsigned int N, unsigned int K) {
 template<unsigned int N, unsigned int K>
 class Equihash
 {
-private:
-    BOOST_STATIC_ASSERT(K < N);
-    BOOST_STATIC_ASSERT(N % 8 == 0);
-    BOOST_STATIC_ASSERT((N/(K+1)) + 1 < 8*sizeof(eh_index));
-
 public:
     enum : size_t { IndicesPerHashOutput=512/N };
     enum : size_t { HashOutput=IndicesPerHashOutput*N/8 };
@@ -216,7 +211,7 @@ public:
     bool OptimisedSolve(const eh_HashState& base_state,
                         const std::function<bool(std::vector<unsigned char>)> validBlock,
                         const std::function<bool(EhSolverCancelCheck)> cancelled);
-    bool IsValidSolution(const eh_HashState& base_state, std::vector<unsigned char> soln);
+    bool IsValidSolution(const eh_HashState& base_state, std::vector<unsigned char> &soln);
 };
 
 #include "equihash.tcc"
@@ -226,78 +221,5 @@ static Equihash<200,9> Eh200_9;
 static Equihash<96,5> Eh96_5;
 static Equihash<48,5> Eh48_5;
 
-#define EhInitialiseState(n, k, base_state)  \
-    if (n == 96 && k == 3) {                 \
-        Eh96_3.InitialiseState(base_state);  \
-    } else if (n == 200 && k == 9) {         \
-        Eh200_9.InitialiseState(base_state); \
-    } else if (n == 96 && k == 5) {          \
-        Eh96_5.InitialiseState(base_state);  \
-    } else if (n == 48 && k == 5) {          \
-        Eh48_5.InitialiseState(base_state);  \
-    } else {                                 \
-        throw std::invalid_argument("Unsupported Equihash parameters"); \
-    }
-
-inline bool EhBasicSolve(unsigned int n, unsigned int k, const eh_HashState& base_state,
-                    const std::function<bool(std::vector<unsigned char>)> validBlock,
-                    const std::function<bool(EhSolverCancelCheck)> cancelled)
-{
-    if (n == 96 && k == 3) {
-        return Eh96_3.BasicSolve(base_state, validBlock, cancelled);
-    } else if (n == 200 && k == 9) {
-        return Eh200_9.BasicSolve(base_state, validBlock, cancelled);
-    } else if (n == 96 && k == 5) {
-        return Eh96_5.BasicSolve(base_state, validBlock, cancelled);
-    } else if (n == 48 && k == 5) {
-        return Eh48_5.BasicSolve(base_state, validBlock, cancelled);
-    } else {
-        throw std::invalid_argument("Unsupported Equihash parameters");
-    }
-}
-
-inline bool EhBasicSolveUncancellable(unsigned int n, unsigned int k, const eh_HashState& base_state,
-                    const std::function<bool(std::vector<unsigned char>)> validBlock)
-{
-    return EhBasicSolve(n, k, base_state, validBlock,
-                        [](EhSolverCancelCheck pos) { return false; });
-}
-
-inline bool EhOptimisedSolve(unsigned int n, unsigned int k, const eh_HashState& base_state,
-                    const std::function<bool(std::vector<unsigned char>)> validBlock,
-                    const std::function<bool(EhSolverCancelCheck)> cancelled)
-{
-    if (n == 96 && k == 3) {
-        return Eh96_3.OptimisedSolve(base_state, validBlock, cancelled);
-    } else if (n == 200 && k == 9) {
-        return Eh200_9.OptimisedSolve(base_state, validBlock, cancelled);
-    } else if (n == 96 && k == 5) {
-        return Eh96_5.OptimisedSolve(base_state, validBlock, cancelled);
-    } else if (n == 48 && k == 5) {
-        return Eh48_5.OptimisedSolve(base_state, validBlock, cancelled);
-    } else {
-        throw std::invalid_argument("Unsupported Equihash parameters");
-    }
-}
-
-inline bool EhOptimisedSolveUncancellable(unsigned int n, unsigned int k, const eh_HashState& base_state,
-                    const std::function<bool(std::vector<unsigned char>)> validBlock)
-{
-    return EhOptimisedSolve(n, k, base_state, validBlock,
-                            [](EhSolverCancelCheck pos) { return false; });
-}
-
-#define EhIsValidSolution(n, k, base_state, soln, ret)   \
-    if (n == 96 && k == 3) {                             \
-        ret = Eh96_3.IsValidSolution(base_state, soln);  \
-    } else if (n == 200 && k == 9) {                     \
-        ret = Eh200_9.IsValidSolution(base_state, soln); \
-    } else if (n == 96 && k == 5) {                      \
-        ret = Eh96_5.IsValidSolution(base_state, soln);  \
-    } else if (n == 48 && k == 5) {                      \
-        ret = Eh48_5.IsValidSolution(base_state, soln);  \
-    } else {                                             \
-        throw std::invalid_argument("Unsupported Equihash parameters"); \
-    }
 
 #endif // BITCOIN_EQUIHASH_H

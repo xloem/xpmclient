@@ -54,24 +54,7 @@ private:
   MinerInstance *miners;
   unsigned _threadsNum;
   unsigned _threadsPerBlocksNum;  
-//   cl_command_queue *queues;
-  
-//   unsigned _threadsNum;
-//   unsigned _threadsPerBlocksNum;
 
-//   clBuffer<blake2b_state> blake2bState;
-//   clBuffer<uint32_t> heap0;
-//   clBuffer<uint32_t> heap1;
-//   clBuffer<bsizes> nslots;
-//   clBuffer<proof> sols;    
-//   clBuffer<uint32_t> numSols;
-//   
-//   cl_kernel _digitHKernel;
-//   cl_kernel _digitOKernel;  
-//   cl_kernel _digitEKernel;
-//   cl_kernel _digitKKernel;
-//   cl_kernel _digitKernels[10];
-  
   std::list<solsPerSecond> _stats;
   
   void pushStats(unsigned solsNum) {
@@ -133,6 +116,7 @@ public:
   
 public:
   ZCashMiner(unsigned id);
+  bool CheckEquihashSolution(const CBlockHeader *pblock, const uint8_t *proof, size_t size);
   bool Initialize(cl_context context,
                   cl_program program,
                   cl_device_id dev,

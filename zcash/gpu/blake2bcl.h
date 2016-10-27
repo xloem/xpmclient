@@ -34,7 +34,6 @@ uint2 SWAPUINT2(uint2 value) {
   result.x = value.y;
   result.y = value.x;
   return result;
-//   return make_uint2(value.y, value.x);
 }
 
 #define ROR24(u) ROR2(u,24)
@@ -76,53 +75,59 @@ void G(const int32_t r, const int32_t i, uint64_t *a, uint64_t *b, uint64_t *c, 
   G(r, 6, &v[2], &v[7], &v[ 8], &v[13], m); \
   G(r, 7, &v[3], &v[4], &v[ 9], &v[14], m);
 
-void blake2b_gpu_hash(blake2b_state *state, uint32_t idx, uint8_t *hash, uint32_t outlen) {
-  const uint32_t leb = idx;
-  *(uint32_t*)(state->buf + state->buflen) = leb;
-  state->buflen += 4;
-  state->counter += state->buflen;
-  for (unsigned i = 0; i < BLAKE2B_BLOCKBYTES - state->buflen; i++)
-    state->buf[i+state->buflen] = 0;  
-
-  uint64_t *d_data = (uint64_t *)state->buf;
+#define TOTAL_BLAKE2B_EQUI_COUNTER (128+16)  
+  
+void blake2b_equi(uint64_t d0,
+                  uint64_t d1,
+                  uint64_t d2,
+                  uint64_t d3,
+                  uint64_t d4,
+                  uint64_t d5,
+                  uint64_t d6,
+                  uint64_t d7,
+                  uint32_t buff0,
+                  uint32_t buff1,
+                  uint32_t buff2,
+                  uint32_t idx,
+                  uint64_t *out)
+{
+  
   uint64_t m[16];
-
-  m[0] = d_data[0];
-  m[1] = d_data[1];
-  m[2] = d_data[2];
-  m[3] = d_data[3];
-  m[4] = d_data[4];
-  m[5] = d_data[5];
-  m[6] = d_data[6];
-  m[7] = d_data[7];
-  m[8] = d_data[8];
-  m[9] = d_data[9];
-  m[10] = d_data[10];
-  m[11] = d_data[11];
-  m[12] = d_data[12];
-  m[13] = d_data[13];
-  m[14] = d_data[14];
-  m[15] = d_data[15];
-
+  m[0] = (((uint64_t)buff1) << 32) | buff0;
+  m[1] = (((uint64_t)idx) << 32) | buff2;
+  m[2] = 0;
+  m[3] = 0;
+  m[4] = 0;
+  m[5] = 0;
+  m[6] = 0;
+  m[7] = 0;
+  m[8] = 0;
+  m[9] = 0;
+  m[10] = 0;
+  m[11] = 0;  
+  m[12] = 0;
+  m[13] = 0;
+  m[14] = 0;
+  m[15] = 0;    
+  
   uint64_t v[16];
-
-  v[0] = state->h[0];
-  v[1] = state->h[1];
-  v[2] = state->h[2];
-  v[3] = state->h[3];
-  v[4] = state->h[4];
-  v[5] = state->h[5];
-  v[6] = state->h[6];
-  v[7] = state->h[7];
+  v[0] = d0;
+  v[1] = d1;
+  v[2] = d2;
+  v[3] = d3;
+  v[4] = d4;
+  v[5] = d5;
+  v[6] = d6;
+  v[7] = d7;
   v[8] = 0x6a09e667f3bcc908;
   v[9] = 0xbb67ae8584caa73b;
   v[10] =  0x3c6ef372fe94f82b;
   v[11] = 0xa54ff53a5f1d36f1;
-  v[12] = 0x510e527fade682d1 ^ state->counter;
+  v[12] = 0x510e527fade682d1 ^ TOTAL_BLAKE2B_EQUI_COUNTER;
   v[13] = 0x9b05688c2b3e6c1f;
   v[14] = 0x1f83d9abfb41bd6b ^ 0xffffffffffffffff;
   v[15] = 0x5be0cd19137e2179;
-
+  
   ROUND( 0 );
   ROUND( 1 );
   ROUND( 2 );
@@ -136,15 +141,12 @@ void blake2b_gpu_hash(blake2b_state *state, uint32_t idx, uint8_t *hash, uint32_
   ROUND( 10 );
   ROUND( 11 );
   
-  state->h[0] ^= v[0] ^ v[ 8];
-  state->h[1] ^= v[1] ^ v[ 9];
-  state->h[2] ^= v[2] ^ v[10];
-  state->h[3] ^= v[3] ^ v[11];
-  state->h[4] ^= v[4] ^ v[12];
-  state->h[5] ^= v[5] ^ v[13];
-  state->h[6] ^= v[6] ^ v[14];
-  state->h[7] ^= v[7] ^ v[15];
-
-  for (unsigned i = 0; i < outlen; i++)
-    hash[i] = ((uint8_t*)state->h)[i];
+  out[0] = d0 ^ v[0] ^ v[ 8];
+  out[1] = d1 ^ v[1] ^ v[ 9];
+  out[2] = d2 ^ v[2] ^ v[10];
+  out[3] = d3 ^ v[3] ^ v[11];
+  out[4] = d4 ^ v[4] ^ v[12];
+  out[5] = d5 ^ v[5] ^ v[13];
+  out[6] = d6 ^ v[6] ^ v[14];
+  out[7] = d7 ^ v[7] ^ v[15];
 }

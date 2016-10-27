@@ -104,17 +104,9 @@ typedef slot1 bucket1[NSLOTS];
 typedef bucket0 digit0[NBUCKETS];
 typedef bucket1 digit1[NBUCKETS];
 
-// manages hash and tree data
-typedef struct htalloc {
-  __global bucket0 *trees0[(WK+1)/2];
-  __global bucket1 *trees1[WK/2];
-} htalloc;
-
 typedef uint32_t bsizes[NBUCKETS];
 
-
 typedef struct htlayout {
-  htalloc hta;
   uint32_t prevhashunits;
   uint32_t nexthashunits;
   uint32_t dunits;
@@ -144,13 +136,4 @@ typedef struct collisiondata {
 #endif
   uint32_t s0;
 } collisiondata;
-
-
-typedef struct equi {
-  blake2b_state blake_ctx;
-  htalloc hta;
-  __global bsizes *nslots;
-  __global proof *sols;
-  uint32_t nsols;
-  uint32_t nthreads;
-} equi;
+// 

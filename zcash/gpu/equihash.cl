@@ -63,15 +63,11 @@ tree tree_create4(uint32_t bucketId, uint32_t s0, uint32_t s1, uint32_t xhash)
 }
 
 // size (in bytes) of hash in round 0 <= r < WK
-uint32_t hashsize(const uint32_t r)
-{
 #ifdef XINTREE
-  const uint32_t hashbits = WN - (r+1) * DIGITBITS;
+#define HASHSIZE(r) (((WN - (r+1) * DIGITBITS)+7)/8)
 #else
-  const uint32_t hashbits = WN - (r+1) * DIGITBITS + RESTBITS;
+#define HASHSIZE(r) (((WN - (r+1) * DIGITBITS + RESTBITS)+7)/8)
 #endif
-  return (hashbits + 7) / 8;
-}
 
 uint32_t hashwords(uint32_t bytes)
 {
@@ -84,13 +80,13 @@ htlayout htlayout_create_2(uint32_t r)
   R.prevhashunits = 0;
   R.dunits = 0;
   
-  uint32_t nexthashbytes = hashsize(r);
+  uint32_t nexthashbytes = HASHSIZE(r);
   R.nexthashunits = hashwords(nexthashbytes);
   
   R.prevbo = 0;
   R.nextbo = R.nexthashunits * sizeof(hashunit) - nexthashbytes; // 0-3
   if (r) {
-    uint32_t prevhashbytes = hashsize(r-1);
+    uint32_t prevhashbytes = HASHSIZE(r-1);
     R.prevhashunits = hashwords(prevhashbytes);
     R.prevbo = R.prevhashunits * sizeof(hashunit) - prevhashbytes; // 0-3
     R.dunits = R.prevhashunits - R.nexthashunits;
@@ -202,18 +198,7 @@ uint32_t equi_getnslots(__global bsizes *nslots, const uint32_t r, const uint32_
   return n;
 }
 
-void equi_orderindices(__global uint32_t *indices, uint32_t size)
-{
-  if (indices[0] > indices[size]) {
-    for (uint32_t i = 0; i < size; i++) {
-      const uint32_t tmp = indices[i];
-      indices[i] = indices[size+i];
-      indices[size+i] = tmp;
-    }
-  }
-}
-
-void local_orderindices(uint32_t *indices, uint32_t size)
+void orderindices(uint32_t *indices, uint32_t size)
 {
   if (indices[0] > indices[size]) {
     for (uint32_t i = 0; i < size; i++) {
@@ -225,221 +210,117 @@ void local_orderindices(uint32_t *indices, uint32_t size)
 }
 
 
-void equi_listindices1(__global uint32_t *heap0,
+void listindices1(__global uint32_t *heap0,
                        __global uint32_t *heap1,
                        const tree t,
-                       __global uint32_t *indices)
+                       uint32_t *indices)
 {
   const __global bucket0 *buck = &tree0_ptr(heap0, 0)[tree_bucket(t)];
   const uint32_t size = 1 << 0;
-  indices[0]    = tree_getindex((*buck)[tree_slotid0(t)].attr);
-  indices[size] = tree_getindex((*buck)[tree_slotid1(t)].attr);
-  equi_orderindices(indices, size);
+  
+  uint32_t i0 = tree_getindex((*buck)[tree_slotid0(t)].attr);
+  uint32_t i1 = tree_getindex((*buck)[tree_slotid1(t)].attr);
+  uint32_t offset = i0 > i1 ? 1 : 0;
+  indices[offset] = i0;
+  indices[offset^1] = i1;
 }
 
-void equi_listindices2(__global uint32_t *heap0,
+void listindices2(__global uint32_t *heap0,
                        __global uint32_t *heap1,
                        const tree t,
-                       __global uint32_t *indices)
+                       uint32_t *indices)
 {
   const __global bucket1 *buck = &tree1_ptr(heap1, 0)[tree_bucket(t)];
   const uint32_t size = 1 << 1;
-  equi_listindices1(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  equi_listindices1(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  equi_orderindices(indices, size);
+  listindices1(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
+  listindices1(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
+  orderindices(indices, size);
 }
 
-void equi_listindices3(__global uint32_t *heap0,
+void listindices3(__global uint32_t *heap0,
                        __global uint32_t *heap1,
                        const tree t,
-                       __global uint32_t *indices)
+                       uint32_t *indices)
 {
   const __global bucket0 *buck = &tree0_ptr(heap0, 1)[tree_bucket(t)];
   const uint32_t size = 1 << 2;
-  equi_listindices2(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  equi_listindices2(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  equi_orderindices(indices, size);
+  listindices2(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
+  listindices2(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
+  orderindices(indices, size);
 }
 
-void equi_listindices4(__global uint32_t *heap0,
+void listindices4(__global uint32_t *heap0,
                        __global uint32_t *heap1,
                        const tree t,
-                       __global uint32_t *indices)
+                       uint32_t *indices)
 {
   const __global bucket1 *buck = &tree1_ptr(heap1, 1)[tree_bucket(t)];
   const uint32_t size = 1 << 3;
-  equi_listindices3(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  equi_listindices3(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  equi_orderindices(indices, size);
+  listindices3(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
+  listindices3(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
+  orderindices(indices, size);
 }
  
-void equi_listindices5(__global uint32_t *heap0,
+void listindices5(__global uint32_t *heap0,
                        __global uint32_t *heap1,
                        const tree t,
-                       __global uint32_t *indices)
+                       uint32_t *indices)
 {
   const __global bucket0 *buck = &tree0_ptr(heap0, 2)[tree_bucket(t)];
   const uint32_t size = 1 << 4;
-  equi_listindices4(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  equi_listindices4(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  equi_orderindices(indices, size);
+  listindices4(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
+  listindices4(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
+  orderindices(indices, size);
 }  
   
-void equi_listindices6(__global uint32_t *heap0,
+void listindices6(__global uint32_t *heap0,
                        __global uint32_t *heap1,
                        const tree t,
-                       __global uint32_t *indices)
+                       uint32_t *indices)
 {
   const __global bucket1 *buck = &tree1_ptr(heap1, 2)[tree_bucket(t)];
   const uint32_t size = 1 << 5;
-  equi_listindices5(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  equi_listindices5(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  equi_orderindices(indices, size);
+  listindices5(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
+  listindices5(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
+  orderindices(indices, size);
 }  
   
-void equi_listindices7(__global uint32_t *heap0,
+void listindices7(__global uint32_t *heap0,
                        __global uint32_t *heap1,
                        const tree t,
-                       __global uint32_t *indices)
+                       uint32_t *indices)
 {
   const __global bucket0 *buck = &tree0_ptr(heap0, 3)[tree_bucket(t)];
   const uint32_t size = 1 << 6;
-  equi_listindices6(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  equi_listindices6(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  equi_orderindices(indices, size);
+  listindices6(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
+  listindices6(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
+  orderindices(indices, size);
 }  
 
-void equi_listindices8(__global uint32_t *heap0,
+void listindices8(__global uint32_t *heap0,
                        __global uint32_t *heap1,
                        const tree t,
-                       __global uint32_t *indices)
+                       uint32_t *indices)
 {
   const __global bucket1 *buck = &tree1_ptr(heap1, 3)[tree_bucket(t)];
   const uint32_t size = 1 << 7;
-  equi_listindices7(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  equi_listindices7(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  equi_orderindices(indices, size);
+  listindices7(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
+  listindices7(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
+  orderindices(indices, size);
 }  
 
-void equi_listindices9(__global uint32_t *heap0,
+void listindices9(__global uint32_t *heap0,
                        __global uint32_t *heap1,
                        const tree t,
-                       __global uint32_t *indices)
+                       uint32_t *indices)
 {
   const __global bucket0 *buck = &tree0_ptr(heap0, 4)[tree_bucket(t)];
   const uint32_t size = 1 << 8;
-  equi_listindices8(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  equi_listindices8(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  equi_orderindices(indices, size);
+  listindices8(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
+  listindices8(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
+  orderindices(indices, size);
 }
 
-void local_listindices1(__global uint32_t *heap0,
-                        __global uint32_t *heap1,                        
-                        const tree t,
-                        uint32_t *indices)
-{
-  const __global bucket0 *buck = &tree0_ptr(heap0, 0)[tree_bucket(t)];
-  const uint32_t size = 1 << 0;
-  indices[0]    = tree_getindex((*buck)[tree_slotid0(t)].attr);
-  indices[size] = tree_getindex((*buck)[tree_slotid1(t)].attr);
-  local_orderindices(indices, size);
-}
-
-void local_listindices2(__global uint32_t *heap0,
-                        __global uint32_t *heap1,                        
-                        const tree t,
-                        uint32_t *indices)
-{
-  const __global bucket1 *buck = &tree1_ptr(heap1, 0)[tree_bucket(t)];
-  const uint32_t size = 1 << 1;
-  local_listindices1(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  local_listindices1(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  local_orderindices(indices, size);
-}
-
-void local_listindices3(__global uint32_t *heap0,
-                        __global uint32_t *heap1,                        
-                        const tree t,
-                        uint32_t *indices)
-{
-  const __global bucket0 *buck = &tree0_ptr(heap0, 1)[tree_bucket(t)];
-  const uint32_t size = 1 << 2;
-  local_listindices2(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  local_listindices2(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  local_orderindices(indices, size);
-}
-
-void local_listindices4(__global uint32_t *heap0,
-                        __global uint32_t *heap1,                        
-                        const tree t,
-                        uint32_t *indices)
-{
-  const __global bucket1 *buck = &tree1_ptr(heap1, 1)[tree_bucket(t)];
-  const uint32_t size = 1 << 3;
-  local_listindices3(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  local_listindices3(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  local_orderindices(indices, size);
-}
- 
-void local_listindices5(__global uint32_t *heap0,
-                        __global uint32_t *heap1,                        
-                        const tree t,
-                        uint32_t *indices)
-{
-  const __global bucket0 *buck = &tree0_ptr(heap0, 2)[tree_bucket(t)];
-  const uint32_t size = 1 << 4;
-  local_listindices4(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  local_listindices4(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  local_orderindices(indices, size);
-}  
-  
-void local_listindices6(__global uint32_t *heap0,
-                        __global uint32_t *heap1,                        
-                        const tree t,
-                        uint32_t *indices)
-{
-  const __global bucket1 *buck = &tree1_ptr(heap1, 2)[tree_bucket(t)];
-  const uint32_t size = 1 << 5;
-  local_listindices5(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  local_listindices5(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  local_orderindices(indices, size);
-}  
-  
-void local_listindices7(__global uint32_t *heap0,
-                        __global uint32_t *heap1,                        
-                        const tree t,
-                        uint32_t *indices)
-{
-  const __global bucket0 *buck = &tree0_ptr(heap0, 3)[tree_bucket(t)];
-  const uint32_t size = 1 << 6;
-  local_listindices6(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  local_listindices6(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  local_orderindices(indices, size);
-}  
-
-void local_listindices8(__global uint32_t *heap0,
-                        __global uint32_t *heap1,                        
-                        const tree t,
-                        uint32_t *indices)
-{
-  const __global bucket1 *buck = &tree1_ptr(heap1, 3)[tree_bucket(t)];
-  const uint32_t size = 1 << 7;
-  local_listindices7(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  local_listindices7(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  local_orderindices(indices, size);
-}  
-
-void local_listindices9(__global uint32_t *heap0,
-                        __global uint32_t *heap1,
-                        const tree t,
-                        uint32_t *indices)
-{
-  const __global bucket0 *buck = &tree0_ptr(heap0, 4)[tree_bucket(t)];
-  const uint32_t size = 1 << 8;
-  local_listindices8(heap0, heap1, (*buck)[tree_slotid0(t)].attr, indices);
-  local_listindices8(heap0, heap1, (*buck)[tree_slotid1(t)].attr, indices+size);
-  local_orderindices(indices, size);
-}
 
 // proper dupe test is a little costly on GPU, so allow false negatives
 bool equi_probdupe(uint32_t *prf) {
@@ -448,8 +329,9 @@ bool equi_probdupe(uint32_t *prf) {
     susp[i] = 0xFFFF;
     
   for (unsigned i = 0; i < PROOFSIZE; i++) {
-    uint32_t bin = prf[i] & (PROOFSIZE-1);
-    unsigned short msb = prf[i] >> WK;
+    uint32_t data = prf[i];
+    uint32_t bin = data & (PROOFSIZE-1);
+    unsigned short msb = data >> WK;
     if (msb == susp[bin])
       return true;
     susp[bin] = msb;
@@ -458,6 +340,8 @@ bool equi_probdupe(uint32_t *prf) {
   return false;
 }
 
+
+
 void equi_candidate(__global uint32_t *heap0,
                     __global uint32_t *heap1,
                     __global proof *sols,
@@ -465,63 +349,78 @@ void equi_candidate(__global uint32_t *heap0,
                     const tree t)
 {
   proof prf;
+
 #if WK==9
-  local_listindices9(heap0, heap1, t, (uint32_t*)&prf);
+  listindices9(heap0, heap1, t, (uint32_t*)prf);
 #elif WK==5
-  local_listindices5(heap0, heap1, t, (uint32_t*)&prf);
+  listindices5(heap0, heap1, t, (uint32_t*)prf);
 #else
 #error not implemented
 #endif
-  if (equi_probdupe(prf))
+  if (equi_probdupe(prf))  
     return;
   uint32_t soli = atomic_inc(nsols);
-  if (soli < MAXSOLS)
-#if WK==9
-    equi_listindices9(heap0, heap1, t, sols[soli]);
-#elif WK==5
-    equi_listindices5(heap0, heap1, t, sols[soli]);
-#else
-#error not implemented
-#endif
+  if (soli < MAXSOLS) {
+    for (unsigned i = 0; i < sizeof(proof)/4; i++)
+      sols[soli][i] = prf[i];
+  }
 }
 
 
-__kernel void digitH(__global blake2b_state *blake2bState,
-                     __global const uint32_t *heap0,
-                     __global bsizes *nslots)
+uint32_t extract_byte_from_ui32_array(uint32_t *array, unsigned offset)
 {
-  uint8_t hash[HASHOUT];
-  blake2b_state state;
-  // equi::htlayout htl(eq, 0);
+  uint32_t R = array[offset/4] >> (8*(offset%4));
+  return (offset%4 == 3) ?
+    R : R & 0xFF;
+}  
+
+__kernel void digitH(__global const uint32_t *heap0,
+                     __global bsizes *nslots,
+                     uint64_t d0,
+                     uint64_t d1,
+                     uint64_t d2,
+                     uint64_t d3,
+                     uint64_t d4,
+                     uint64_t d5,
+                     uint64_t d6,
+                     uint64_t d7,
+                     uint32_t buff0,
+                     uint32_t buff1,
+                     uint32_t buff2)
+{
+  uint32_t hash[16];
   htlayout htl = htlayout_create_2(0);
-  const uint32_t hashbytes = hashsize(0);
-  // const uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
-  const uint32_t id = get_global_id(0);
-  for (uint32_t block = id; block < NBLOCKS; block += get_global_size(0)) {
-    state = *blake2bState;
-    blake2b_gpu_hash(&state, block, hash, HASHOUT);
-    for (uint32_t i = 0; i < HASHESPERBLAKE; i++) {
-      const uint8_t *ph = hash + i * WN/8;
+  for (uint32_t block = get_global_id(0); block < NBLOCKS; block += get_global_size(0)) {
+    // do blake2b, no global memory used
+    blake2b_equi(d0, d1, d2, d3, d4, d5, d6, d7, buff0, buff1, buff2, block, (uint64_t*)hash);
+#pragma unroll
+    for (unsigned i = 0; i < HASHESPERBLAKE; i++) { // default: 2 rounds
+      const unsigned phOffset = i*WN/8; // default: [0, 25]
+      const uint32_t ph0 = extract_byte_from_ui32_array(hash, phOffset+0);
+      const uint32_t ph1 = extract_byte_from_ui32_array(hash, phOffset+1);
+      const uint32_t ph2 = extract_byte_from_ui32_array(hash, phOffset+2);   
+      
 #if BUCKBITS == 16 && RESTBITS == 4
-      const uint32_t bucketid = ((uint32_t)ph[0] << 8) | ph[1];
+      const uint32_t bucketid = (ph0 << 8) | ph1;
 #ifdef XINTREE
-      const uint32_t xhash = ph[2] >> 4;
+      const uint32_t xhash = ph2 >> 4;
 #endif
 #elif BUCKBITS == 14 && RESTBITS == 6
-      const uint32_t bucketid = ((uint32_t)ph[0] << 6) | ph[1] >> 2;
+      const uint32_t bucketid = (ph0 << 6) | (ph1 >> 2);
 #elif BUCKBITS == 12 && RESTBITS == 8
-      const uint32_t bucketid = ((uint32_t)ph[0] << 4) | ph[1] >> 4;
+      const uint32_t bucketid = (ph0 << 4) | ph1 >> 4;
 #elif BUCKBITS == 20 && RESTBITS == 4
-      const uint32_t bucketid = ((((uint32_t)ph[0] << 8) | ph[1]) << 4) | ph[2] >> 4;
+      const uint32_t bucketid = (((ph0 << 8) | ph1) << 4) | ph2 >> 4;
 #ifdef XINTREE
-      const uint32_t xhash = ph[2] & 0xf;
+      const uint32_t xhash = ph2 & 0xf;
 #endif
 #elif BUCKBITS == 12 && RESTBITS == 4
-      const uint32_t bucketid = ((uint32_t)ph[0] << 4) | ph[1] >> 4;
-      const uint32_t xhash = ph[1] & 0xf;
+      const uint32_t bucketid = (ph0 << 4) | (ph1 >> 4);
+      const uint32_t xhash = ph1 & 0xf;
 #else
 #error not implemented
-#endif
+#endif      
+      
       const uint32_t slot = atomic_inc(&nslots[0][bucketid]);
       if (slot >= NSLOTS)
         continue;
@@ -530,12 +429,13 @@ __kernel void digitH(__global blake2b_state *blake2bState,
 #ifdef XINTREE
       tree_setxhash(&leaf, xhash);
 #endif
+     
       __global slot0 *s = &tree0_ptr(heap0, 0)[bucketid][slot];
+      __global uint8_t *dst8 = ((__global uint8_t*)s->hash->bytes+htl.nextbo);
+      const uint32_t hashBytes = HASHSIZE(0);
       s->attr = leaf;
-      
-      // memcpy(s.hash->bytes+htl.nextbo, ph+WN/8-hashbytes, hashbytes);
-      for (unsigned i = 0; i < hashbytes; i++)
-        ((__global uint8_t*)s->hash->bytes+htl.nextbo)[i] = ((uint8_t*)(ph+WN/8-hashbytes))[i];
+      for (unsigned i = 0; i < hashBytes; i++)
+        dst8[i] = extract_byte_from_ui32_array(hash, phOffset+WN/8-hashBytes + i);
     }
   }
 }

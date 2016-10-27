@@ -63,7 +63,7 @@ public:
   }
   
   void init(cl_context gContext, int size, cl_mem_flags flags = 0) {
-    
+    printf("<info> OpenCL: alloc %i bytes\n", (int)(size*sizeof(T)));
     Size = size;
     
     if(!(flags & CL_MEM_HOST_NO_ACCESS)){
@@ -77,9 +77,11 @@ public:
     cl_int error;
     if (flags & CL_MEM_HOST_NO_ACCESS)
       flags = CL_MEM_READ_WRITE;
-    DeviceData = clCreateBuffer(gContext, flags, Size*sizeof(T), 0, &error);
+    if (flags & CL_MEM_COPY_HOST_PTR)
+      DeviceData = clCreateBuffer(gContext, flags, Size*sizeof(T), HostData, &error);
+    else
+      DeviceData = clCreateBuffer(gContext, flags, Size*sizeof(T), 0, &error);
     OCL(error);
-    
   }
   
   void copyToDevice(cl_command_queue cq, bool blocking = true) {

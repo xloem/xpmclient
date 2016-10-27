@@ -49,7 +49,7 @@ set(LIBRARIES
 )
 
 if (WIN32)
-  set(LIBRARIES ${LIBRARIES} ws2_32)
+  set(LIBRARIES ${LIBRARIES} ws2_32 advapi32)
 else()
   set(LIBRARIES ${LIBRARIES} dl rt pthread)
 endif()
@@ -99,7 +99,7 @@ if (STATIC_BUILD)
   set_target_properties(zcashcpuclient PROPERTIES LINK_SEARCH_END_STATIC 1)
 endif()
 
-# ZCash GPU Client
+# ZCash GPU Client 1
 add_definitions(-DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4) 
 
 add_executable(zcashgpuclient
@@ -109,6 +109,7 @@ add_executable(zcashgpuclient
   sha256.cpp
   zcash/zcashgpuclient.cpp
   zcash/blake2b.cpp
+  zcash/equihash_original.cpp
   ${ProtoSources}
 )
 
@@ -120,4 +121,29 @@ target_link_libraries(zcashgpuclient ${LIBRARIES})
 
 if (STATIC_BUILD)
   set_target_properties(zcashgpuclient PROPERTIES LINK_SEARCH_END_STATIC 1)
+endif()
+
+
+# ZCash GPU Client 2
+add_definitions(-DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4) 
+
+add_executable(zcashgpuclient_silentarmy
+  adl.cpp
+  baseclient.cpp
+  opencl.cpp
+  sha256.cpp
+  zcash/zcashgpuclient_silent.cpp
+  zcash/blake2b.cpp
+  zcash/equihash_original.cpp
+  ${ProtoSources}
+)
+
+SET_TARGET_PROPERTIES(zcashgpuclient_silentarmy PROPERTIES
+  COMPILE_FLAGS "-std=c++0x -msse -msse2 -msse3" 
+)
+
+target_link_libraries(zcashgpuclient_silentarmy ${LIBRARIES})
+
+if (STATIC_BUILD)
+  set_target_properties(zcashgpuclient_silentarmy PROPERTIES LINK_SEARCH_END_STATIC 1)
 endif()
