@@ -757,6 +757,7 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
     return false;
   }
     
+  unsigned instancesNum = 2;    
   mNumDevices = allGpus.size();
   std::vector<bool> usegpu(mNumDevices, true);
   std::vector<int> threads(mNumDevices, 8192);
@@ -783,6 +784,7 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
       cfg->lookupList("", "memfreq", cmemspeed);
       cfg->lookupList("", "powertune", cpowertune);
       cfg->lookupList("", "fanspeed", cfanspeed);
+      cfg->lookupInt("", "instances", 2);
     } catch(const ConfigurationException& ex) {}
     
     for(int i = 0; i < (int)mNumDevices; ++i) {
@@ -840,15 +842,16 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
                          { "zcash/gpu/kernel.cl" },
                          "",
                          &binstatus[i],
-                         &gProgram[i])); 
+                         &gProgram[i]))
+      return false;
   }
 
-  for(unsigned i = 0; i < gpus.size(); ++i) {
+  for(unsigned i = 0; i < gpus.size()*instancesNum; ++i) {
       std::pair<ZCashMiner*,void*> worker;
-      if (binstatus[i] == CL_SUCCESS) {
+      if (binstatus[i/instancesNum] == CL_SUCCESS) {
       
         ZCashMiner *miner = new ZCashMiner(i);
-        if (!miner->Initialize(gContext[i], gProgram[i], gpus[i], 1, threads[i], worksize[i]))
+        if (!miner->Initialize(gContext[i/instancesNum], gProgram[i/instancesNum], gpus[i/instancesNum], 1, threads[i/instancesNum], worksize[i/instancesNum]))
           return false;
         
         void *pipe = zthread_fork(mCtx, &ZCashMiner::InvokeMining, miner);
@@ -865,7 +868,7 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
     
       mWorkers.push_back(worker);
     }  
-  
+
   return true;
 }
 
