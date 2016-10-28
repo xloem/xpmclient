@@ -24,7 +24,31 @@ __constant ulong blake_iv[] =
 };
 
 
+uint read_uint_unaligned(__global uint *ptr)
+{
+  uchar4 X = vload4(0, (__global uchar*)ptr);
+  return *(uint*)&X;
+}
 
+ulong read_ulong_unaligned(__global ulong *ptr)
+{
+  uchar8 X = vload8(0, (__global uchar*)ptr);
+  return *(ulong*)&X;
+}
+
+void write_uint_unaligned(__global uint *ptr, uint value)
+{
+  uchar4 X;
+  *(uint*)&X = value;
+  vstore4(X, 0, (__global uchar*)ptr);
+}
+
+void write_ulong_unaligned(__global ulong *ptr, ulong value)
+{
+  uchar8 X;
+  *(ulong*)&X = value;
+  vstore8(X, 0, (__global uchar*)ptr);
+}
 
 __kernel
 void kernel_init_ht(__global char *ht)
@@ -63,39 +87,51 @@ uint ht_store(uint round, __global char *ht, uint i,
       {
 
  *(__global ulong *)(p + 0) = xi0;
+
  *(__global ulong *)(p + 8) = xi1;
+
  *(__global ulong *)(p + 16) = xi2;
+
       }
     else if (round == 2)
       {
 
- *(__global ulong *)(p + 0) = xi0;
- *(__global ulong *)(p + 8) = xi1;
- *(__global uint *)(p + 16) = xi2;
+
+    write_ulong_unaligned((__global ulong *)(p + 0), xi0);
+
+    write_ulong_unaligned((__global ulong *)(p + 8), xi1);
+
+    write_uint_unaligned((__global uint *)(p + 16), xi2);
       }
     else if (round == 3 || round == 4)
       {
 
- *(__global ulong *)(p + 0) = xi0;
- *(__global ulong *)(p + 8) = xi1;
+
+    write_ulong_unaligned((__global ulong *)(p + 0), xi0);
+
+    write_ulong_unaligned((__global ulong *)(p + 8), xi1);
 
       }
     else if (round == 5)
       {
 
- *(__global ulong *)(p + 0) = xi0;
- *(__global uint *)(p + 8) = xi1;
+
+    write_ulong_unaligned((__global ulong *)(p + 0), xi0);
+
+    write_uint_unaligned((__global uint *)(p + 8), xi1);
       }
     else if (round == 6 || round == 7)
       {
 
- *(__global ulong *)(p + 0) = xi0;
+
+    write_ulong_unaligned((__global ulong *)(p + 0), xi0);
       }
     else if (round == 8)
       {
 
  *(__global uint *)(p + 0) = xi0;
-      }
+
+      };
     return 0;
 }
 # 187 "input.cl"
@@ -292,8 +328,12 @@ void kernel_round0(__global char *unused,
 
 }
 # 409 "input.cl"
-uint xor_and_store(uint round, __global char *ht_dst, uint row,
- uint slot_a, uint slot_b, __global ulong *a, __global ulong *b)
+uint xor_and_store(uint round,
+                   __global char *ht_dst,
+                   uint row,
+                   uint slot_a, uint slot_b,
+                   __global ulong *a,
+                   __global ulong *b)
 {
     ulong xi0, xi1, xi2;
 
@@ -303,35 +343,46 @@ uint xor_and_store(uint round, __global char *ht_dst, uint row,
       {
 
 
- xi0 = *(a++) ^ *(b++);
- xi1 = *(a++) ^ *(b++);
- xi2 = *a ^ *b;
+
+    xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
+
+    xi1 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
+
+    xi2 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b);
       }
     else if (round == 3)
       {
 
- xi0 = *a++ ^ *b++;
- xi1 = *a++ ^ *b++;
- xi2 = *(__global uint *)a ^ *(__global uint *)b;
+
+    xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
+
+    xi1 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
+
+    xi2 = read_uint_unaligned((__global uint*)a) ^ read_uint_unaligned((__global uint8*)b);
       }
     else if (round == 4 || round == 5)
       {
 
- xi0 = *a++ ^ *b++;
- xi1 = *a ^ *b;
+
+    xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
+
+    xi1 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b);
  xi2 = 0;
       }
     else if (round == 6)
       {
 
- xi0 = *a++ ^ *b++;
- xi1 = *(__global uint *)a ^ *(__global uint *)b;
+
+    xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
+
+    xi1 = read_uint_unaligned((__global uint*)a) ^ read_uint_unaligned((__global uint8*)b);
  xi2 = 0;
       }
     else if (round == 7 || round == 8)
       {
 
- xi0 = *a ^ *b;
+
+    xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b);
  xi1 = 0;
  xi2 = 0;
       }

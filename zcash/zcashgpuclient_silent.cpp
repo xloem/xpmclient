@@ -266,26 +266,30 @@ static void sort_pair(uint32_t *a, uint32_t len)
       return ;
 }
 
-static uint32_t verify_sol(sols_t *sols, unsigned sol_i)
+uint32_t verify_sol(sols_t *sols, unsigned sol_i)
 {
     uint32_t  *inputs = sols->values[sol_i];
-    uint32_t  seen_len = (1 << (PREFIX + 1)) / 8;
-    uint8_t seen[seen_len];
+    uint32_t  seen_len = (1 << (PREFIX + 1))/8;
+    std::unique_ptr<uint8_t[]> seen(new uint8_t[seen_len]);
     uint32_t  i;
     uint8_t tmp;
     // look for duplicate inputs
-    memset(seen, 0, seen_len);
-    for (i = 0; i < (1 << PARAM_K); i++)
-      {
-  tmp = seen[inputs[i] / 8];
-  seen[inputs[i] / 8] |= 1 << (inputs[i] & 7);
-  if (tmp == seen[inputs[i] / 8])
-    {
-      // at least one input value is a duplicate
-      sols->valid[sol_i] = 0;
-      return 0;
-    }
+    memset(seen.get(), 0, seen_len);
+    for (i = 0; i < (1 << PARAM_K); i++) {
+      if ((inputs[i]/8) >= seen_len) {
+        sols->valid[sol_i] = 0;
+        return 0;
       }
+        
+      tmp = seen[inputs[i] / 8];
+      seen[inputs[i] / 8] |= 1 << (inputs[i] & 7);
+      if (tmp == seen[inputs[i] / 8]) {
+        // at least one input value is a duplicate
+        sols->valid[sol_i] = 0;
+        return 0;
+      }
+    }
+    
     // the valid flag is already set by the GPU, but set it again because
     // I plan to change the GPU code to not set it
     sols->valid[sol_i] = 1;
@@ -784,7 +788,7 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
       cfg->lookupList("", "memfreq", cmemspeed);
       cfg->lookupList("", "powertune", cpowertune);
       cfg->lookupList("", "fanspeed", cfanspeed);
-      cfg->lookupInt("", "instances", 2);
+      instancesNum = cfg->lookupInt("", "instances", 2);
     } catch(const ConfigurationException& ex) {}
     
     for(int i = 0; i < (int)mNumDevices; ++i) {
