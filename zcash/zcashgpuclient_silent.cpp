@@ -2,6 +2,7 @@
 #include "blake2.h"
 #include "equihash_original.h"
 #include "../sha256.h"
+#include "../base58.h"
 extern "C" {
 #include "../adl.h"
 }
@@ -536,7 +537,8 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
       clBuffer<uint8_t> &bufHtFirst = (round%2 == 0) ? miner.buf_ht0 : miner.buf_ht1;
       clBuffer<uint8_t> &bufHtSecond = (round%2 == 0) ? miner.buf_ht1 : miner.buf_ht0;
 
-      init_ht(miner.queue, miner.k_init_ht, bufHtFirst);
+      if (round < 2)
+        init_ht(miner.queue, miner.k_init_ht, bufHtFirst);
       if (round == 0) {
         OCL(clSetKernelArg(miner.k_rounds[round], 0, sizeof(cl_mem), &bufHtFirst.DeviceData));
         OCL(clSetKernelArg(miner.k_rounds[round], 1, sizeof(cl_mem), &bufHtFirst.DeviceData));
@@ -556,6 +558,8 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
       }
 
       OCL(clSetKernelArg(miner.k_rounds[round], 2, sizeof(cl_mem), &miner.buf_dbg.DeviceData));
+      if (round == PARAM_K - 1)
+        OCL(clSetKernelArg(miner.k_rounds[round], 3, sizeof(cl_mem), &miner.buf_sols.DeviceData));
       OCL(clEnqueueNDRangeKernel(miner.queue, miner.k_rounds[round], 1, NULL, &global_ws, &local_work_size, 0, NULL, NULL));
     }
     
@@ -756,6 +760,9 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
     platformType = ptNVidia;    
   }
   
+  if (platformType == ptAMD)
+    setup_adl();    
+  
   std::vector<cl_device_id> allGpus;
   if (!clInitialize(platformName, allGpus)) {
     return false;
@@ -772,6 +779,13 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
   mFanSpeed = std::vector<int>(mNumDevices, 70);
   
   {
+    const char *address = cfg->lookupString("", "address");    
+    CBitcoinAddress btcAddress(address);
+    if (!btcAddress.IsValidForZCash()) {
+      printf("This address is not valid ZCash T-address: %s\n", address);
+      exit(1);
+    }
+    
     StringVector cworksizes;
     StringVector cthreads;
     StringVector cdevices;

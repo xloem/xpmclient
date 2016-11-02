@@ -1,6 +1,7 @@
 #include "zcashgpuclient.h"
 #include "equihash_original.h"
 #include "../sha256.h"
+#include "../base58.h"
 extern "C" {
 #include "../adl.h"
 }
@@ -611,6 +612,9 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
     platformType = ptNVidia;    
   }
   
+  if (platformType == ptAMD)
+    setup_adl();  
+  
   std::vector<cl_device_id> allGpus;
   if (!clInitialize(platformName, allGpus)) {
     return false;
@@ -626,6 +630,13 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
   mFanSpeed = std::vector<int>(mNumDevices, 70);
   
   {
+    const char *address = cfg->lookupString("", "address");    
+    CBitcoinAddress btcAddress(address);
+    if (!btcAddress.IsValidForZCash()) {
+      printf("This address is not valid ZCash T-address: %s\n", address);
+      exit(1);
+    }    
+    
     StringVector cworksizes;
     StringVector cthreads;
     StringVector cdevices;

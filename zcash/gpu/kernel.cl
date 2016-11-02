@@ -9,12 +9,12 @@
 typedef struct sols_s
 {
     uint nr;
-    uint likely_invalidss;
+    uint likely_invalids;
     uchar valid[2000];
     uint values[2000][(1 << 9)];
 } sols_t;
 # 2 "input.cl" 2
-# 35 "input.cl"
+# 36 "input.cl"
 __constant ulong blake_iv[] =
 {
     0x6a09e667f3bcc908, 0xbb67ae8584caa73b,
@@ -22,7 +22,6 @@ __constant ulong blake_iv[] =
     0x510e527fade682d1, 0x9b05688c2b3e6c1f,
     0x1f83d9abfb41bd6b, 0x5be0cd19137e2179,
 };
-
 
 uint read_uint_unaligned(__global uint *ptr)
 {
@@ -50,20 +49,24 @@ void write_ulong_unaligned(__global ulong *ptr, ulong value)
   vstore8(X, 0, (__global uchar*)ptr);
 }
 
+
+
+
+
 __kernel
 void kernel_init_ht(__global char *ht)
 {
     uint tid = get_global_id(0);
-    *(__global uint *)(ht + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 13) * 32) = 0;
+    *(__global uint *)(ht + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 9) * 32) = 0;
 }
-# 79 "input.cl"
+# 107 "input.cl"
 uint ht_store(uint round, __global char *ht, uint i,
         ulong xi0, ulong xi1, ulong xi2, ulong xi3)
 {
     uint row;
     __global char *p;
     uint cnt;
-# 110 "input.cl"
+# 138 "input.cl"
     if (!(round % 2))
  row = (xi0 & 0xffff) | ((xi0 & 0xf00000) >> 4);
     else
@@ -76,9 +79,9 @@ uint ht_store(uint round, __global char *ht, uint i,
     xi0 = (xi0 >> 16) | (xi1 << (64 - 16));
     xi1 = (xi1 >> 16) | (xi2 << (64 - 16));
     xi2 = (xi2 >> 16) | (xi3 << (64 - 16));
-    p = ht + row * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 13) * 32;
+    p = ht + row * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 9) * 32;
     cnt = atomic_inc((__global uint *)p);
-    if (cnt >= ((1 << (((200 / (9 + 1)) + 1) - 20)) * 13))
+    if (cnt >= ((1 << (((200 / (9 + 1)) + 1) - 20)) * 9))
         return 1;
     p += cnt * 32 + (8 + ((round) / 2) * 4);
 
@@ -87,42 +90,30 @@ uint ht_store(uint round, __global char *ht, uint i,
       {
 
  *(__global ulong *)(p + 0) = xi0;
-
  *(__global ulong *)(p + 8) = xi1;
-
  *(__global ulong *)(p + 16) = xi2;
-
       }
     else if (round == 2)
       {
 
-
     write_ulong_unaligned((__global ulong *)(p + 0), xi0);
-
     write_ulong_unaligned((__global ulong *)(p + 8), xi1);
-
     write_uint_unaligned((__global uint *)(p + 16), xi2);
       }
     else if (round == 3 || round == 4)
       {
 
-
     write_ulong_unaligned((__global ulong *)(p + 0), xi0);
-
     write_ulong_unaligned((__global ulong *)(p + 8), xi1);
-
       }
     else if (round == 5)
       {
 
-
-    write_ulong_unaligned((__global ulong *)(p + 0), xi0);
-
-    write_uint_unaligned((__global uint *)(p + 8), xi1);
+  *(__global ulong *)(p + 0) = xi0;
+  *(__global uint *)(p + 8) = xi1;
       }
     else if (round == 6 || round == 7)
       {
-
 
     write_ulong_unaligned((__global ulong *)(p + 0), xi0);
       }
@@ -130,12 +121,10 @@ uint ht_store(uint round, __global char *ht, uint i,
       {
 
  *(__global uint *)(p + 0) = xi0;
-
-      };
+      }
     return 0;
 }
-# 187 "input.cl"
-
+# 214 "input.cl"
 typedef ulong uint64_t;
 
 __kernel __attribute__((reqd_work_group_size(64, 1, 1)))
@@ -327,13 +316,9 @@ void kernel_round0(__global char *unused,
 
 
 }
-# 409 "input.cl"
-uint xor_and_store(uint round,
-                   __global char *ht_dst,
-                   uint row,
-                   uint slot_a, uint slot_b,
-                   __global ulong *a,
-                   __global ulong *b)
+# 441 "input.cl"
+uint xor_and_store(uint round, __global char *ht_dst, uint row,
+ uint slot_a, uint slot_b, __global ulong *a, __global ulong *b)
 {
     ulong xi0, xi1, xi2;
 
@@ -342,49 +327,61 @@ uint xor_and_store(uint round,
     if (round == 1 || round == 2)
       {
 
+  xi0 = *(a++) ^ *(b++);
+  xi1 = *(a++) ^ *(b++);
+  xi2 = *a ^ *b;
+ if (round == 2)
+   {
 
-
-    xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
-
-    xi1 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
-
-    xi2 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b);
+      xi0 = (xi0 >> 8) | (xi1 << (64 - 8));
+      xi1 = (xi1 >> 8) | (xi2 << (64 - 8));
+      xi2 = (xi2 >> 8);
+   }
       }
     else if (round == 3)
       {
 
-
     xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
-
     xi1 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
-
     xi2 = read_uint_unaligned((__global uint*)a) ^ read_uint_unaligned((__global uint8*)b);
       }
     else if (round == 4 || round == 5)
       {
 
-
     xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
-
     xi1 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b);
  xi2 = 0;
+ if (round == 4)
+   {
+
+     xi0 = (xi0 >> 8) | (xi1 << (64 - 8));
+     xi1 = (xi1 >> 8);
+   }
       }
     else if (round == 6)
       {
 
+  xi0 = *a++ ^ *b++;
+  xi1 = *(__global uint *)a ^ *(__global uint *)b;
+  xi2 = 0;
+ if (round == 6)
+   {
 
-    xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b); a++; b++;
-
-    xi1 = read_uint_unaligned((__global uint*)a) ^ read_uint_unaligned((__global uint8*)b);
- xi2 = 0;
+     xi0 = (xi0 >> 8) | (xi1 << (64 - 8));
+     xi1 = (xi1 >> 8);
+   }
       }
     else if (round == 7 || round == 8)
       {
 
-
     xi0 = read_ulong_unaligned(a) ^ read_ulong_unaligned(b);
  xi1 = 0;
  xi2 = 0;
+ if (round == 8)
+   {
+
+     xi0 = (xi0 >> 8);
+   }
       }
 
 
@@ -408,12 +405,12 @@ void equihash_round(uint round, __global char *ht_src, __global char *ht_dst,
     uint tlid = get_local_id(0);
     __global char *p;
     uint cnt;
-    uchar first_words[((1 << (((200 / (9 + 1)) + 1) - 20)) * 13)];
+    uchar first_words[((1 << (((200 / (9 + 1)) + 1) - 20)) * 9)];
     uchar mask;
     uint i, j;
 
 
-    ushort collisions[((1 << (((200 / (9 + 1)) + 1) - 20)) * 13) * 2];
+    ushort collisions[((1 << (((200 / (9 + 1)) + 1) - 20)) * 9) * 3];
     uint nr_coll = 0;
     uint n;
     uint dropped_coll, dropped_stor;
@@ -421,14 +418,14 @@ void equihash_round(uint round, __global char *ht_src, __global char *ht_dst,
     uint xi_offset;
 
     xi_offset = (8 + ((round - 1) / 2) * 4);
-# 495 "input.cl"
+# 550 "input.cl"
     mask = 0;
 
 
 
-    p = (ht_src + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 13) * 32);
+    p = (ht_src + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 9) * 32);
     cnt = *(__global uint *)p;
-    cnt = min(cnt, (uint)((1 << (((200 / (9 + 1)) + 1) - 20)) * 13));
+    cnt = min(cnt, (uint)((1 << (((200 / (9 + 1)) + 1) - 20)) * 9));
     p += xi_offset;
     for (i = 0; i < cnt; i++, p += 32)
         first_words[i] = *(__global uchar *)p;
@@ -453,27 +450,26 @@ void equihash_round(uint round, __global char *ht_src, __global char *ht_dst,
 
               }
 
-    uint adj = (!(round % 2)) ? 1 : 0;
-
     dropped_stor = 0;
     for (n = 0; n < nr_coll; n++)
       {
         i = collisions[n] & 0xff;
         j = collisions[n] >> 8;
         a = (__global ulong *)
-            (ht_src + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 13) * 32 + i * 32 + xi_offset
-      + adj);
+            (ht_src + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 9) * 32 + i * 32 + xi_offset);
         b = (__global ulong *)
-            (ht_src + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 13) * 32 + j * 32 + xi_offset
-      + adj);
+            (ht_src + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 9) * 32 + j * 32 + xi_offset);
  dropped_stor += xor_and_store(round, ht_dst, tid, i, j, a, b);
       }
+    if (round < 8)
+
+ *(__global uint *)(ht_src + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 9) * 32) = 0;
 
 
 
 
 }
-# 557 "input.cl"
+# 611 "input.cl"
 __kernel __attribute__((reqd_work_group_size(64, 1, 1))) void kernel_round1(__global char *ht_src, __global char *ht_dst, __global uint *debug) { equihash_round(1, ht_src, ht_dst, debug); }
 __kernel __attribute__((reqd_work_group_size(64, 1, 1))) void kernel_round2(__global char *ht_src, __global char *ht_dst, __global uint *debug) { equihash_round(2, ht_src, ht_dst, debug); }
 __kernel __attribute__((reqd_work_group_size(64, 1, 1))) void kernel_round3(__global char *ht_src, __global char *ht_dst, __global uint *debug) { equihash_round(3, ht_src, ht_dst, debug); }
@@ -481,11 +477,21 @@ __kernel __attribute__((reqd_work_group_size(64, 1, 1))) void kernel_round4(__gl
 __kernel __attribute__((reqd_work_group_size(64, 1, 1))) void kernel_round5(__global char *ht_src, __global char *ht_dst, __global uint *debug) { equihash_round(5, ht_src, ht_dst, debug); }
 __kernel __attribute__((reqd_work_group_size(64, 1, 1))) void kernel_round6(__global char *ht_src, __global char *ht_dst, __global uint *debug) { equihash_round(6, ht_src, ht_dst, debug); }
 __kernel __attribute__((reqd_work_group_size(64, 1, 1))) void kernel_round7(__global char *ht_src, __global char *ht_dst, __global uint *debug) { equihash_round(7, ht_src, ht_dst, debug); }
-__kernel __attribute__((reqd_work_group_size(64, 1, 1))) void kernel_round8(__global char *ht_src, __global char *ht_dst, __global uint *debug) { equihash_round(8, ht_src, ht_dst, debug); }
+
+
+__kernel __attribute__((reqd_work_group_size(64, 1, 1)))
+void kernel_round8(__global char *ht_src, __global char *ht_dst,
+ __global uint *debug, __global sols_t *sols)
+{
+    uint tid = get_global_id(0);
+    equihash_round(8, ht_src, ht_dst, debug);
+    if (!tid)
+ sols->nr = sols->likely_invalids = 0;
+}
 
 uint expand_ref(__global char *ht, uint xi_offset, uint row, uint slot)
 {
-    return *(__global uint *)(ht + row * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 13) * 32 +
+    return *(__global uint *)(ht + row * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 9) * 32 +
      slot * 32 + xi_offset - 4);
 }
 
@@ -561,12 +567,9 @@ void kernel_sols(__global char *ht0, __global char *ht1, __global sols_t *sols)
 
 
 
-    if (tid == 0)
- sols->nr = sols->likely_invalidss = 0;
-    mem_fence(CLK_GLOBAL_MEM_FENCE);
-    a = htabs[ht_i] + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 13) * 32;
+    a = htabs[ht_i] + tid * ((1 << (((200 / (9 + 1)) + 1) - 20)) * 9) * 32;
     cnt = *(__global uint *)a;
-    cnt = min(cnt, (uint)((1 << (((200 / (9 + 1)) + 1) - 20)) * 13));
+    cnt = min(cnt, (uint)((1 << (((200 / (9 + 1)) + 1) - 20)) * 9));
     coll = 0;
     a += xi_offset;
     for (i = 0; i < cnt; i++, a += 32)
@@ -579,7 +582,7 @@ void kernel_sols(__global char *ht0, __global char *ht1, __global sols_t *sols)
   if (coll < sizeof (collisions) / sizeof (*collisions))
       collisions[coll++] = ((ulong)ref_i << 32) | ref_j;
   else
-      atomic_inc(&sols->likely_invalidss);
+      atomic_inc(&sols->likely_invalids);
        }
     if (!coll)
  return ;
@@ -587,3 +590,4 @@ void kernel_sols(__global char *ht0, __global char *ht1, __global sols_t *sols)
  potential_sol(htabs, sols, collisions[i] >> 32,
   collisions[i] & 0xffffffff);
 }
+

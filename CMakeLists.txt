@@ -104,6 +104,7 @@ add_definitions(-DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4)
 
 add_executable(zcashgpuclient
   adl.cpp
+  base58.cpp
   baseclient.cpp
   opencl.cpp
   sha256.cpp
@@ -129,6 +130,7 @@ add_definitions(-DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4)
 
 add_executable(zcashgpuclient_silentarmy
   adl.cpp
+  base58.cpp
   baseclient.cpp
   opencl.cpp
   sha256.cpp
