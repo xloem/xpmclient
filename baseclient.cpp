@@ -30,6 +30,9 @@ static void* gServer = 0;
 static void* gSignals = 0;
 static void* gWorkers = 0;
 
+static unsigned gStaleShareChain = 0;
+static std::map<unsigned, time_t> timeMap;
+
 std::string gAddr = "";
 proto::Block gBlock;
 proto::ServerInfo gServerInfo;
@@ -52,6 +55,7 @@ static bool ConnectBitcoin() {
 	
 	zsocket_destroy(gCtx, gServer);
 	gServer = zsocket_new(gCtx, ZMQ_DEALER);
+  zsocket_set_linger(gServer, 0);
 	int err = zsocket_connect(gServer, "tcp://%s:%d", sinfo.host().c_str(), sinfo.router());
 	if(err){
 		printf("ERROR: invalid hostname and/or port.\n");
@@ -68,6 +72,7 @@ static bool ConnectSignals() {
 	
 	zsocket_destroy(gCtx, gSignals);
 	gSignals = zsocket_new(gCtx, ZMQ_SUB);
+  zsocket_set_linger(gSignals, 0);
 	int err = zsocket_connect(gSignals, "tcp://%s:%d", sinfo.host().c_str(), sinfo.pub());
 	if(err){
 		printf("ERROR: invalid hostname and/or port.\n");
@@ -79,6 +84,17 @@ static bool ConnectSignals() {
 	
 	return true;
 	
+}
+
+static void ReconnectBitcoin() {
+  int err = 0;
+  
+  const proto::ServerInfo& sinfo = gServerInfo;
+  err |= zsocket_disconnect(gServer, "tcp://%s:%d", sinfo.host().c_str(), sinfo.router());
+  err |= zsocket_connect(gServer, "tcp://%s:%d", sinfo.host().c_str(), sinfo.router());  
+  if(err){
+    printf("ReconnectBitcoin(): FAIL\n");
+  }
 }
 
 static void ReConnectSignals() {
@@ -177,6 +193,7 @@ static void SubmitShare(const proto::Share& share) {
 	GetNewReqNonce(req);
 	Send(req, gServer);
 	
+  timeMap[req.reqid()] = time(0);
 	gSharesSent[req.reqid()] = share.length();
 	
 }
@@ -225,14 +242,16 @@ static int HandleReply(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
 		}
 		
 	}else if(rep.type() == proto::Request::SHARE){
-		
+		timeMap.erase(rep.reqid());
+    
 		unsigned length = gSharesSent[rep.reqid()];
 		gSharesSent.erase(rep.reqid());
 		
 		switch(rep.error()){
 		case proto::Reply::NONE:
 			printf("Share accepted.\n");
-			gShares[length].accepted++;
+      gStaleShareChain = 0;
+			gShares[length].accepted++;  
 			break;
 		case proto::Reply::INVALID:
 			printf("Invalid share.\n");
@@ -241,7 +260,14 @@ static int HandleReply(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
 		case proto::Reply::STALE:
 			printf("Stale share.\n");
 			gShares[length].stale++;
-			ReConnectSignals();
+      gStaleShareChain++;
+      if (gStaleShareChain >= 4) {
+        gExit = false;
+        return -1;
+      } else {
+        ReconnectBitcoin();
+			  ReConnectSignals();
+      }
 			break;
 		case proto::Reply_ErrType_DUPLICATE:
 			printf("Duplicate share.\n");
@@ -352,7 +378,20 @@ static int HandleTimer(zloop_t *wloop, int timer_id, void *arg) {
 }
 
 
-
+static int TimeoutCheckProc(zloop_t *wloop, int timer_id, void *arg) {  
+  time_t currentTime = time(0);
+  for (auto &t: timeMap) {
+    if (currentTime - t.second >= 5) {
+      timeMap.clear();
+      printf("Connection lost, reconnecting...\n");
+      gExit = false;
+      return -1;
+    }
+  }
+  
+  return 0;
+  
+}
 
 
 int main(int argc, char **argv) {
@@ -418,6 +457,7 @@ gBlock.set_height(0);
 			
 			zsocket_destroy(gCtx, gFrontend);
 			gFrontend = zsocket_new(gCtx, ZMQ_DEALER);
+      zsocket_set_linger(gFrontend, 0);
 			
 			int err = zsocket_connect(gFrontend, "tcp://%s:%d", frontHost.c_str(), frontPort);
 			if(err){
@@ -486,6 +526,9 @@ gBlock.set_height(0);
 		
 		err = zloop_timer(wloop, 60*1000, 0, &HandleTimer, 0);
 		assert(err >= 0);
+    
+    err = zloop_timer(wloop, 1000, 0, &TimeoutCheckProc, 0);
+    assert(err >= 0);    
 		
 		gHeartBeat = true;
 		gExit = true;
