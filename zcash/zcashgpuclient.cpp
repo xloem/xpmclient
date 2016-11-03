@@ -612,8 +612,9 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
     platformType = ptNVidia;    
   }
   
-  if (platformType == ptAMD)
-    setup_adl();  
+  int enableOverclocking = cfg->lookupInt("", "enable_overclocking", 0);
+  if (platformType == ptAMD && enableOverclocking)
+    setup_adl();   
   
   std::vector<cl_device_id> allGpus;
   if (!clInitialize(platformName, allGpus)) {
