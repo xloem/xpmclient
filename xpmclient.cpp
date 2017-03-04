@@ -899,7 +899,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	
 	// generate kernel configuration file
   {
-    std::ofstream config("gpu/config.cl", std::fstream::trunc);
+    std::ofstream config("xpm/gpu/config.cl", std::fstream::trunc);
     config << "#define STRIPES " << clKernelStripes << '\n';
     config << "#define WIDTH " << clKernelWidth << '\n';
     config << "#define PCOUNT " << clKernelPCount << '\n';

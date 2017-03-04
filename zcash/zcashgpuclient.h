@@ -2,10 +2,20 @@
 #include "../uint256.h"
 #include "../opencl.h"
 
+typedef unsigned char uchar;
+#include "gpu/param.h"
+
 #include <list>
 
-#define __OPENCL_HOST__
-#include "gpu/common.h"
+#define PROOFSIZE (1u<<WK)
+#define COLLISION_BIT_LENGTH (WN / (WK+1))
+#define COMPRESSED_PROOFSIZE ((COLLISION_BIT_LENGTH+1)*PROOFSIZE*4/(8*sizeof(uint32_t)))
+
+typedef struct  debug_s
+{
+    uint32_t    dropped_coll;
+    uint32_t    dropped_stor;
+}               debug_t;
 
 struct stats_t {
   unsigned id;
@@ -18,23 +28,24 @@ struct stats_t {
   
 };
 
+struct SHA_256;
+
 struct MinerInstance {
   cl_context _context;
   cl_program _program;
   
   cl_command_queue queue;
-  clBuffer<blake2b_state> blake2bState;
-  clBuffer<uint32_t> heap0;
-  clBuffer<uint32_t> heap1;
-  clBuffer<bsizes> nslots;
-  clBuffer<proof> sols;    
-  clBuffer<uint32_t> numSols;
-  cl_kernel _digitHKernel;
-  cl_kernel _digitOKernel;  
-  cl_kernel _digitEKernel;
-  cl_kernel _digitKKernel;
-  cl_kernel _digitKernels[9];
+  clBuffer<uint8_t> buf_ht0;
+  clBuffer<uint8_t> buf_ht1;  
+  clBuffer<uint8_t> rowCounters1;
+  clBuffer<uint8_t> rowCounters2;
+  clBuffer<sols_t> buf_sols;
+  clBuffer<debug_t> buf_dbg;
   
+  cl_kernel k_init_ht;
+  cl_kernel k_rounds[PARAM_K];
+  cl_kernel k_sols;
+ 
   uint256 nonce;
   
   MinerInstance() {}
@@ -55,8 +66,9 @@ private:
   unsigned _threadsNum;
   unsigned _threadsPerBlocksNum;  
 
-  std::list<solsPerSecond> _stats;
   
+  std::list<solsPerSecond> _stats;
+
   void pushStats(unsigned solsNum) {
     auto currentTime = time(0);
     if (_stats.empty()) {
@@ -91,6 +103,7 @@ private:
     return timeDiff ? (double)sum / timeDiff : 0;
   }
   
+
 public:
 #pragma pack(push, 1)
   struct CBlockHeader {
@@ -107,7 +120,8 @@ public:
       uint32_t nBits;
     } data;
     
-    uint256 nNonce;
+    uint256 nNonce;    
+    
 #pragma pack(pop)
     std::vector<unsigned char> nSolution;
   };
@@ -116,7 +130,9 @@ public:
   
 public:
   ZCashMiner(unsigned id);
+  
   bool CheckEquihashSolution(const CBlockHeader *pblock, const uint8_t *proof, size_t size);
+  
   bool Initialize(cl_context context,
                   cl_program program,
                   cl_device_id dev,
