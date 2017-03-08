@@ -360,8 +360,8 @@ bool MinerInstance::init(cl_context context,
   buf_dbg.init(context, dbg_size, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS);
   buf_ht0.init(context, HT_SIZE, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS);
   buf_ht1.init(context, HT_SIZE, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS);
-  rowCounters1.init(context, NR_ROWS, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS);
-  rowCounters2.init(context, NR_ROWS, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS);  
+  rowCounters1.init(context, NR_ROWS*2, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS);
+  rowCounters2.init(context, NR_ROWS*2, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS);  
   buf_sols.init(context, 1, CL_MEM_READ_WRITE);  
   fprintf(stderr, "Hash tables will use %.1f MB\n", 2.0 * HT_SIZE / 1e6);
   
@@ -531,7 +531,8 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
 
     miner.nonce = header.nNonce;
     size_t global_ws;
-    size_t local_work_size = 64;
+    size_t local_round_work_size = ROUND_WORKGROUP_SIZE;
+    size_t local_sols_work_size = SOLS_WORKGROUP_SIZE;
     for (unsigned round = 0; round < PARAM_K; round++) {
       bool evenRound = (round%2 == 0);
       clBuffer<uint8_t> &bufHtFirst = evenRound ? miner.buf_ht0 : miner.buf_ht1;
@@ -558,13 +559,13 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
         OCL(clSetKernelArg(miner.k_rounds[round], 1, sizeof(cl_mem), &bufHtFirst.DeviceData));
         OCL(clSetKernelArg(miner.k_rounds[round], 2, sizeof(cl_mem), &rowCountersSecond.DeviceData));
         OCL(clSetKernelArg(miner.k_rounds[round], 3, sizeof(cl_mem), &rowCountersFirst.DeviceData));        
-        global_ws = NR_ROWS;
+        global_ws = NR_ROWS*THREADS_PER_ROW;
       }
 
       OCL(clSetKernelArg(miner.k_rounds[round], round == 0 ? 2 : 4, sizeof(cl_mem), &miner.buf_dbg.DeviceData));
       if (round == PARAM_K - 1)
         OCL(clSetKernelArg(miner.k_rounds[round], 5, sizeof(cl_mem), &miner.buf_sols.DeviceData));
-      OCL(clEnqueueNDRangeKernel(miner.queue, miner.k_rounds[round], 1, NULL, &global_ws, &local_work_size, 0, NULL, NULL));
+      OCL(clEnqueueNDRangeKernel(miner.queue, miner.k_rounds[round], 1, NULL, &global_ws, &local_round_work_size, 0, NULL, NULL));
     }
     
     OCL(clSetKernelArg(miner.k_sols, 0, sizeof(cl_mem), &miner.buf_ht0.DeviceData));
@@ -572,8 +573,8 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
     OCL(clSetKernelArg(miner.k_sols, 2, sizeof(cl_mem), &miner.buf_sols.DeviceData));
     OCL(clSetKernelArg(miner.k_sols, 3, sizeof(cl_mem), &miner.rowCounters1.DeviceData));
     OCL(clSetKernelArg(miner.k_sols, 4, sizeof(cl_mem), &miner.rowCounters2.DeviceData));    
-    global_ws = NR_ROWS;
-    OCL(clEnqueueNDRangeKernel(miner.queue, miner.k_sols, 1, NULL, &global_ws, &local_work_size, 0, NULL, NULL));    
+    global_ws = NR_ROWS*SOLS_THREADS_PER_ROW;
+    OCL(clEnqueueNDRangeKernel(miner.queue, miner.k_sols, 1, NULL, &global_ws, &local_sols_work_size, 0, NULL, NULL));    
     
     if (readyInstance >= 0) {
       uint32_t nsols = 0;
