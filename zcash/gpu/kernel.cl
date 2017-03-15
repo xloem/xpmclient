@@ -115,7 +115,89 @@ void write_slot_global(__global char *ht, __global uint *rowCounters, slot_t in,
   }
 }
 
+slot_t read_slot_local(__local uint *in, uint slotIdx, uint round)
+{
+  slot_t out;
+  if (UINTS_IN_XI(round) == 6) {
+    // 4 + 2
+    uint4 l = *(__local uint4*)(in + 4*slotIdx);
+    uint2 h = *(__local uint2*)(in + 4*NR_SLOTS + 2*slotIdx);
+    out.i0 = l.s0;
+    out.i1 = l.s1;
+    out.i2 = l.s2;
+    out.i3 = l.s3;    
+    out.i4 = h.s0;
+    out.i5 = h.s1;
+  } else if (UINTS_IN_XI(round) == 5) {
+    // 4 + 1
+    uint4 l = *(__local uint4*)(in + 4*slotIdx);
+    uint h = *(in + 4*NR_SLOTS + slotIdx);
+    out.i0 = l.s0;
+    out.i1 = l.s1;
+    out.i2 = l.s2;
+    out.i3 = l.s3;    
+    out.i4 = h;
+  } else if (UINTS_IN_XI(round) == 4) {
+    // 4
+    uint4 l = *(__local uint4*)(in + 4*slotIdx);
+    out.i0 = l.s0;
+    out.i1 = l.s1;
+    out.i2 = l.s2;
+    out.i3 = l.s3;    
+  } else if (UINTS_IN_XI(round) == 3) {
+    // 2 + 1
+    uint2 l = *(__local uint2*)(in + 2*slotIdx);
+    uint h = *(in + 2*NR_SLOTS + slotIdx);
+    out.i0 = l.s0;
+    out.i1 = l.s1;
+    out.i2 = h;      
+  } else if (UINTS_IN_XI(round) == 2) {
+    // 2
+    uint2 l = *(__local uint2*)(in + 2*slotIdx);
+    out.i0 = l.s0;
+    out.i1 = l.s1;    
+  } else if (UINTS_IN_XI(round) == 1) {
+    // 1
+    out.i0 = *(in + slotIdx);
+  }
+  
+  return out;
+}
 
+
+void write_slot_local(slot_t in, __local uint *out, uint slotIdx, uint round)
+{
+  if (UINTS_IN_XI(round) == 6) {
+    // 4 + 2
+    uint4 l = {in.i0, in.i1, in.i2, in.i3};
+    uint2 h = {in.i4, in.i5};
+    *(__local uint4*)(out + 4*slotIdx) = l;
+    *(__local uint2*)(out + 4*NR_SLOTS + 2*slotIdx) = h;
+  } else  if (UINTS_IN_XI(round) == 5) {
+    // 4 + 1
+    uint4 l = {in.i0, in.i1, in.i2, in.i3};
+    uint h = in.i4;
+    *(__local uint4*)(out + 4*slotIdx) = l;
+    *(out + 4*NR_SLOTS + slotIdx) = h;
+  } else  if (UINTS_IN_XI(round) == 4) {
+    // 4
+    uint4 l = {in.i0, in.i1, in.i2, in.i3};
+    *(__local uint4*)(out + 4*slotIdx) = l;
+  } else  if (UINTS_IN_XI(round) == 3) {
+    // 2 + 1
+    uint2 l = {in.i0, in.i1};
+    uint h = in.i2;
+    *(__local uint2*)(out + 2*slotIdx) = l;
+    *(out + 2*NR_SLOTS + slotIdx) = h;
+  } else  if (UINTS_IN_XI(round) == 2) {
+    // 2
+    uint2 l = {in.i0, in.i1};
+    *(__local uint2*)(out + 2*slotIdx) = l;
+  } else  if (UINTS_IN_XI(round) == 1) {
+    // 1
+    *(__local uint*)(out + slotIdx) = in.i0;
+  }
+}
 
 /*
 ** Assuming NR_ROWS_LOG == 16, the hash table slots have this layout (length in
@@ -522,21 +604,19 @@ void equihash_round(uint round,
   barrier(CLK_LOCAL_MEM_FENCE);
     
   for (i = localTid; i < slotsInRow; i += ROUND_WORKGROUP_SIZE) {
-    p = get_slot_ptr(ht_src, round-1, rowIdx, i);
-    uint xi0 = *(__global uint *)p;
-    uint x = ((xi0 & mask) >> shift) |
-             ((xi0 & mask2) >> shift2);
+    // read slot
+    slot_t slot = read_slot_global(get_slot_ptr(ht_src, round-1, rowIdx, i), round-1);
+    
+    // cache in local memory
+    write_slot_local(slot, slots, i, round-1);
+    
+    uint x = ((slot.i0 & mask) >> shift) | ((slot.i0 & mask2) >> shift2);
     uint slotIdx = atomic_inc(&slotCountersData[x]);
     slotIdx = min(slotIdx, COLLISION_BUFFER_SIZE-1);
     slotsData[COLLISION_BUFFER_SIZE*x+slotIdx] = i;
   }
     
   barrier(CLK_LOCAL_MEM_FENCE);
-  for (uint i = localTid; i < NR_SLOTS; i += ROUND_WORKGROUP_SIZE) {
-    uint xi0, xi1, xi2, xi3, xi4, xi5;
-    p = get_slot_ptr(ht_src, round-1, rowIdx, i);
-    
-  }
   
   const uint ct_groupsize = max(1u, ROUND_WORKGROUP_SIZE / COLLISION_PER_ROW);
   for (uint collTypeIdx = localTid / ct_groupsize; collTypeIdx < COLLISION_PER_ROW; collTypeIdx += ROUND_WORKGROUP_SIZE / ct_groupsize) {
@@ -561,8 +641,8 @@ void equihash_round(uint round,
     uint j = data & 0xFFF;
     
     // load data
-    slot_t s1 = read_slot_global(get_slot_ptr(ht_src, round-1, rowIdx, i), round-1);
-    slot_t s2 = read_slot_global(get_slot_ptr(ht_src, round-1, rowIdx, j), round-1);
+    slot_t s1 = read_slot_local(slots, i, round-1);
+    slot_t s2 = read_slot_local(slots, j, round-1);    
     
     // xor data and remove padding on even rounds
     s1.i0 ^= s2.i0;
@@ -597,7 +677,7 @@ void kernel_round ## N(__global char *ht_src, __global char *ht_dst, \
   __global uint *rowCountersSrc, __global uint *rowCountersDst, \
         __global uint *debug) \
 { \
-    __local uint slots[UINTS_IN_XI(N) * NR_SLOTS]; \
+    __local uint4 slots[UINTS_IN_XI(N-1) * NR_SLOTS / 4]; \
     __local uint    collisionsData[LDS_COLL_SIZE]; \
     __local uint    collisionsNum; \
     equihash_round(N, ht_src, ht_dst, debug, collisionsData, &collisionsNum, slots, rowCountersSrc, rowCountersDst); \
@@ -619,7 +699,7 @@ void kernel_round8(__global char *ht_src, __global char *ht_dst,
     uint    tid = get_global_id(0);
     __local uint  collisionsData[LDS_COLL_SIZE];
     __local uint  collisionsNum;
-    __local uint slots[UINTS_IN_XI(8) * NR_SLOTS];
+    __local uint4 slots[UINTS_IN_XI(8-1) * NR_SLOTS / 4];
     equihash_round(8, ht_src, ht_dst, debug, collisionsData, &collisionsNum, slots, rowCountersSrc, rowCountersDst);
     if (!tid)
   sols->nr = sols->likely_invalids = 0;
