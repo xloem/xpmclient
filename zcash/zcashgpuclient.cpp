@@ -578,7 +578,7 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
     OCL(clSetKernelArg(miner.k_sols, 9, sizeof(cl_mem), &miner.buf_sols.DeviceData));
     OCL(clSetKernelArg(miner.k_sols, 10, sizeof(cl_mem), &miner.rowCounters1.DeviceData));
     OCL(clSetKernelArg(miner.k_sols, 11, sizeof(cl_mem), &miner.rowCounters2.DeviceData));    
-    global_ws = NR_ROWS*SOLS_THREADS_PER_ROW;
+    global_ws = NR_ROWS*SOLS_WORKGROUP_SIZE;
     OCL(clEnqueueNDRangeKernel(miner.queue, miner.k_sols, 1, NULL, &global_ws, &local_sols_work_size, 0, NULL, NULL));    
     
     if (readyInstance >= 0) {

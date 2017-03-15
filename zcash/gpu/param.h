@@ -6,14 +6,11 @@
 #define APX_NR_ELMS_LOG                 (PREFIX + 1)
 // Number of rows and slots is affected by this. 20 offers the best performance
 // but occasionally misses ~1% of solutions.
-#define NR_ROWS_LOG                     16
+#define NR_ROWS_LOG                     12
 
 // Number of collision items to track, per thread
-#define ROUND_WORKGROUP_SIZE 256u
-
-#define SOLS_WORKGROUP_SIZE 32u
-#define SOLS_ROWS_PER_WORKGROUP 1u
-#define SOLS_THREADS_PER_ROW (SOLS_WORKGROUP_SIZE/SOLS_ROWS_PER_WORKGROUP)
+#define ROUND_WORKGROUP_SIZE 256
+#define SOLS_WORKGROUP_SIZE 256
 
 // Ratio of time of sleeping before rechecking if task is done (0-1)
 #define SLEEP_RECHECK_RATIO 0.60
@@ -57,9 +54,10 @@
 #define NR_ROWS                         (1 << NR_ROWS_LOG)
 
 // Length of 1 element (slot) in byte
-#define SLOT_LEN                        32
+#define SLOT_LEN_MAX                        32
+#define SLOT_LEN(round)       ((UINTS_IN_XI(round) >= 4) ? 32 : (UINTS_IN_XI(round) >= 2) ? 16 : 8)
 // Total size of hash table
-#define HT_SIZE       (NR_ROWS * NR_SLOTS * SLOT_LEN)
+#define HT_SIZE       (NR_ROWS * NR_SLOTS * SLOT_LEN_MAX)*2
 // Length of Zcash block header, nonce (part of header)
 #define ZCASH_BLOCK_HEADER_LEN    140
 // Offset of nTime in header
@@ -103,6 +101,10 @@
 // Optional features
 #undef ENABLE_DEBUG
 #define NV_L2CACHE_OPT
+
+/*
+** Return the offset of Xi in bytes from the beginning of the slot.
+*/
 
 #define UINTS_IN_XI(round) (((round) == 0) ? 6 : \
                             ((round) == 1) ? 6 : \

@@ -15,6 +15,45 @@ typedef struct {
   uint ref;
 } slot_t;
 
+uint get_collision_data(uint xi0, uint round)
+{
+  uint mask;
+  uint mask2;
+  uint shift;
+  uint shift2;
+  
+#if NR_ROWS_LOG == 12
+  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
+  shift = ((!(round % 2)) ? 16 : 12);  
+  mask2 = ((!(round % 2)) ? 0xf000: 0x00f0);
+  shift2 = ((!(round % 2)) ? 8 : 0);    
+#elif NR_ROWS_LOG == 13
+  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
+  shift = ((!(round % 2)) ? 16 : 12);  
+  mask2 = ((!(round % 2)) ? 0xe000: 0x00e0);
+  shift2 = ((!(round % 2)) ? 9 : 1);  
+#elif NR_ROWS_LOG == 14
+  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
+  shift = ((!(round % 2)) ? 16 : 12);  
+  mask2 = ((!(round % 2)) ? 0xc000: 0x00c0);
+  shift2 = ((!(round % 2)) ? 10 : 2);
+#elif NR_ROWS_LOG == 15
+  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
+  shift = ((!(round % 2)) ? 16 : 12);  
+  mask2 = ((!(round % 2)) ? 0x8000: 0x0080);
+  shift2 = ((!(round % 2)) ? 11 : 3);
+#elif NR_ROWS_LOG == 16
+  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
+  shift = ((!(round % 2)) ? 16 : 12);  
+  mask2 = 0;
+  shift2 = 0;
+#else
+#error "unsupported NR_ROWS_LOG"
+#endif    
+
+  return ((xi0 & mask) >> shift) | ((xi0 & mask2) >> shift2);
+}
+
 void slot_shr(slot_t *slot, uint n)
 {
   slot->i0 = (slot->i0 >> n) | (slot->i1 << (32-n));
@@ -28,12 +67,15 @@ void slot_shr(slot_t *slot, uint n)
 __global char *get_slot_ptr(__global char *ht, uint round, uint rowIdx, uint slotIdx)
 {
 #ifdef NV_L2CACHE_OPT
-  const uint RowFragmentLog = 4;
+  const uint RowFragmentLog = 5;
   const uint SlotsInRow = 1 << RowFragmentLog;
   const uint SlotMask = (1 << RowFragmentLog) - 1;  
-  return ht + ((slotIdx >> RowFragmentLog)*NR_ROWS*SLOT_LEN*SlotsInRow) + (rowIdx*SLOT_LEN*SlotsInRow) + (slotIdx & SlotMask)*SLOT_LEN;
+  return ht +
+         ((slotIdx >> RowFragmentLog)*NR_ROWS*SLOT_LEN(round)*SlotsInRow) +
+         (rowIdx*SLOT_LEN(round)*SlotsInRow) +
+         (slotIdx & SlotMask)*SLOT_LEN(round);
 #else
-  return ht + rowIdx*NR_SLOTS*SLOT_LEN + SLOT_LEN*slotIdx;  
+  return ht + rowIdx*NR_SLOTS*SLOT_LEN(round) + SLOT_LEN(round)*slotIdx;  
 #endif
 }
 
@@ -558,48 +600,6 @@ void equihash_round(uint round,
   uint localTid = get_local_id(0);
   __local uint slotCountersData[COLLISION_PER_ROW];
   __local ushort slotsData[COLLISION_PER_ROW*COLLISION_BUFFER_SIZE];
-    
-  __global char *p;
-  uint mask;
-  uint mask2;
-  uint shift;
-  uint shift2;
-  // NR_SLOTS is already oversized (by a factor of OVERHEAD), but we want to
-  // make it even larger
-  uint    n;
-  uint    dropped_coll = 0;
-  uint    dropped_stor = 0;
-  __global ulong  *a, *b;
-  // read first words of Xi from the previous (round - 1) hash table
-  // the mask is also computed to read data from the previous round
-#if NR_ROWS_LOG == 12
-  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
-  shift = ((!(round % 2)) ? 16 : 12);  
-  mask2 = ((!(round % 2)) ? 0xf000: 0x00f0);
-  shift2 = ((!(round % 2)) ? 8 : 0);    
-#elif NR_ROWS_LOG == 13
-  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
-  shift = ((!(round % 2)) ? 16 : 12);  
-  mask2 = ((!(round % 2)) ? 0xe000: 0x00e0);
-  shift2 = ((!(round % 2)) ? 9 : 1);  
-#elif NR_ROWS_LOG == 14
-  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
-  shift = ((!(round % 2)) ? 16 : 12);  
-  mask2 = ((!(round % 2)) ? 0xc000: 0x00c0);
-  shift2 = ((!(round % 2)) ? 10 : 2);
-#elif NR_ROWS_LOG == 15
-  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
-  shift = ((!(round % 2)) ? 16 : 12);  
-  mask2 = ((!(round % 2)) ? 0x8000: 0x0080);
-  shift2 = ((!(round % 2)) ? 11 : 3);
-#elif NR_ROWS_LOG == 16
-  mask = ((!(round % 2)) ? 0xf0000 : 0xf000);
-  shift = ((!(round % 2)) ? 16 : 12);  
-  mask2 = 0;
-  shift2 = 0;
-#else
-#error "unsupported NR_ROWS_LOG"
-#endif    
 
   uint slotsInRow = get_slots_number(rowCountersSrc, rowIdx);
 
@@ -613,8 +613,8 @@ void equihash_round(uint round,
     
     // cache in local memory
     write_slot_local(slot, slots, i, round-1);
-    
-    uint x = ((slot.i0 & mask) >> shift) | ((slot.i0 & mask2) >> shift2);
+
+    uint x = get_collision_data(slot.i0, round);    
     uint slotIdx = atomic_inc(&slotCountersData[x]);
     slotIdx = min(slotIdx, COLLISION_BUFFER_SIZE-1);
     slotsData[COLLISION_BUFFER_SIZE*x+slotIdx] = i;
@@ -624,7 +624,7 @@ void equihash_round(uint round,
 
   for (uint i = localTid; i < slotsInRow; i += ROUND_WORKGROUP_SIZE) {
     slot_t s = read_slot_local(slots, i, round-1);
-    uint x = ((s.i0 & mask) >> shift) | ((s.i0 & mask2) >> shift2);
+    uint x = get_collision_data(s.i0, round);
     uint count = min(slotCountersData[x], COLLISION_BUFFER_SIZE-1);
     for (uint j = 0; j < count; j++) {
       uint collisionIdx = slotsData[COLLISION_BUFFER_SIZE*x + j];
@@ -652,11 +652,6 @@ void equihash_round(uint round,
       write_slot_global(ht_dst, rowCountersDst, s1, round);
     }
   }
-      
-#ifdef ENABLE_DEBUG
-    debug[rowIdx * 2] = dropped_coll;
-    debug[rowIdx * 2 + 1] = dropped_stor;
-#endif
 }
 
 /*
@@ -779,53 +774,49 @@ void kernel_sols(__global char *ht0,
                  __global uint *rowCountersSrc,
                  __global uint *rowCountersDst)
 {
-    __local uint refs[NR_SLOTS*SOLS_ROWS_PER_WORKGROUP];
-    __local uint data[NR_SLOTS*SOLS_ROWS_PER_WORKGROUP];
-    __local uint collisionsNum;
-    __local ulong collisions[SOLS_THREADS_PER_ROW*4];
+  uint rowIdx = get_group_id(0);
+  uint localTid = get_local_id(0);
 
-    uint rowIdx = get_global_id(0) / SOLS_THREADS_PER_ROW;
-    uint localRowIdx = get_local_id(0) / SOLS_THREADS_PER_ROW;
-    uint localTid = get_local_id(0) % SOLS_THREADS_PER_ROW;
-    __local uint *refsPtr = &refs[NR_SLOTS*localRowIdx];
-    __local uint *dataPtr = &data[NR_SLOTS*localRowIdx];    
+  __local uint2 xi0WithRef[NR_SLOTS];
+  __local uint slotCountersData[COLLISION_PER_ROW];
+  __local ushort slotsData[COLLISION_PER_ROW*COLLISION_BUFFER_SIZE];
+
+  __global char *htabs[9] = { ht0, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8 };
+
+  uint slotsInRow = get_slots_number(rowCountersSrc, rowIdx);
+
+  for (uint i = get_local_id(0); i < COLLISION_PER_ROW; i += get_local_size(0))
+    slotCountersData[i] = 0;
+  barrier(CLK_LOCAL_MEM_FENCE);
     
-    __global char *htabs[9] = { ht0, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8 };
-    uint    i, j;
-    uint    ref_i, ref_j;
-    // it's ok for the collisions array to be so small, as if it fills up
-    // the potential solutions are likely invalid (many duplicate inputs)
-
-  collisionsNum = 0;    
-
-    uint slotsInRow = get_slots_number(rowCountersSrc, rowIdx);  
-
-    for (i = localTid; i < slotsInRow; i += SOLS_THREADS_PER_ROW) {
-      __global char *p = get_slot_ptr(htabs[PARAM_K - 1], PARAM_K-1, rowIdx, i);
-      refsPtr[i] = *(__global uint *)(p + 4);
-      dataPtr[i] = (*(__global uint *)p);
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
+  for (uint i = localTid; i < slotsInRow; i += SOLS_WORKGROUP_SIZE) {
+    // read xi0 and ref
+    uint2 slot = *(__global uint2*)get_slot_ptr(ht8, PARAM_K-1, rowIdx, i);
     
-    for (i = 0; i < slotsInRow; i++)
-      {
-  uint a_data = dataPtr[i];
-  ref_i = refsPtr[i];
-  for (j = i + 1 + localTid; j < slotsInRow; j += SOLS_THREADS_PER_ROW)
-    {
-      if (a_data == dataPtr[j])
-        {
-            collisions[atomic_inc(&collisionsNum)] = ((ulong)ref_i << 32) | refsPtr[j];
-          goto part2;          
-        }
-    }
-      }
+    // cache in local memory
+    xi0WithRef[i] = slot;
+    
+    uint collisionData = get_collision_data(slot.s0, PARAM_K);
+    uint slotIdx = atomic_inc(&slotCountersData[collisionData]);
+    slotIdx = min(slotIdx, COLLISION_BUFFER_SIZE-1);
+    slotsData[COLLISION_BUFFER_SIZE*collisionData+slotIdx] = i;
+  }
+    
+  barrier(CLK_LOCAL_MEM_FENCE);
 
-part2:  
-    barrier(CLK_LOCAL_MEM_FENCE);
-    uint totalCollisions = collisionsNum;
-    if (get_local_id(0) < totalCollisions) {
-      ulong coll = collisions[get_local_id(0)];
-      potential_sol(htabs, sols, coll >> 32, coll & 0xffffffff);
+  for (uint i = localTid; i < slotsInRow; i += SOLS_WORKGROUP_SIZE) {
+    uint2 s = xi0WithRef[i];
+    uint collisionData = get_collision_data(s.s0, PARAM_K);
+    uint count = min(slotCountersData[collisionData], COLLISION_BUFFER_SIZE-1);
+    for (uint j = 0; j < count; j++) {
+      uint collisionIdx = slotsData[COLLISION_BUFFER_SIZE*collisionData + j];
+      uint2 s1 = s; 
+      uint2 s2 = xi0WithRef[collisionIdx];
+      if (collisionIdx <= i || s1.s0 != s2.s0)
+        continue;      
+      
+      potential_sol(htabs, sols, s1.s1, s2.s1);
+      break;
     }
+  }
 }
