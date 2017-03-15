@@ -9,10 +9,8 @@
 #define NR_ROWS_LOG                     16
 
 // Number of collision items to track, per thread
-#define ROUND_WORKGROUP_SIZE 128u
-#define ROWS_PER_WORKGROUP 1u
-#define THREADS_PER_ROW (ROUND_WORKGROUP_SIZE/ROWS_PER_WORKGROUP)
-#define LDS_COLL_SIZE (NR_SLOTS * 24 * ROWS_PER_WORKGROUP)
+#define ROUND_WORKGROUP_SIZE 256u
+#define LDS_COLL_SIZE (NR_SLOTS * 24)
 
 #define SOLS_WORKGROUP_SIZE 32u
 #define SOLS_ROWS_PER_WORKGROUP 1u
@@ -105,11 +103,17 @@
 
 // Optional features
 #undef ENABLE_DEBUG
+#define NV_L2CACHE_OPT
 
-/*
-** Return the offset of Xi in bytes from the beginning of the slot.
-*/
-#define xi_offset_for_round(round)  (8 + ((round) / 2) * 4)
+#define UINTS_IN_XI(round) (((round) == 0) ? 6 : \
+                            ((round) == 1) ? 6 : \
+                            ((round) == 2) ? 5 : \
+                            ((round) == 3) ? 5 : \
+                            ((round) == 4) ? 4 : \
+                            ((round) == 5) ? 4 : \
+                            ((round) == 6) ? 3 : \
+                            ((round) == 7) ? 2 : \
+                                             1)
 
 // An (uncompressed) solution stores (1 << PARAM_K) 32-bit values
 #define SOL_SIZE      ((1 << PARAM_K) * 4)

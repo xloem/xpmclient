@@ -1,5 +1,122 @@
 #pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable
 
+
+#define EVEN(x) (!(x & 0x1))
+#define ODD(x)  (x & 0x1)
+
+typedef struct {
+  uint i0;
+  uint i1;
+  uint i2;
+  uint i3;
+  uint i4;
+  uint i5;
+  uint i6;
+  uint ref;
+} slot_t;
+
+void slot_shr(slot_t *slot, uint n)
+{
+  slot->i0 = (slot->i0 >> n) | (slot->i1 << (32-n));
+  slot->i1 = (slot->i1 >> n) | (slot->i2 << (32-n));
+  slot->i2 = (slot->i2 >> n) | (slot->i3 << (32-n));
+  slot->i3 = (slot->i3 >> n) | (slot->i4 << (32-n));
+  slot->i4 = (slot->i4 >> n) | (slot->i5 << (32-n));
+  slot->i5 = (slot->i5 >> n) | (slot->i6 << (32-n));
+}
+
+__global char *get_slot_ptr(__global char *ht, uint round, uint rowIdx, uint slotIdx)
+{
+#ifdef NV_L2CACHE_OPT
+  const uint RowFragmentLog = 4;
+  const uint SlotsInRow = 1 << RowFragmentLog;
+  const uint SlotMask = (1 << RowFragmentLog) - 1;  
+  return ht + ((slotIdx >> RowFragmentLog)*NR_ROWS*SLOT_LEN*SlotsInRow) + (rowIdx*SLOT_LEN*SlotsInRow) + (slotIdx & SlotMask)*SLOT_LEN;
+#else
+  return ht + rowIdx*NR_SLOTS*SLOT_LEN + SLOT_LEN*slotIdx;  
+#endif
+}
+
+slot_t read_slot_global(__global char *p, uint round)
+{
+  slot_t out;
+  if (UINTS_IN_XI(round) > 4) {
+    uint8 x = *(__global uint8*)p;
+    out.i0 = x.s0;
+    out.i1 = x.s1;
+    out.i2 = x.s2;
+    out.i3 = x.s3;
+    out.i4 = x.s4;
+    out.i5 = x.s5;   
+  } else if (UINTS_IN_XI(round) > 2) {
+    uint4 x = *(__global uint4*)p;
+    out.i0 = x.s0;
+    out.i1 = x.s1;
+    out.i2 = x.s2;
+    out.i3 = x.s3;
+  } else {
+    uint2 x = *(__global uint2*)p;
+    out.i0 = x.s0;
+    out.i1 = x.s1;
+  }
+  
+  return out;
+}
+
+void write_slot_global(__global char *ht, __global uint *rowCounters, slot_t in, uint round)
+{
+  // calculate row number
+  uint rowIdx;
+#if NR_ROWS_LOG == 12
+ rowIdx = EVEN(round) ? in.i0 & 0xfff : ((in.i0 & 0x0f0f00) >> 8) | ((in.i0 & 0xf0000000) >> 24);
+#elif NR_ROWS_LOG == 13
+  rowIdx = EVEN(round) ? in.i0 & 0x1fff : ((in.i0 & 0x1f0f00) >> 8) | ((in.i0 & 0xf0000000) >> 24);  
+#elif NR_ROWS_LOG == 14
+  rowIdx = EVEN(round) ? in.i0 & 0x3fff : ((in.i0 & 0x3f0f00) >> 8) | ((in.i0 & 0xf0000000) >> 24);    
+#elif NR_ROWS_LOG == 15
+  rowIdx = EVEN(round) ? in.i0 & 0x7fff : ((in.i0 & 0x7f0f00) >> 8) | ((in.i0 & 0xf0000000) >> 24);    
+#elif NR_ROWS_LOG == 16
+  rowIdx = EVEN(round) ? in.i0 & 0xffff : ((in.i0 & 0xff0f00) >> 8) | ((in.i0 & 0xf0000000) >> 24);       
+#else
+#error "unsupported NR_ROWS_LOG"
+#endif
+
+  // calculate slot position in row
+  uint slotIdx;
+  uint rowOffset = BITS_PER_ROW * (rowIdx % ROWS_PER_UINT);
+  slotIdx = atomic_add(rowCounters + rowIdx/ROWS_PER_UINT, 1 << rowOffset);
+  slotIdx = (slotIdx >> rowOffset) & ROW_MASK;
+  
+  // remove padding
+  slot_shr(&in, 8);
+  
+  // get pointer for slot write
+  __global char *out = get_slot_ptr(ht, round, rowIdx, slotIdx);
+  
+  // store data
+  if (round == 0) {
+    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.i4, in.i5, in.ref, 0}; *(__global uint8*)out = x;
+  } else if (round == 1) {
+    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.i4, in.i5, in.ref, 0}; *(__global uint8*)out = x;
+  } else if (round == 2) {
+    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.i4, in.ref, 0, 0}; *(__global uint8*)out = x;
+  } else if (round == 3) {
+    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.i4, in.ref, 0, 0}; *(__global uint8*)out = x;
+  } else if (round == 4) {
+    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.ref, 0, 0, 0}; *(__global uint8*)out = x;
+  } else if (round == 5) {
+    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.ref, 0, 0, 0}; *(__global uint8*)out = x;
+  } else if (round == 6) {
+    uint4 x = {in.i0, in.i1, in.i2, in.ref}; *(__global uint4*)out = x;
+  } else if (round == 7) {
+    uint4 x = {in.i0, in.i1, in.ref, 0}; *(__global uint4*)out = x;
+  } else if (round == 8) {
+    uint2 x = {in.i0, in.ref}; *(__global uint2*)out = x;
+  }
+}
+
+
+
 /*
 ** Assuming NR_ROWS_LOG == 16, the hash table slots have this layout (length in
 ** bytes in parens):
@@ -33,8 +150,6 @@
 ** is the 4 most significant bits of the last byte of Xi.
 */
 
-#define EVEN(x) (!(x & 0x1))
-#define ODD(x)  (x & 0x1)
 
 __constant ulong blake_iv[] =
 {
@@ -52,6 +167,7 @@ void kernel_init_ht(__global char *ht, __global uint *rowCounters)
 {
     rowCounters[get_global_id(0)] = 0;
 }
+
 
 /*
 ** If xi0,xi1,xi2,xi3 are stored consecutively in little endian then they
@@ -79,89 +195,6 @@ void kernel_init_ht(__global char *ht, __global uint *rowCounters)
 **
 ** Return 0 if successfully stored, or 1 if the row overflowed.
 */
-uint ht_store(uint round, __global char *ht, uint i,
-  ulong xi0, ulong xi1, ulong xi2, ulong xi3, __global uint *rowCounters)
-{
-    uint    row;
-    __global char       *p;
-    uint                cnt;
-#if NR_ROWS_LOG == 12
-  row = EVEN(round) ? xi0 & 0xfff : ((xi0 & 0x0f0f00) >> 8) | ((xi0 & 0xf0000000) >> 24);
-#elif NR_ROWS_LOG == 13
-  row = EVEN(round) ? xi0 & 0x1fff : ((xi0 & 0x1f0f00) >> 8) | ((xi0 & 0xf0000000) >> 24);  
-#elif NR_ROWS_LOG == 14
-  row = EVEN(round) ? xi0 & 0x3fff : ((xi0 & 0x3f0f00) >> 8) | ((xi0 & 0xf0000000) >> 24);    
-#elif NR_ROWS_LOG == 15
-  row = EVEN(round) ? xi0 & 0x7fff : ((xi0 & 0x7f0f00) >> 8) | ((xi0 & 0xf0000000) >> 24);    
-#elif NR_ROWS_LOG == 16
-  row = EVEN(round) ? xi0 & 0xffff : ((xi0 & 0xff0f00) >> 8) | ((xi0 & 0xf0000000) >> 24);       
-#else
-#error "unsupported NR_ROWS_LOG"
-#endif
-    xi0 = (xi0 >> 8) | (xi1 << (64 - 8));
-    xi1 = (xi1 >> 8) | (xi2 << (64 - 8));
-    xi2 = (xi2 >> 8) | (xi3 << (64 - 8));
-    p = ht + row * NR_SLOTS * SLOT_LEN;
-    uint rowIdx = row/ROWS_PER_UINT;
-    uint rowOffset = BITS_PER_ROW*(row%ROWS_PER_UINT);
-    cnt = atomic_add(rowCounters + rowIdx, 1 << rowOffset);
-    cnt = (cnt >> rowOffset) & ROW_MASK;
-    if (cnt >= NR_SLOTS) {
-      // avoid overflows
-      atomic_sub(rowCounters + rowIdx, 1 << rowOffset);
-      return 1;
-    }
-    p += cnt * SLOT_LEN + xi_offset_for_round(round);
-    // store "i" (always 4 bytes before Xi)
-    *(__global uint *)(p - 4) = i;
-    if (round == 0 || round == 1)
-      {
-  // store 24 bytes
-  *(__global ulong *)(p + 0) = xi0;
-  *(__global ulong *)(p + 8) = xi1;
-  *(__global ulong *)(p + 16) = xi2;
-      }
-    else if (round == 2)
-      {
-  // store 20 bytes
-  *(__global uint *)(p + 0) = xi0;
-  *(__global ulong *)(p + 4) = (xi0 >> 32) | (xi1 << 32);
-  *(__global ulong *)(p + 12) = (xi1 >> 32) | (xi2 << 32);
-      }
-    else if (round == 3)
-      {
-  // store 16 bytes
-  *(__global uint *)(p + 0) = xi0;
-  *(__global ulong *)(p + 4) = (xi0 >> 32) | (xi1 << 32);
-//  *(__global uint *)(p + 12) = (xi1 >> 32);
-  *(__global ulong *)(p + 12) = (xi1 >> 32) | (xi2 << 32) ;   
-      }
-    else if (round == 4)
-      {
-  // store 16 bytes
-  *(__global ulong *)(p + 0) = xi0;
-  *(__global ulong *)(p + 8) = xi1;
-      }
-    else if (round == 5)
-      {
-  // store 12 bytes
-  *(__global ulong *)(p + 0) = xi0;
-//  *(__global uint *)(p + 8) = xi1;
-  *(__global ulong *)(p + 8) = xi1;
-      }
-    else if (round == 6 || round == 7)
-      {
-  // store 8 bytes
-  *(__global uint *)(p + 0) = xi0;
-  *(__global ulong *)(p + 4) = (xi0 >> 32) | (xi1 << 32);
-      }
-    else if (round == 8)
-      {
-  // store 4 bytes
-  *(__global uint *)(p + 0) = xi0;
-      }
-    return 0;
-}
 
 #define mix(va, vb, vc, vd, x, y) \
     va = (va + vb + x); \
@@ -349,16 +382,36 @@ void kernel_round0(__global char *ht,
 
   // store the two Xi values in the hash table
 #if ZCASH_HASH_LEN == 50
-  dropped += ht_store(0, ht, input * 2,
-    h[0],
-    h[1],
-    h[2],
-    h[3], rowCounters);
-  dropped += ht_store(0, ht, input * 2 + 1,
-    (h[3] >> 8) | (h[4] << (64 - 8)),
-    (h[4] >> 8) | (h[5] << (64 - 8)),
-    (h[5] >> 8) | (h[6] << (64 - 8)),
-    (h[6] >> 8), rowCounters);
+  {
+    slot_t slot;
+    slot.ref = input*2;
+    slot.i0 = h[0];
+    slot.i1 = h[0] >> 32;
+    slot.i2 = h[1];
+    slot.i3 = h[1] >> 32;
+    slot.i4 = h[2];
+    slot.i5 = h[2] >> 32;  
+    slot.i6 = h[3];
+    write_slot_global(ht, rowCounters, slot, 0);
+  }
+  
+  {
+    slot_t slot;
+    slot.ref = input*2 + 1;
+    ulong ul0 = (h[3] >> 8) | (h[4] << (64 - 8));
+    ulong ul1 = (h[4] >> 8) | (h[5] << (64 - 8));
+    ulong ul2 = (h[5] >> 8) | (h[6] << (64 - 8));
+    ulong ul3 = (h[6] >> 8);
+    slot.i0 = ul0;
+    slot.i1 = ul0 >> 32;
+    slot.i2 = ul1;
+    slot.i3 = ul1 >> 32;
+    slot.i4 = ul2;
+    slot.i5 = ul2 >> 32;  
+    slot.i6 = ul3;
+    write_slot_global(ht, rowCounters, slot, 0);
+  }
+
 #else
 #error "unsupported ZCASH_HASH_LEN"
 #endif
@@ -391,115 +444,12 @@ void kernel_round0(__global char *ht,
 #error "unsupported NR_ROWS_LOG"
 #endif
 
-/*
-** Access a half-aligned long, that is a long aligned on a 4-byte boundary.
-*/
-ulong half_aligned_long(__global ulong *p, uint offset)
-{
-    return
-  (((ulong)*(__global uint *)((__global char *)p + offset + 0)) << 0) |
-  (((ulong)*(__global uint *)((__global char *)p + offset + 4)) << 32);
-}
-
-/*
-** Access a well-aligned int.
-*/
-uint well_aligned_int(__global ulong *_p, uint offset)
-{
-    __global char *p = (__global char *)_p;
-    return *(__global uint *)(p + offset);
-}
-
-/*
-** XOR a pair of Xi values computed at "round - 1" and store the result in the
-** hash table being built for "round". Note that when building the table for
-** even rounds we need to skip 1 padding byte present in the "round - 1" table
-** (the "0xAB" byte mentioned in the description at the top of this file.) But
-** also note we can't load data directly past this byte because this would
-** cause an unaligned memory access which is undefined per the OpenCL spec.
-**
-** Return 0 if successfully stored, or 1 if the row overflowed.
-*/
-uint xor_and_store(uint round, __global char *ht_dst, uint row,
-  uint slot_a, uint slot_b, __global ulong *a, __global ulong *b,
-  __global uint *rowCounters)
-{
-  ulong xi0, xi1, xi2;
-#if NR_ROWS_LOG >= 12 && NR_ROWS_LOG <= 16
-  // Note: for NR_ROWS_LOG == 20, for odd rounds, we could optimize by not
-  // storing the byte containing bits from the previous PREFIX block for
-  if (round == 1 || round == 2) {
-    // xor 24 bytes
-    xi0 = *(a++) ^ *(b++);
-    xi1 = *(a++) ^ *(b++);
-    xi2 = *a ^ *b;
-    if (round == 2) {
-      // skip padding byte
-      xi0 = (xi0 >> 24) | (xi1 << (64 - 24));
-      xi1 = (xi1 >> 24) | (xi2 << (64 - 24));
-      xi2 = (xi2 >> 24);      
-    }
-  } else if (round == 3) {
-    // xor 20 bytes
-    xi0 = half_aligned_long(a, 0) ^ half_aligned_long(b, 0);
-    xi1 = half_aligned_long(a, 8) ^ half_aligned_long(b, 8);
-    xi2 = well_aligned_int(a, 16) ^ well_aligned_int(b, 16);
-  } else if (round == 4 || round == 5) {
-    // xor 16 bytes
-    xi0 = half_aligned_long(a, 0) ^ half_aligned_long(b, 0);
-    xi1 = half_aligned_long(a, 8) ^ half_aligned_long(b, 8);
-    xi2 = well_aligned_int(a, 16) ^ well_aligned_int(b, 16);
-    if (round == 4) {
-      // skip padding byte
-      xi0 = (xi0 >> 24) | (xi1 << (64 - 24));
-      xi1 = (xi1 >> 24) | (xi2 << (64 - 24));  
-    }
-  } else if (round == 6) {
-    // xor 12 bytes
-    xi0 = *(a++) ^ *(b++);
-    xi1 = *(a++) ^ *(b++);
-    xi2 = 0;
-    if (round == 6) {
-      // skip padding byte
-      xi0 = (xi0 >> 24) | (xi1 << (64 - 24));
-      xi1 = (xi1 >> 24);      
-    }
-  } else if (round == 7 || round == 8) {
-    // xor 8 bytes
-    xi0 = half_aligned_long(a, 0) ^ half_aligned_long(b, 0);
-    xi1 = well_aligned_int(a, 8) ^ well_aligned_int(b, 8);
-    xi2 = 0;
-    if (round == 8) {
-      // skip padding byte
-      xi0 = (xi0 >> 24);  
-    }
-  }
-  
-  // invalid solutions (which start happenning in round 5) have duplicate
-  // inputs and xor to zero, so discard them
-  if (!xi0 && !xi1)
-    return 0;
-#else
-#error "unsupported NR_ROWS_LOG"
-#endif
-  return ht_store(round, ht_dst, ENCODE_INPUTS(row, slot_a, slot_b), xi0, xi1, xi2, 0, rowCounters);
-}
-
 uint get_slots_number(__global uint *rowCounters, uint rowIdx)
 {
   uint slotsInRow;
   slotsInRow = (rowCounters[rowIdx/ROWS_PER_UINT] >> (BITS_PER_ROW*(rowIdx%ROWS_PER_UINT))) & ROW_MASK;
   slotsInRow = min(slotsInRow, (uint)NR_SLOTS);
   return slotsInRow;
-}
-
-__global char *get_xi_ptr(__global char *ht, uint round, uint rowIdx, uint slotIdx)
-{
-  __global char *p;
-  p = (ht + rowIdx * NR_SLOTS * SLOT_LEN);
-  p += xi_offset_for_round(round);
-  p += SLOT_LEN*slotIdx;
-  return p;
 }
 
 /*
@@ -512,17 +462,14 @@ void equihash_round(uint round,
                     __global uint *debug,
                     __local uint *collisionsData,
                     __local uint *collisionsNum,
+                    __local uint *slots,
                     __global uint *rowCountersSrc,
                     __global uint *rowCountersDst)
 {
-  uint rowIdx = get_global_id(0) / THREADS_PER_ROW;
-  uint localRowIdx = get_local_id(0) / THREADS_PER_ROW;
-  uint localTid = get_local_id(0) % THREADS_PER_ROW;
-  __local uint slotCountersData[COLLISION_PER_ROW*ROWS_PER_WORKGROUP];
-  __local ushort slotsData[COLLISION_PER_ROW*COLLISION_BUFFER_SIZE*ROWS_PER_WORKGROUP];
-    
-  __local uint *slotCounters = &slotCountersData[COLLISION_PER_ROW*localRowIdx];
-  __local ushort *slots = &slotsData[COLLISION_PER_ROW*COLLISION_BUFFER_SIZE*localRowIdx];
+  uint rowIdx = get_group_id(0);
+  uint localTid = get_local_id(0);
+  __local uint slotCountersData[COLLISION_PER_ROW];
+  __local ushort slotsData[COLLISION_PER_ROW*COLLISION_BUFFER_SIZE];
     
   __global char *p;
   uint mask;
@@ -567,34 +514,39 @@ void equihash_round(uint round,
 #error "unsupported NR_ROWS_LOG"
 #endif    
 
-  uint gid = rowIdx - localRowIdx;
   uint slotsInRow = get_slots_number(rowCountersSrc, rowIdx);
-  p = get_xi_ptr(ht_src, round-1, rowIdx, localTid);
   
   *collisionsNum = 0;
-  for (i = get_local_id(0); i < COLLISION_PER_ROW*ROWS_PER_WORKGROUP; i += get_local_size(0))
+  for (i = get_local_id(0); i < COLLISION_PER_ROW; i += get_local_size(0))
     slotCountersData[i] = 0;
   barrier(CLK_LOCAL_MEM_FENCE);
     
-  for (i = localTid; i < slotsInRow; i += THREADS_PER_ROW, p += SLOT_LEN*THREADS_PER_ROW) {
+  for (i = localTid; i < slotsInRow; i += ROUND_WORKGROUP_SIZE) {
+    p = get_slot_ptr(ht_src, round-1, rowIdx, i);
     uint xi0 = *(__global uint *)p;
     uint x = ((xi0 & mask) >> shift) |
              ((xi0 & mask2) >> shift2);
-    uint slotIdx = atomic_inc(&slotCounters[x]);
+    uint slotIdx = atomic_inc(&slotCountersData[x]);
     slotIdx = min(slotIdx, COLLISION_BUFFER_SIZE-1);
-    slots[COLLISION_BUFFER_SIZE*x+slotIdx] = i;
+    slotsData[COLLISION_BUFFER_SIZE*x+slotIdx] = i;
   }
     
   barrier(CLK_LOCAL_MEM_FENCE);
-  const uint ct_groupsize = max(1u, THREADS_PER_ROW / COLLISION_PER_ROW);
-  for (uint collTypeIdx = localTid / ct_groupsize; collTypeIdx < COLLISION_PER_ROW; collTypeIdx += THREADS_PER_ROW / ct_groupsize) {
-    const uint N = min((uint)slotCounters[collTypeIdx], COLLISION_BUFFER_SIZE);
+  for (uint i = localTid; i < NR_SLOTS; i += ROUND_WORKGROUP_SIZE) {
+    uint xi0, xi1, xi2, xi3, xi4, xi5;
+    p = get_slot_ptr(ht_src, round-1, rowIdx, i);
+    
+  }
+  
+  const uint ct_groupsize = max(1u, ROUND_WORKGROUP_SIZE / COLLISION_PER_ROW);
+  for (uint collTypeIdx = localTid / ct_groupsize; collTypeIdx < COLLISION_PER_ROW; collTypeIdx += ROUND_WORKGROUP_SIZE / ct_groupsize) {
+    const uint N = min((uint)slotCountersData[collTypeIdx], COLLISION_BUFFER_SIZE);
     for (uint i = 0; i < N; i++) {
-      uint collision = (localRowIdx << 24) | (slots[COLLISION_BUFFER_SIZE*collTypeIdx+i] << 12);
+      uint collision = slotsData[COLLISION_BUFFER_SIZE*collTypeIdx+i] << 12;
       for (uint j = i + 1 + localTid % ct_groupsize; j < N; j += ct_groupsize) {
         uint index = atomic_inc(collisionsNum);
         index = min(index, (uint)(LDS_COLL_SIZE-1));
-        collisionsData[index] = collision | slots[COLLISION_BUFFER_SIZE*collTypeIdx+j];
+        collisionsData[index] = collision | slotsData[COLLISION_BUFFER_SIZE*collTypeIdx+j];
       }
     }
   }
@@ -605,12 +557,29 @@ void equihash_round(uint round,
   
   for (uint index = get_local_id(0); index < totalCollisions; index += ROUND_WORKGROUP_SIZE) {
     uint data = collisionsData[index];
-    uint collisionRowIdx = gid + (data >> 24);
     uint i = (data >> 12) & 0xFFF;
     uint j = data & 0xFFF;
-    a = (__global ulong*)get_xi_ptr(ht_src, round-1, collisionRowIdx, i);
-    b = (__global ulong*)get_xi_ptr(ht_src, round-1, collisionRowIdx, j);    
-    dropped_stor += xor_and_store(round, ht_dst, collisionRowIdx, i, j, a, b, rowCountersDst);
+    
+    // load data
+    slot_t s1 = read_slot_global(get_slot_ptr(ht_src, round-1, rowIdx, i), round-1);
+    slot_t s2 = read_slot_global(get_slot_ptr(ht_src, round-1, rowIdx, j), round-1);
+    
+    // xor data and remove padding on even rounds
+    s1.i0 ^= s2.i0;
+    s1.i1 ^= s2.i1;
+    s1.i2 ^= s2.i2;
+    s1.i3 ^= s2.i3;
+    s1.i4 ^= s2.i4;
+    s1.i5 ^= s2.i5;    
+    if (EVEN(round))
+      slot_shr(&s1, 24);
+    
+    if (!s1.i0 && !s1.i1)
+      continue;
+    
+    // store data
+    s1.ref = ENCODE_INPUTS(rowIdx, i, j); 
+    write_slot_global(ht_dst, rowCountersDst, s1, round);
   }
       
 #ifdef ENABLE_DEBUG
@@ -628,10 +597,10 @@ void kernel_round ## N(__global char *ht_src, __global char *ht_dst, \
   __global uint *rowCountersSrc, __global uint *rowCountersDst, \
         __global uint *debug) \
 { \
+    __local uint slots[UINTS_IN_XI(N) * NR_SLOTS]; \
     __local uint    collisionsData[LDS_COLL_SIZE]; \
     __local uint    collisionsNum; \
-    equihash_round(N, ht_src, ht_dst, debug, collisionsData, \
-      &collisionsNum, rowCountersSrc, rowCountersDst); \
+    equihash_round(N, ht_src, ht_dst, debug, collisionsData, &collisionsNum, slots, rowCountersSrc, rowCountersDst); \
 }
 KERNEL_ROUND(1)
 KERNEL_ROUND(2)
@@ -650,16 +619,15 @@ void kernel_round8(__global char *ht_src, __global char *ht_dst,
     uint    tid = get_global_id(0);
     __local uint  collisionsData[LDS_COLL_SIZE];
     __local uint  collisionsNum;
-    equihash_round(8, ht_src, ht_dst, debug, collisionsData,
-      &collisionsNum, rowCountersSrc, rowCountersDst);
+    __local uint slots[UINTS_IN_XI(8) * NR_SLOTS];
+    equihash_round(8, ht_src, ht_dst, debug, collisionsData, &collisionsNum, slots, rowCountersSrc, rowCountersDst);
     if (!tid)
   sols->nr = sols->likely_invalids = 0;
 }
 
-uint expand_ref(__global char *ht, uint xi_offset, uint row, uint slot)
+uint expand_ref(__global char *ht, uint round, uint row, uint slot)
 {
-    return *(__global uint *)(ht + row * NR_SLOTS * SLOT_LEN +
-      slot * SLOT_LEN + xi_offset - 4);
+  return *(__global uint*)(get_slot_ptr(ht, round, row, slot) + 4*UINTS_IN_XI(round));
 }
 
 /*
@@ -670,16 +638,17 @@ uint expand_ref(__global char *ht, uint xi_offset, uint row, uint slot)
 uint expand_refs(uint *ins, uint nr_inputs, __global char **htabs,
   uint round)
 {
-    __global char *ht = htabs[round % 2];
+//     __global char  *ht = htabs[round % 2];
+    __global char *ht = htabs[round];    
     uint    i = nr_inputs - 1;
     uint    j = nr_inputs * 2 - 1;
-    uint    xi_offset = xi_offset_for_round(round);
+//     uint   xi_offset = xi_offset_for_round(round);
     int     dup_to_watch = -1;
     do
       {
-  ins[j] = expand_ref(ht, xi_offset,
+  ins[j] = expand_ref(ht, round,
     DECODE_ROW(ins[i]), DECODE_SLOT1(ins[i]));
-  ins[j - 1] = expand_ref(ht, xi_offset,
+  ins[j - 1] = expand_ref(ht, round,
     DECODE_ROW(ins[i]), DECODE_SLOT0(ins[i]));
   if (!round)
     {
@@ -732,8 +701,18 @@ void potential_sol(__global char **htabs, __global sols_t *sols,
 ** Scan the hash tables to find Equihash solutions.
 */
 __kernel __attribute__((reqd_work_group_size(SOLS_WORKGROUP_SIZE, 1, 1)))
-void kernel_sols(__global char *ht0, __global char *ht1, __global sols_t *sols,
-  __global uint *rowCountersSrc, __global uint *rowCountersDst)
+void kernel_sols(__global char *ht0,
+                 __global char *ht1,
+                 __global char *ht2,
+                 __global char *ht3,
+                 __global char *ht4,
+                 __global char *ht5,
+                 __global char *ht6,
+                 __global char *ht7,
+                 __global char *ht8,
+                 __global sols_t *sols,
+                 __global uint *rowCountersSrc,
+                 __global uint *rowCountersDst)
 {
     __local uint refs[NR_SLOTS*SOLS_ROWS_PER_WORKGROUP];
     __local uint data[NR_SLOTS*SOLS_ROWS_PER_WORKGROUP];
@@ -746,11 +725,8 @@ void kernel_sols(__global char *ht0, __global char *ht1, __global sols_t *sols,
     __local uint *refsPtr = &refs[NR_SLOTS*localRowIdx];
     __local uint *dataPtr = &data[NR_SLOTS*localRowIdx];    
     
-    __global char *htabs[2] = { ht0, ht1 };
-    __global char *hcounters[2] = { rowCountersSrc, rowCountersDst };
-    uint    ht_i = (PARAM_K - 1) % 2; // table filled at last round
+    __global char *htabs[9] = { ht0, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8 };
     uint    i, j;
-    __global char *p;
     uint    ref_i, ref_j;
     // it's ok for the collisions array to be so small, as if it fills up
     // the potential solutions are likely invalid (many duplicate inputs)
@@ -758,10 +734,10 @@ void kernel_sols(__global char *ht0, __global char *ht1, __global sols_t *sols,
   collisionsNum = 0;    
 
     uint slotsInRow = get_slots_number(rowCountersSrc, rowIdx);  
-    p = get_xi_ptr(htabs[ht_i], PARAM_K-1, rowIdx, localTid);
 
-    for (i = localTid; i < slotsInRow; i += SOLS_THREADS_PER_ROW, p += SLOT_LEN*SOLS_THREADS_PER_ROW) {
-      refsPtr[i] = *(__global uint *)(p - 4);
+    for (i = localTid; i < slotsInRow; i += SOLS_THREADS_PER_ROW) {
+      __global char *p = get_slot_ptr(htabs[PARAM_K - 1], PARAM_K-1, rowIdx, i);
+      refsPtr[i] = *(__global uint *)(p + 4);
       dataPtr[i] = (*(__global uint *)p);
     }
     barrier(CLK_LOCAL_MEM_FENCE);

@@ -35,8 +35,7 @@ struct MinerInstance {
   cl_program _program;
   
   cl_command_queue queue;
-  clBuffer<uint8_t> buf_ht0;
-  clBuffer<uint8_t> buf_ht1;  
+  clBuffer<uint8_t> ht[PARAM_K];
   clBuffer<uint8_t> rowCounters1;
   clBuffer<uint8_t> rowCounters2;
   clBuffer<sols_t> buf_sols;
