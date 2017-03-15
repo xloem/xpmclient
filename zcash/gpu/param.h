@@ -10,7 +10,6 @@
 
 // Number of collision items to track, per thread
 #define ROUND_WORKGROUP_SIZE 256u
-#define LDS_COLL_SIZE (NR_SLOTS * 24)
 
 #define SOLS_WORKGROUP_SIZE 32u
 #define SOLS_ROWS_PER_WORKGROUP 1u
@@ -35,15 +34,15 @@
 // performance as they cause VRAM channel conflicts.
 #if NR_ROWS_LOG == 12
 #define COLLISION_PER_ROW               256u
-#define COLLISION_BUFFER_SIZE           8u
-#define NR_SLOTS 640
+#define COLLISION_BUFFER_SIZE           16u
+#define NR_SLOTS 608
 #elif NR_ROWS_LOG == 13
 #define COLLISION_PER_ROW               128u
-#define COLLISION_BUFFER_SIZE           12u
+#define COLLISION_BUFFER_SIZE           16u
 #define NR_SLOTS 336
 #elif NR_ROWS_LOG == 14
 #define COLLISION_PER_ROW               64u
-#define COLLISION_BUFFER_SIZE           12u
+#define COLLISION_BUFFER_SIZE           14u
 #define NR_SLOTS 176
 #elif NR_ROWS_LOG == 15
 #define COLLISION_PER_ROW               32u
@@ -51,7 +50,7 @@
 #define NR_SLOTS 112
 #elif NR_ROWS_LOG == 16
 #define COLLISION_PER_ROW               16u
-#define COLLISION_BUFFER_SIZE           16u
+#define COLLISION_BUFFER_SIZE           12u
 #define NR_SLOTS                        64
 #endif
 
