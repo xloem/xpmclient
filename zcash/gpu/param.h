@@ -10,7 +10,8 @@
 
 // Number of collision items to track, per thread
 #define ROUND_WORKGROUP_SIZE 256
-#define SOLS_WORKGROUP_SIZE 256
+#define POTENTIAL_SOLS_WORKGROUP_SIZE 256
+#define SOLS_WORKGROUP_SIZE 32
 
 // Ratio of time of sleeping before rechecking if task is done (0-1)
 #define SLEEP_RECHECK_RATIO 0.60
@@ -81,6 +82,7 @@
 #define BLAKE_WPS                 10
 // Maximum number of solutions reported by kernel to host
 #define MAX_SOLS      10
+#define MAX_POTENTIAL_SOLS       4096
 // Length of SHA256 target
 #define SHA256_TARGET_LEN               (256 / 8)
 
@@ -125,3 +127,9 @@ typedef struct  sols_s
     uchar valid[MAX_SOLS];
     uint  values[MAX_SOLS][(1 << PARAM_K)];
 }   sols_t;
+
+typedef struct  potential_sols_s
+{
+    uint  nr;
+    uint  values[MAX_POTENTIAL_SOLS][2];
+} potential_sols_t;

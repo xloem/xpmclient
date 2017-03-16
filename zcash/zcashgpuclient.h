@@ -38,11 +38,13 @@ struct MinerInstance {
   clBuffer<uint8_t> ht[PARAM_K];
   clBuffer<uint8_t> rowCounters1;
   clBuffer<uint8_t> rowCounters2;
+  clBuffer<potential_sols_t> buf_potential_sols;
   clBuffer<sols_t> buf_sols;
   clBuffer<debug_t> buf_dbg;
   
   cl_kernel k_init_ht;
   cl_kernel k_rounds[PARAM_K];
+  cl_kernel k_potential_sols;
   cl_kernel k_sols;
  
   uint256 nonce;

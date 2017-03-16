@@ -79,6 +79,12 @@ __global char *get_slot_ptr(__global char *ht, uint round, uint rowIdx, uint slo
 #endif
 }
 
+
+uint expand_ref(__global char *ht, uint round, uint row, uint slot)
+{
+  return *(__global uint*)(get_slot_ptr(ht, round, row, slot) + 4*UINTS_IN_XI(round));
+}
+
 slot_t read_slot_global(__global char *p, uint round)
 {
   slot_t out;
@@ -664,7 +670,7 @@ void kernel_round ## N(__global char *ht_src, __global char *ht_dst, \
         __global uint *debug) \
 { \
     __local uint4 slots[UINTS_IN_XI(N-1) * NR_SLOTS / 4]; \
-    equihash_round(N, ht_src, ht_dst, debug, slots, rowCountersSrc, rowCountersDst); \
+    equihash_round(N, ht_src, ht_dst, debug, (__local uint*)slots, rowCountersSrc, rowCountersDst); \
 }
 KERNEL_ROUND(1)
 KERNEL_ROUND(2)
@@ -678,101 +684,21 @@ KERNEL_ROUND(7)
 __kernel __attribute__((reqd_work_group_size(ROUND_WORKGROUP_SIZE, 1, 1)))
 void kernel_round8(__global char *ht_src, __global char *ht_dst,
   __global uint *rowCountersSrc, __global uint *rowCountersDst,
-  __global uint *debug, __global sols_t *sols)
+  __global uint *debug, __global potential_sols_t *potential_sols, __global sols_t *sols)
 {
     uint    tid = get_global_id(0);
     __local uint4 slots[UINTS_IN_XI(8-1) * NR_SLOTS / 4];
-    equihash_round(8, ht_src, ht_dst, debug, slots, rowCountersSrc, rowCountersDst);
-    if (!tid)
-  sols->nr = sols->likely_invalids = 0;
-}
-
-uint expand_ref(__global char *ht, uint round, uint row, uint slot)
-{
-  return *(__global uint*)(get_slot_ptr(ht, round, row, slot) + 4*UINTS_IN_XI(round));
-}
-
-/*
-** Expand references to inputs. Return 1 if so far the solution appears valid,
-** or 0 otherwise (an invalid solution would be a solution with duplicate
-** inputs, which can be detected at the last step: round == 0).
-*/
-uint expand_refs(uint *ins, uint nr_inputs, __global char **htabs,
-  uint round)
-{
-    __global char *ht = htabs[round];    
-    uint    i = nr_inputs - 1;
-    uint    j = nr_inputs * 2 - 1;
-    int     dup_to_watch = -1;
-    do
-      {
-  ins[j] = expand_ref(ht, round,
-    DECODE_ROW(ins[i]), DECODE_SLOT1(ins[i]));
-  ins[j - 1] = expand_ref(ht, round,
-    DECODE_ROW(ins[i]), DECODE_SLOT0(ins[i]));
-  if (!round)
-    {
-      if (dup_to_watch == -1)
-    dup_to_watch = ins[j];
-      else if (ins[j] == dup_to_watch || ins[j - 1] == dup_to_watch)
-    return 0;
+    equihash_round(8, ht_src, ht_dst, debug, (__local uint*)slots, rowCountersSrc, rowCountersDst);
+    if (!tid) {
+      potential_sols->nr = 0;
+      sols->nr = sols->likely_invalids = 0;
     }
-  if (!i)
-      break ;
-  i--;
-  j -= 2;
-      }
-    while (1);
-    return 1;
 }
 
-/*
-** Verify if a potential solution is in fact valid.
-*/
-void potential_sol(__global char **htabs, __global sols_t *sols,
-  uint ref0, uint ref1)
-{
-    uint  nr_values;
-    uint  values_tmp[(1 << PARAM_K)];
-    uint  sol_i;
-    uint  i;
-    nr_values = 0;
-    values_tmp[nr_values++] = ref0;
-    values_tmp[nr_values++] = ref1;
-    uint round = PARAM_K - 1;
-    do
-      {
-  round--;
-  if (!expand_refs(values_tmp, nr_values, htabs, round))
-      return ;
-  nr_values *= 2;
-      }
-    while (round > 0);
-    // solution appears valid, copy it to sols
-    sol_i = atomic_inc(&sols->nr);
-    if (sol_i >= MAX_SOLS)
-  return ;
-    for (i = 0; i < (1 << PARAM_K); i++)
-  sols->values[sol_i][i] = values_tmp[i];
-    sols->valid[sol_i] = 1;
-}
-
-/*
-** Scan the hash tables to find Equihash solutions.
-*/
-__kernel __attribute__((reqd_work_group_size(SOLS_WORKGROUP_SIZE, 1, 1)))
-void kernel_sols(__global char *ht0,
-                 __global char *ht1,
-                 __global char *ht2,
-                 __global char *ht3,
-                 __global char *ht4,
-                 __global char *ht5,
-                 __global char *ht6,
-                 __global char *ht7,
-                 __global char *ht8,
-                 __global sols_t *sols,
-                 __global uint *rowCountersSrc,
-                 __global uint *rowCountersDst)
+__kernel __attribute__((reqd_work_group_size(POTENTIAL_SOLS_WORKGROUP_SIZE, 1, 1)))
+void kernel_potential_sols(__global char *ht_src,
+                           __global uint *rowCountersSrc,
+                           __global potential_sols_t *sols)
 {
   uint rowIdx = get_group_id(0);
   uint localTid = get_local_id(0);
@@ -781,17 +707,15 @@ void kernel_sols(__global char *ht0,
   __local uint slotCountersData[COLLISION_PER_ROW];
   __local ushort slotsData[COLLISION_PER_ROW*COLLISION_BUFFER_SIZE];
 
-  __global char *htabs[9] = { ht0, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8 };
-
   uint slotsInRow = get_slots_number(rowCountersSrc, rowIdx);
 
   for (uint i = get_local_id(0); i < COLLISION_PER_ROW; i += get_local_size(0))
     slotCountersData[i] = 0;
   barrier(CLK_LOCAL_MEM_FENCE);
     
-  for (uint i = localTid; i < slotsInRow; i += SOLS_WORKGROUP_SIZE) {
+  for (uint i = localTid; i < slotsInRow; i += POTENTIAL_SOLS_WORKGROUP_SIZE) {
     // read xi0 and ref
-    uint2 slot = *(__global uint2*)get_slot_ptr(ht8, PARAM_K-1, rowIdx, i);
+    uint2 slot = *(__global uint2*)get_slot_ptr(ht_src, PARAM_K-1, rowIdx, i);
     
     // cache in local memory
     xi0WithRef[i] = slot;
@@ -804,7 +728,7 @@ void kernel_sols(__global char *ht0,
     
   barrier(CLK_LOCAL_MEM_FENCE);
 
-  for (uint i = localTid; i < slotsInRow; i += SOLS_WORKGROUP_SIZE) {
+  for (uint i = localTid; i < slotsInRow; i += POTENTIAL_SOLS_WORKGROUP_SIZE) {
     uint2 s = xi0WithRef[i];
     uint collisionData = get_collision_data(s.s0, PARAM_K);
     uint count = min(slotCountersData[collisionData], COLLISION_BUFFER_SIZE-1);
@@ -814,9 +738,90 @@ void kernel_sols(__global char *ht0,
       uint2 s2 = xi0WithRef[collisionIdx];
       if (collisionIdx <= i || s1.s0 != s2.s0)
         continue;      
-      
-      potential_sol(htabs, sols, s1.s1, s2.s1);
+
+      uint sol_i = atomic_inc(&sols->nr);
+      if (sol_i >= MAX_POTENTIAL_SOLS)
+        return;
+      sols->values[sol_i][0] = s1.s1;
+      sols->values[sol_i][1] = s2.s1;
       break;
+    }
+  }
+}
+
+// Using "gateless gate" version
+
+__kernel __attribute__((reqd_work_group_size(SOLS_WORKGROUP_SIZE, 1, 1)))
+void kernel_sols(__global char *ht0,
+                 __global char *ht1,
+                 __global char *ht2,
+                 __global char *ht3,
+                 __global char *ht4,
+                 __global char *ht5,
+                 __global char *ht6,
+                 __global char *ht7,
+                 __global char *ht8,
+                 __global sols_t *sols,
+                 __global potential_sols_t *potential_sols)
+{
+  __local uint inputs_a[1 << PARAM_K];
+  __local uint inputs_b[1 << (PARAM_K - 1)];
+  
+  __global char *htabs[] = { ht0, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8 };
+
+  if (get_group_id(0) < potential_sols->nr && get_group_id(0) < MAX_POTENTIAL_SOLS) {
+    __local uint dup_counter;
+    if (get_local_id(0) == 0) {
+      dup_counter = 0;
+      inputs_a[0] = potential_sols->values[get_group_id(0)][0];
+      inputs_a[1] = potential_sols->values[get_group_id(0)][1];
+    }
+    
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    for (int round = 7; round >= 0; --round) {
+      if (round % 2) {
+        for (uint i = get_local_id(0); i < (1 << ((PARAM_K - 1) - round)); i += get_local_size(0)) {
+          inputs_b[i * 2 + 1] = expand_ref(htabs[round], round, DECODE_ROW(inputs_a[i]), DECODE_SLOT1(inputs_a[i]));
+          inputs_b[i * 2] = expand_ref(htabs[round], round, DECODE_ROW(inputs_a[i]), DECODE_SLOT0(inputs_a[i]));
+        }
+      } else {
+        for (uint i = get_local_id(0); i < (1 << ((PARAM_K - 1) - round)); i += get_local_size(0)) {
+          inputs_a[i * 2 + 1] = expand_ref(htabs[round], round, DECODE_ROW(inputs_b[i]), DECODE_SLOT1(inputs_b[i]));
+          inputs_a[i * 2] = expand_ref(htabs[round], round, DECODE_ROW(inputs_b[i]), DECODE_SLOT0(inputs_b[i]));
+        }
+      }
+      
+      barrier(CLK_LOCAL_MEM_FENCE);
+    }
+    
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    int dup_to_watch = inputs_a[(1 << PARAM_K) - 1];
+    
+    for (uint i = get_local_id(0); i < (1 << (PARAM_K-1)); i += get_local_size(0)) {
+      uint j = 3 + i;
+      if (inputs_a[j] == dup_to_watch)
+        atomic_inc(&dup_counter);
+      j += (1 << (PARAM_K-1));
+      if (j < (1 << PARAM_K) - 2 && inputs_a[j] == dup_to_watch)
+        atomic_inc(&dup_counter);
+    }
+    
+    barrier(CLK_LOCAL_MEM_FENCE);
+        
+    // solution appears valid, copy it to sols
+    if (!dup_counter) {
+      __local uint sol_i;
+      if (!get_local_id(0))
+        sol_i = atomic_inc(&sols->nr);
+      barrier(CLK_LOCAL_MEM_FENCE);
+      if (sol_i < MAX_SOLS) {
+        if (!get_local_id(0))
+          sols->valid[sol_i] = 1;
+        for (uint i = get_local_id(0); i < (1 << PARAM_K); i += get_local_size(0))
+          sols->values[sol_i][i] = inputs_a[i];
+      }
     }
   }
 }
