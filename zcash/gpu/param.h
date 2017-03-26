@@ -9,8 +9,8 @@
 #define NR_ROWS_LOG                     12
 
 // Number of collision items to track, per thread
+#define BLAKE_WORKGROUP_SIZE 256
 #define ROUND_WORKGROUP_SIZE 256
-#define POTENTIAL_SOLS_WORKGROUP_SIZE 256
 #define SOLS_WORKGROUP_SIZE 32
 
 // Ratio of time of sleeping before rechecking if task is done (0-1)
@@ -30,26 +30,30 @@
 //
 // Even (as opposed to odd) values of OVERHEAD sometimes significantly decrease
 // performance as they cause VRAM channel conflicts.
-#if NR_ROWS_LOG == 12
+#if NR_ROWS_LOG == 11
+#define COLLISION_PER_ROW               512u
+#define COLLISION_BUFFER_SIZE           12u
+#define NR_SLOTS 1184u
+#elif NR_ROWS_LOG == 12
 #define COLLISION_PER_ROW               256u
 #define COLLISION_BUFFER_SIZE           16u
-#define NR_SLOTS 608
+#define NR_SLOTS 608u
 #elif NR_ROWS_LOG == 13
 #define COLLISION_PER_ROW               128u
 #define COLLISION_BUFFER_SIZE           16u
-#define NR_SLOTS 336
+#define NR_SLOTS 336u
 #elif NR_ROWS_LOG == 14
 #define COLLISION_PER_ROW               64u
 #define COLLISION_BUFFER_SIZE           14u
-#define NR_SLOTS 176
+#define NR_SLOTS 176u
 #elif NR_ROWS_LOG == 15
 #define COLLISION_PER_ROW               32u
 #define COLLISION_BUFFER_SIZE           12u
-#define NR_SLOTS 112
+#define NR_SLOTS 112u
 #elif NR_ROWS_LOG == 16
 #define COLLISION_PER_ROW               16u
 #define COLLISION_BUFFER_SIZE           12u
-#define NR_SLOTS                        64
+#define NR_SLOTS                        64u
 #endif
 
 #define NR_ROWS                         (1 << NR_ROWS_LOG)
