@@ -161,9 +161,7 @@ slot_t read_slot_global(__global char *ht, uint rowIdx, uint slotIdx, uint round
     out.i4 = l.s4;
     out.i5 = l.s5;   
   } else if (round == 2 ||
-             round == 3 ||
-             round == 4 ||
-             round == 5) {
+             round == 3) {
     find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
     uint4 l = *(__global uint4*)lp;
     uint2 h = *(__global uint2*)hp;  
@@ -173,7 +171,17 @@ slot_t read_slot_global(__global char *ht, uint rowIdx, uint slotIdx, uint round
     out.i3 = l.s3;
     out.i4 = h.s0;
     out.i5 = h.s1;
-  } else if (round == 6 ||
+  } else if (round == 4 ||
+             round == 5) {
+    find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
+    uint4 l = *(__global uint4*)lp;
+    uint h = *(__global uint*)hp;  
+    out.i0 = l.s0;
+    out.i1 = l.s1;
+    out.i2 = l.s2;
+    out.i3 = l.s3;
+    out.i4 = h;
+  }  else if (round == 6 ||
              round == 7) {
     find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
     uint4 l = *(__global uint4*)lp;  
@@ -246,11 +254,11 @@ void write_slot_global(__global char *ht, __global uint *rowCounters, slot_t in,
   } else if (round == 4) {
     find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
     *(__global uint4*)lp = (uint4){in.i0, in.i1, in.i2, in.i3};
-    *(__global uint2*)hp = (uint2){in.ref, 0};
+    *(__global uint*)hp = in.ref;
   } else if (round == 5) {
     find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
     *(__global uint4*)lp = (uint4){in.i0, in.i1, in.i2, in.i3};
-    *(__global uint2*)hp = (uint2){in.ref, 0};
+    *(__global uint*)hp = in.ref;
   } else if (round == 6) {
     find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
     *(__global uint4*)lp = (uint4){in.i0, in.i1, in.i2, in.ref};    
