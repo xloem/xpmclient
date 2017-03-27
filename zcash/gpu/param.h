@@ -60,7 +60,12 @@
 
 // Length of 1 element (slot) in byte
 #define SLOT_LEN_MAX                        32
-#define SLOT_LEN(round)       ((UINTS_IN_XI(round) >= 4) ? 32 : (UINTS_IN_XI(round) >= 2) ? 16 : 8)
+
+#define SLOT_LEN(round)       ((UINTS_IN_XI(round) >= 6) ? 32 : \
+                               (UINTS_IN_XI(round) >= 4) ? 24 : \
+                               (UINTS_IN_XI(round) >= 2) ? 16 : \
+                                                           8)
+
 // Total size of hash table
 #define HT_SIZE       (NR_ROWS * NR_SLOTS * SLOT_LEN_MAX)*2
 // Length of Zcash block header, nonce (part of header)
@@ -106,7 +111,7 @@
 
 // Optional features
 #undef ENABLE_DEBUG
-#define NV_L2CACHE_OPT
+#define NV_L2CACHE_OPT 5
 
 /*
 ** Return the offset of Xi in bytes from the beginning of the slot.

@@ -67,50 +67,127 @@ void slot_shr(slot_t *slot, uint n)
   slot->i5 = (slot->i5 >> n) | (slot->i6 << (32-n));
 }
 
-__global char *get_slot_ptr(__global char *ht, uint round, uint rowIdx, uint slotIdx)
+void find_slot_std(__global char *ht,
+                   uint round,
+                   uint rowIdx,
+                   uint slotIdx,
+                   __global char **lp,
+                   __global char **hp)
 {
 #ifdef NV_L2CACHE_OPT
-  const uint RowFragmentLog = 5;
-  const uint SlotsInRow = 1 << RowFragmentLog;
-  const uint SlotMask = (1 << RowFragmentLog) - 1;  
-  return ht +
-         ((slotIdx >> RowFragmentLog)*NR_ROWS*SLOT_LEN(round)*SlotsInRow) +
-         (rowIdx*SLOT_LEN(round)*SlotsInRow) +
-         (slotIdx & SlotMask)*SLOT_LEN(round);
+  const uint SlotsInRow = 1 << NV_L2CACHE_OPT;
+  const uint SlotMask = (1 << NV_L2CACHE_OPT) - 1;  
+  uint rowOffset = ((slotIdx >> NV_L2CACHE_OPT)*NR_ROWS*SLOT_LEN(round)*SlotsInRow) + (rowIdx*SLOT_LEN(round)*SlotsInRow);
+  uint slotOffset = slotIdx & SlotMask;
 #else
-  return ht + rowIdx*NR_SLOTS*SLOT_LEN(round) + SLOT_LEN(round)*slotIdx;  
+  uint rowOffset = rowIdx*NR_SLOTS*SLOT_LEN(round);
+  uint slotOffset = slotIdx;
 #endif
+  *lp = ht + rowOffset + SLOT_LEN(round)*slotOffset;
 }
 
-
-uint expand_ref(__global char *ht, uint round, uint row, uint slot)
+void find_slot_24(__global char *ht,
+                  uint round,
+                  uint rowIdx,
+                  uint slotIdx,
+                  __global char **lp,
+                  __global char **hp)
 {
-  return *(__global uint*)(get_slot_ptr(ht, round, row, slot) + 4*UINTS_IN_XI(round));
+#ifdef NV_L2CACHE_OPT
+  const uint SlotsInRow = 1 << NV_L2CACHE_OPT;
+  const uint SlotMask = (1 << NV_L2CACHE_OPT) - 1;  
+  uint rowOffset = ((slotIdx >> NV_L2CACHE_OPT)*NR_ROWS*SLOT_LEN(round)*SlotsInRow) + (rowIdx*SLOT_LEN(round)*SlotsInRow);
+  uint slotOffset = slotIdx & SlotMask;
+#else
+  uint rowOffset = rowIdx*NR_SLOTS*SLOT_LEN(round);
+  uint slotOffset = slotIdx;
+#endif
+  __global char *p = ht + rowOffset + SLOT_LEN(round)*slotOffset;
+  uint loffset = (slotIdx & 0x1) ? 8 : 0;
+  uint hoffset = (slotIdx & 0x1) ? 0 : 16;
+  *lp = p + loffset;
+  *hp = p + hoffset;
 }
 
-slot_t read_slot_global(__global char *p, uint round)
+void find_slot_4_x(__global char *ht,
+                   uint round,
+                   uint rowIdx,
+                   uint slotIdx,
+                   __global char **lp,
+                   __global char **hp)
+{
+  
+}
+
+uint expand_ref(__global char *ht, uint round, uint rowIdx, uint slotIdx)
+{
+  __global char *lp;
+  __global char *hp;  
+  if (round == 0 ||
+      round == 1) {
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    return *(__global uint*)(lp + 4*UINTS_IN_XI(round));
+  } else if (round == 2 ||
+             round == 3 ||
+             round == 4 ||
+             round == 5) {
+    find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
+    return *(__global uint*)(hp + 4*(UINTS_IN_XI(round)-4));
+  } else if (round == 6 ||
+             round == 7) {
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    return *(__global uint*)(lp + 4*UINTS_IN_XI(round));
+  } else if (round == 8) {
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    return *(__global uint*)(lp + 4*UINTS_IN_XI(round));
+  }  
+}
+
+// slot_t read_slot_global(__global char *p, uint round)
+slot_t read_slot_global(__global char *ht, uint rowIdx, uint slotIdx, uint round)
 {
   slot_t out;
-  if (UINTS_IN_XI(round) > 4) {
-    uint8 x = *(__global uint8*)p;
-    out.i0 = x.s0;
-    out.i1 = x.s1;
-    out.i2 = x.s2;
-    out.i3 = x.s3;
-    out.i4 = x.s4;
-    out.i5 = x.s5;   
-  } else if (UINTS_IN_XI(round) > 2) {
-    uint4 x = *(__global uint4*)p;
-    out.i0 = x.s0;
-    out.i1 = x.s1;
-    out.i2 = x.s2;
-    out.i3 = x.s3;
-  } else {
-    uint2 x = *(__global uint2*)p;
-    out.i0 = x.s0;
-    out.i1 = x.s1;
-  }
   
+  __global char *lp;
+  __global char *hp;  
+  if (round == 0 ||
+      round == 1) {
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    uint8 l = *(__global uint8*)lp;
+    out.i0 = l.s0;
+    out.i1 = l.s1;
+    out.i2 = l.s2;
+    out.i3 = l.s3;
+    out.i4 = l.s4;
+    out.i5 = l.s5;   
+  } else if (round == 2 ||
+             round == 3 ||
+             round == 4 ||
+             round == 5) {
+    find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
+    uint4 l = *(__global uint4*)lp;
+    uint2 h = *(__global uint2*)hp;  
+    out.i0 = l.s0;
+    out.i1 = l.s1;
+    out.i2 = l.s2;
+    out.i3 = l.s3;
+    out.i4 = h.s0;
+    out.i5 = h.s1;
+  } else if (round == 6 ||
+             round == 7) {
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    uint4 l = *(__global uint4*)lp;  
+    out.i0 = l.s0;
+    out.i1 = l.s1;
+    out.i2 = l.s2;
+    out.i3 = l.s3;  
+  } else if (round == 8) {
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    uint2 l = *(__global uint2*)lp;  
+    out.i0 = l.s0;
+    out.i1 = l.s1; 
+  }  
+
   return out;
 }
 
@@ -149,28 +226,40 @@ void write_slot_global(__global char *ht, __global uint *rowCounters, slot_t in,
   // remove padding
   slot_shr(&in, 8);
   
-  // get pointer for slot write
-  __global char *out = get_slot_ptr(ht, round, rowIdx, slotIdx);
-  
   // store data
+  __global char *lp;
+  __global char *hp;  
   if (round == 0) {
-    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.i4, in.i5, in.ref, 0}; *(__global uint8*)out = x;
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    *(__global uint8*)lp = (uint8){in.i0, in.i1, in.i2, in.i3, in.i4, in.i5, in.ref, 0};
   } else if (round == 1) {
-    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.i4, in.i5, in.ref, 0}; *(__global uint8*)out = x;
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    *(__global uint8*)lp = (uint8){in.i0, in.i1, in.i2, in.i3, in.i4, in.i5, in.ref, 0};
   } else if (round == 2) {
-    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.i4, in.ref, 0, 0}; *(__global uint8*)out = x;
+    find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
+    *(__global uint4*)lp = (uint4){in.i0, in.i1, in.i2, in.i3};
+    *(__global uint2*)hp = (uint2){in.i4, in.ref};
   } else if (round == 3) {
-    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.i4, in.ref, 0, 0}; *(__global uint8*)out = x;
+    find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
+    *(__global uint4*)lp = (uint4){in.i0, in.i1, in.i2, in.i3};
+    *(__global uint2*)hp = (uint2){in.i4, in.ref};
   } else if (round == 4) {
-    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.ref, 0, 0, 0}; *(__global uint8*)out = x;
+    find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
+    *(__global uint4*)lp = (uint4){in.i0, in.i1, in.i2, in.i3};
+    *(__global uint2*)hp = (uint2){in.ref, 0};
   } else if (round == 5) {
-    uint8 x = {in.i0, in.i1, in.i2, in.i3, in.ref, 0, 0, 0}; *(__global uint8*)out = x;
+    find_slot_24(ht, round, rowIdx, slotIdx, &lp, &hp);
+    *(__global uint4*)lp = (uint4){in.i0, in.i1, in.i2, in.i3};
+    *(__global uint2*)hp = (uint2){in.ref, 0};
   } else if (round == 6) {
-    uint4 x = {in.i0, in.i1, in.i2, in.ref}; *(__global uint4*)out = x;
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    *(__global uint4*)lp = (uint4){in.i0, in.i1, in.i2, in.ref};    
   } else if (round == 7) {
-    uint4 x = {in.i0, in.i1, in.ref, 0}; *(__global uint4*)out = x;
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    *(__global uint4*)lp = (uint4){in.i0, in.i1, in.ref, 0};    
   } else if (round == 8) {
-    uint2 x = {in.i0, in.ref}; *(__global uint2*)out = x;
+    find_slot_std(ht, round, rowIdx, slotIdx, &lp, &hp);
+    *(__global uint2*)lp = (uint2){in.i0, in.ref};    
   }
 }
 
@@ -643,7 +732,7 @@ void equihash_round(uint round,
     
   for (uint i = localTid; i < slotsInRow; i += ROUND_WORKGROUP_SIZE) {
     // read slot
-    slot_t slot = read_slot_global(get_slot_ptr(ht_src, round-1, rowIdx, i), round-1);
+    slot_t slot = read_slot_global(ht_src, rowIdx, i, round-1);
     
     // cache in local memory
     write_slot_local(slot, slots, i, round-1);
@@ -743,7 +832,10 @@ void kernel_potential_sols(__global char *ht_src,
     
   for (uint i = localTid; i < slotsInRow; i += ROUND_WORKGROUP_SIZE) {
     // read xi0 and ref
-    uint2 slot = *(__global uint2*)get_slot_ptr(ht_src, PARAM_K-1, rowIdx, i);
+    __global char *lp;
+    __global char *hp;
+    find_slot_std(ht_src, PARAM_K-1, rowIdx, i, &lp, &hp);
+    uint2 slot = *(__global uint2*)lp;
     
     // cache in local memory
     xi0WithRef[i] = slot;
