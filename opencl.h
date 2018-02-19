@@ -14,10 +14,6 @@
 #include <string.h>
 #include <vector>
 
-// extern cl_context gContext;
-
-
-
 #define OCL(error) \
   if(cl_int err = error){ \
     printf("OpenCL error: %d at %s:%d\n", err, __FILE__, __LINE__); \
@@ -63,7 +59,6 @@ public:
   }
   
   void init(cl_context gContext, int size, cl_mem_flags flags = 0) {
-    printf("<info> OpenCL: alloc %i bytes\n", (int)(size*sizeof(T)));
     Size = size;
     
     if(!(flags & CL_MEM_HOST_NO_ACCESS)){
@@ -71,9 +66,7 @@ public:
       memset(HostData, 0, Size*sizeof(T));
     }else
       HostData = 0;
-    
-    //printf("clCreateBuffer: size = %d, %d bytes\n", Size, Size*sizeof(T));
-    
+
     cl_int error;
     if (flags & CL_MEM_HOST_NO_ACCESS)
       flags = CL_MEM_READ_WRITE;

@@ -17,18 +17,17 @@
 using namespace pool;
 
 #include <zmq.h>
-#include <czmq.h>
-
 #include <chrono>
 
 #include <locale.h>
 #include <config4cpp/Configuration.h>
+#include "zmqextras.h"
 using namespace config4cpp;
 
 class BaseClient;
 
 double GetPrimeDifficulty(unsigned int nBits);
-BaseClient *createClient(zctx_t *ctx);
+BaseClient *createClient(void *ctx);
 
 extern std::string gClientName;
 extern unsigned gClientID;
@@ -36,9 +35,6 @@ extern const unsigned gClientVersion;
 
 extern std::string gAddr;
 extern proto::Block gBlock;
-
-
-
 
 class Timer {
 public:
@@ -74,67 +70,51 @@ struct share_t {
 };
 
 
-
-
 template<class C>
 static bool Receive(C& rep, void* socket) {
-	
-	zmsg_t* msg = zmsg_recv(socket);
-	if(!msg) return false;
-	zframe_t* frame = zmsg_last(msg);
-	size_t fsize = zframe_size(frame);
-	const byte* fbytes = zframe_data(frame);
-	
-	rep.ParseFromArray(fbytes, fsize);
-	zmsg_destroy(&msg);
-	return true;
-	
+  zmq_msg_t msg;
+  zmq_msg_init(&msg);
+  zmq_recvmsg(socket, &msg, 0);
+  rep.ParseFromArray(zmq_msg_data(&msg), zmq_msg_size(&msg));
+  zmq_msg_close(&msg);  
+  return true;
 }
 
 template<class C>
 static bool ReceivePub(C& sig, void* socket) {
-	
-	zmsg_t* msg = zmsg_recv(socket);
-	if(!msg) return false;
-	zframe_t* frame = zmsg_next(msg);
-	size_t fsize = zframe_size(frame);
-	const byte* fbytes = zframe_data(frame);
-	
-	sig.ParseFromArray(fbytes+1, fsize-1);
-	zmsg_destroy(&msg);
-	return true;
-	
+  zmq_msg_t msg;
+  zmq_msg_init (&msg);
+  zmq_recvmsg (socket, &msg, 0);
+  size_t size = zmq_msg_size(&msg);
+  if (size) {
+    sig.ParseFromArray(((char*)zmq_msg_data(&msg))+1, zmq_msg_size(&msg)-1);
+    zmq_msg_close (&msg);  
+    return true;
+  } else {
+    zmq_msg_close (&msg);  
+    return false;
+  }
 }
 
 
 template<class C>
 static void Send(const C& req, void* socket) {
-	
-	zmsg_t* msg = zmsg_new();
-	size_t fsize = req.ByteSize();
-	zframe_t* frame = zframe_new(0, fsize);
-	byte* data = zframe_data(frame);
-	req.SerializeToArray(data, fsize);
-	
-	zmsg_append(msg, &frame);
-	zmsg_send(&msg, socket);
-	
+  size_t fsize = req.ByteSize();
+  void *data = malloc(fsize);
+  req.SerializeToArray(data, fsize);
+  zmq_send(socket, data, fsize, 0);
+  free(data);
 }
 
 
 template<class C>
 static void SendPub(const C& sig, void* socket) {
-	
-	size_t fsize = sig.ByteSize()+1;
-	zframe_t* frame = zframe_new(0, fsize);
-	byte* data = zframe_data(frame);
-	data[0] = 1;
-	sig.SerializeToArray(data+1, fsize-1);
-	
-	zmsg_t* msg = zmsg_new();
-	zmsg_append(msg, &frame);
-	zmsg_send(&msg, socket);
-	
+  size_t fsize = sig.ByteSize();
+  unsigned char *data = (unsigned char*)malloc(fsize+1);
+  data[0] = 1;
+  sig.SerializeToArray(data+1, fsize);
+  zmq_send(socket, data, fsize+1, 0);
+  free(data);
 }
 
 
@@ -142,7 +122,7 @@ static void SendPub(const C& sig, void* socket) {
 class BaseClient {
 public:
   
-  BaseClient(zctx_t *ctx);
+  BaseClient(void *ctx);
   virtual ~BaseClient() {}
   
   virtual bool Initialize(Configuration* cfg, bool benchmarkOnly = false) = 0;
@@ -160,7 +140,7 @@ protected:
   
   PlatformType platformType;
   
-  zctx_t* mCtx;
+  void* mCtx;
   
   std::map<int,int> mDeviceMap;
   std::map<int,int> mDeviceMapRev;

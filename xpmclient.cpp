@@ -23,6 +23,8 @@ extern "C" {
 #define steady_clock monotonic_clock
 #endif  
 
+#include <math.h>
+
 cl_platform_id gPlatform = 0;
 
 std::vector<unsigned> gPrimes2;
@@ -32,7 +34,7 @@ double GetPrimeDifficulty(unsigned int nBits)
     return ((double) nBits / (double) (1 << nFractionalBits));
 }
 
-BaseClient *createClient(zctx_t *ctx)
+BaseClient *createClient(void *ctx)
 {
   return new XPMClient(ctx);
 }
@@ -100,8 +102,8 @@ bool PrimeMiner::Initialize(cl_context context, cl_program program, cl_device_id
 	mFermatCheck = clCreateKernel(program, "check_fermat", &error);
 	OCLR(error, false);
 	
-	mBig = clCreateCommandQueue(context, dev, 0, &error);
-	mSmall = clCreateCommandQueue(context, dev, 0, &error);
+	mBig = clCreateCommandQueueWithProperties(context, dev, 0, &error);
+	mSmall = clCreateCommandQueueWithProperties(context, dev, 0, &error);
 	OCLR(error, false);
 	
 	{
@@ -110,9 +112,10 @@ bool PrimeMiner::Initialize(cl_context context, cl_program program, cl_device_id
 		
 		cl_kernel getconf = clCreateKernel(program, "getconfig", &error);
 		OCLR(error, false);
-		
+                size_t globalSize = 1;
+                size_t localSize = 1;
 		OCLR(clSetKernelArg(getconf, 0, sizeof(cl_mem), &config.DeviceData), false);
-		OCLR(clEnqueueTask(mSmall, getconf, 0, 0, 0), false);
+		OCLR(clEnqueueNDRangeKernel(mSmall, getconf, 1, 0, &globalSize, &localSize, 0, 0, 0), false);
 		config.copyToHost(mSmall, true);
 		
 		mConfig = *config.HostData;
@@ -132,7 +135,7 @@ bool PrimeMiner::Initialize(cl_context context, cl_program program, cl_device_id
 	
 }
 
-void PrimeMiner::InvokeMining(void *args, zctx_t *ctx, void *pipe) {
+void PrimeMiner::InvokeMining(void *args, void *ctx, void *pipe) {
 	
 	((PrimeMiner*)args)->Mining(ctx, pipe);
 	
@@ -218,21 +221,21 @@ void PrimeMiner::FermatDispatch(pipeline_t &fermat,
   }
 }
 
-void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
-	void* blocksub = zsocket_new(ctx, ZMQ_SUB);
-	void* worksub = zsocket_new(ctx, ZMQ_SUB);
-	void* statspush = zsocket_new(ctx, ZMQ_PUSH);
-	void* sharepush = zsocket_new(ctx, ZMQ_PUSH);
+void PrimeMiner::Mining(void *ctx, void *pipe) {
+	void* blocksub = zmq_socket(ctx, ZMQ_SUB);
+	void* worksub = zmq_socket(ctx, ZMQ_SUB);
+	void* statspush = zmq_socket(ctx, ZMQ_PUSH);
+	void* sharepush = zmq_socket(ctx, ZMQ_PUSH);  
 	
-	zsocket_connect(blocksub, "inproc://blocks");
-	zsocket_connect(worksub, "inproc://work");
-	zsocket_connect(statspush, "inproc://stats");
-	zsocket_connect(sharepush, "inproc://shares");
-	
+	zmq_connect(blocksub, "inproc://blocks");
+	zmq_connect(worksub, "inproc://work");
+	zmq_connect(statspush, "inproc://stats");
+	zmq_connect(sharepush, "inproc://shares");        
+
 	{
 		const char one[2] = {1, 0};
-		zsocket_set_subscribe(blocksub, one);
-		zsocket_set_subscribe(worksub, one);
+		zmq_setsockopt (blocksub, ZMQ_SUBSCRIBE, one, 1);
+		zmq_setsockopt (worksub, ZMQ_SUBSCRIBE, one, 1);
 	}
 	
 	proto::Block block;
@@ -360,16 +363,15 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	OCL(clSetKernelArg(mFermatCheck, 2, sizeof(cl_mem), &final.info.DeviceData));
 	OCL(clSetKernelArg(mFermatCheck, 3, sizeof(cl_mem), &final.count.DeviceData));
 	OCL(clSetKernelArg(mFermatCheck, 6, sizeof(unsigned), &mDepth));
-	
-	zsocket_signal(pipe);
-	zsocket_poll(pipe, -1);
+
+	czmq_signal(pipe);
+	czmq_poll(pipe, -1);
 	
 	bool run = true;
 	while(run){
-		
-		if(zsocket_poll(pipe, 0)){
-			zsocket_wait(pipe);
-			zsocket_wait(pipe);
+		if(czmq_poll(pipe, 0)){
+			czmq_wait(pipe);
+			czmq_wait(pipe);
 		}
 		
 		//printf("\n--------- iteration %d -------\n", iteration);
@@ -377,7 +379,7 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 			time_t currtime = time(0);
 			time_t elapsed = currtime - time1;
 			if(elapsed > 11){
-				zsocket_sendmem(statspush, &stats, sizeof(stats), 0);
+ 				zmq_send(statspush, &stats, sizeof(stats), 0);                          
 				time1 = currtime;
 			}
 			
@@ -399,13 +401,13 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 			bool getwork = true;
 			while(getwork && run){
 				
-				if(zsocket_poll(worksub, 0) || work.height() < block.height()){
+				if(czmq_poll(worksub, 0) || work.height() < block.height()){
 					run = ReceivePub(work, worksub);
 					reset = true;
 				}
 				
 				getwork = false;
-				if(zsocket_poll(blocksub, 0) || work.height() > block.height()){
+				if(czmq_poll(blocksub, 0) || work.height() > block.height()){
 					run = ReceivePub(block, blocksub);
 					getwork = true;
 				}
@@ -523,8 +525,8 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
           simplePrecalcSHA256(&blockheader, hashmod.midstate, mBig, mHashMod);
 				}
 
-				size_t globalOffset[] = { blockheader.nonce, 1, 1 };
-				size_t globalSize[] = { numhash, 1, 1 };
+				size_t globalOffset[] = { blockheader.nonce, 1u, 1u };
+				size_t globalSize[] = { (unsigned)numhash, 1u, 1u };
         size_t localSize[] = { mLSize, 1 };      
 				hashmod.count.copyToDevice(mBig, false);
         OCL(clEnqueueNDRangeKernel(mBig, mHashMod, 1, globalOffset, globalSize, localSize, 0, 0, 0));
@@ -705,18 +707,16 @@ void PrimeMiner::Mining(zctx_t *ctx, void *pipe) {
 	  clReleaseMemObject(primeBuf2[i]);
   }
 	
-	zsocket_destroy(ctx, blocksub);
-	zsocket_destroy(ctx, worksub);
-	zsocket_destroy(ctx, statspush);
-	zsocket_destroy(ctx, sharepush);
-	
-	zsocket_signal(pipe);
-	
+	zmq_close(blocksub);
+	zmq_close(worksub);
+	zmq_close(statspush);
+	zmq_close(sharepush);
+	czmq_signal(pipe);
 }
 
 
 
-XPMClient::XPMClient(zctx_t* ctx) : BaseClient(ctx) {
+XPMClient::XPMClient(void* ctx) : BaseClient(ctx) {
 }
 
 XPMClient::~XPMClient() {
@@ -724,14 +724,13 @@ XPMClient::~XPMClient() {
 	for(unsigned i = 0; i < mWorkers.size(); ++i)
 		if(mWorkers[i].first){
 			mWorkers[i].first->MakeExit = true;
-			if(zsocket_poll(mWorkers[i].second, 1000))
+			if(czmq_poll(mWorkers[i].second, 1000))
 				delete mWorkers[i].first;
 		}
-	
-	zsocket_destroy(mCtx, mBlockPub);
-	zsocket_destroy(mCtx, mWorkPub);
-	zsocket_destroy(mCtx, mStatsPull);
-	
+
+	zmq_close(mBlockPub);
+	zmq_close(mWorkPub);
+	zmq_close(mStatsPull);
   if (platformType == ptAMD)
   	clear_adl(mNumDevices);
 	
@@ -958,13 +957,12 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
           printf("Please remove kernel.bin file and restart miner\n");
           exit(1);
         }
-        
-        void* pipe = zthread_fork(mCtx, &PrimeMiner::InvokeMining, miner);
-        zsocket_wait(pipe);
-        zsocket_signal(pipe);
+
+        void *pipe = czmq_thread_fork(mCtx, &PrimeMiner::InvokeMining, miner);
+        czmq_wait(pipe);
+        czmq_signal(pipe);
         worker.first = miner;
         worker.second = pipe;
-      
       } else {
         printf("GPU %d: failed to load kernel\n", i);
         worker.first = 0;
@@ -1000,15 +998,13 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 	std::vector<bool> running(nw);
 	std::vector<stats_t> wstats(nw);
 	
-	while(zsocket_poll(mStatsPull, 0)){
-		
-		zmsg_t* msg = zmsg_recv(mStatsPull);
-		if(!msg) break;
-		zframe_t* frame = zmsg_last(msg);
-		size_t fsize = zframe_size(frame);
-		byte* fbytes = zframe_data(frame);
-		
-		if(fsize >= sizeof(stats_t)){
+	while (czmq_poll(mStatsPull, 0)) {
+		zmq_msg_t msg;
+		zmq_msg_init(&msg);
+		zmq_recvmsg(mStatsPull, &msg, 0);          
+		size_t fsize = zmq_msg_size(&msg);
+		uint8_t *fbytes = (uint8_t*)zmq_msg_data(&msg);
+		if(fsize >= sizeof(stats_t)) {
 			stats_t* tmp = (stats_t*)fbytes;
 			if(tmp->id < nw){
 				running[tmp->id] = true;
@@ -1016,9 +1012,9 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 			}
 		}
 		
-		zmsg_destroy(&msg);
+		zmq_msg_close(&msg); 
 	}
-	
+
 	double cpd = 0;
 	unsigned errors = 0;
 	int maxtemp = 0;
@@ -1085,10 +1081,10 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 
 void XPMClient::Toggle() {
 	
-	for(unsigned i = 0; i < mWorkers.size(); ++i)
-		if(mWorkers[i].first){
-			zsocket_signal(mWorkers[i].second);
-		}
+	for(unsigned i = 0; i < mWorkers.size(); ++i) {
+		if(mWorkers[i].first)
+			czmq_signal(mWorkers[i].second);
+	}
 	
 	mPaused = !mPaused;
 	

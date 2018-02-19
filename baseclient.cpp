@@ -9,14 +9,9 @@
 
 #include "baseclient.h"
 #include "sysinfo.h"
-
-// #include "xpmclient.h"
 #include "prime.h"
 
 #include <iostream>
-
-
-
 
 std::string gClientName;
 unsigned gClientID;
@@ -24,7 +19,7 @@ unsigned gInstanceID;
 const unsigned gClientVersion = 11;
 const unsigned gClientTarget = 10;
 
-zctx_t* gCtx = 0;
+void* gCtx = 0;
 static void* gFrontend = 0;
 static void* gServer = 0;
 static void* gSignals = 0;
@@ -52,12 +47,15 @@ static bool ConnectBitcoin() {
 	
 	const proto::ServerInfo& sinfo = gServerInfo;
 	printf("Connecting to bitcoin: %s:%d ...\n", sinfo.host().c_str(), sinfo.router());
-	
-	zsocket_destroy(gCtx, gServer);
-	gServer = zsocket_new(gCtx, ZMQ_DEALER);
-  zsocket_set_linger(gServer, 0);
-	int err = zsocket_connect(gServer, "tcp://%s:%d", sinfo.host().c_str(), sinfo.router());
-	if(err){
+
+	int linger = 0;
+	char endpoint[256];
+	snprintf(endpoint, sizeof(endpoint), "tcp://%s:%d", sinfo.host().c_str(), sinfo.router());	
+	zmq_close(gServer);
+	gServer = zmq_socket(gCtx, ZMQ_DEALER);
+	zmq_setsockopt(gSignals, ZMQ_LINGER, &linger, sizeof(int));
+	int err = zmq_connect(gServer, endpoint);
+	if(err) {
 		printf("ERROR: invalid hostname and/or port.\n");
 		return false;
 	}
@@ -70,47 +68,22 @@ static bool ConnectSignals() {
 	const proto::ServerInfo& sinfo = gServerInfo;
 	printf("Connecting to signals: %s:%d ...\n", sinfo.host().c_str(), sinfo.pub());
 	
-	zsocket_destroy(gCtx, gSignals);
-	gSignals = zsocket_new(gCtx, ZMQ_SUB);
-  zsocket_set_linger(gSignals, 0);
-	int err = zsocket_connect(gSignals, "tcp://%s:%d", sinfo.host().c_str(), sinfo.pub());
+	int linger = 0;
+	char endpoint[256];
+	snprintf(endpoint, sizeof(endpoint), "tcp://%s:%d", sinfo.host().c_str(), sinfo.pub());
+	zmq_close(gSignals);
+	gSignals = zmq_socket(gCtx, ZMQ_SUB);
+	zmq_setsockopt (gSignals, ZMQ_LINGER, &linger, sizeof(int));
+	int err = zmq_connect(gSignals, endpoint);
 	if(err){
 		printf("ERROR: invalid hostname and/or port.\n");
 		return false;
 	}
 	
 	const char one[2] = {1, 0};
-	zsocket_set_subscribe(gSignals, one);
+	zmq_setsockopt (gSignals, ZMQ_SUBSCRIBE, one, 1);
 	
 	return true;
-	
-}
-
-static void ReconnectBitcoin() {
-  int err = 0;
-  
-  const proto::ServerInfo& sinfo = gServerInfo;
-  err |= zsocket_disconnect(gServer, "tcp://%s:%d", sinfo.host().c_str(), sinfo.router());
-  err |= zsocket_connect(gServer, "tcp://%s:%d", sinfo.host().c_str(), sinfo.router());  
-  if(err){
-    printf("ReconnectBitcoin(): FAIL\n");
-  }
-}
-
-static void ReConnectSignals() {
-	
-	int err = 0;
-	
-	const proto::ServerInfo& sinfo = gServerInfo;
-	err |= zsocket_disconnect(gSignals, "tcp://%s:%d", sinfo.host().c_str(), sinfo.pub());
-	err |= zsocket_connect(gSignals, "tcp://%s:%d", sinfo.host().c_str(), sinfo.pub());
-	
-	const char one[2] = {1, 0};
-	zsocket_set_subscribe(gSignals, one);
-	
-	if(err){
-		printf("ReConnectSignals(): FAIL\n");
-	}
 	
 }
 
@@ -217,12 +190,10 @@ static void PrintStats() {
 }
 
 
-static int HandleReply(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
+static int HandleReply(void *socket) {
 	
 	proto::Reply rep;
-	Receive(rep, item->socket);
-	
-	//rep.PrintDebugString();
+	Receive(rep, socket);
 	
 	if(rep.has_errstr())
 		printf("Message from server: %s\n", rep.errstr().c_str());
@@ -246,11 +217,11 @@ static int HandleReply(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
     
 		unsigned length = gSharesSent[rep.reqid()];
 		gSharesSent.erase(rep.reqid());
-		
+
 		switch(rep.error()){
 		case proto::Reply::NONE:
 			printf("Share accepted.\n");
-      gStaleShareChain = 0;
+			gStaleShareChain = 0;
 			gShares[length].accepted++;  
 			break;
 		case proto::Reply::INVALID:
@@ -260,14 +231,12 @@ static int HandleReply(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
 		case proto::Reply::STALE:
 			printf("Stale share.\n");
 			gShares[length].stale++;
-      gStaleShareChain++;
-      if (gStaleShareChain >= 4) {
-        gExit = false;
-        return -1;
-      } else {
-        ReconnectBitcoin();
-			  ReConnectSignals();
-      }
+			gStaleShareChain++;
+			if (gStaleShareChain >= 4) {
+				gStaleShareChain = 0;
+				gExit = false;
+				return -1;
+			}
 			break;
 		case proto::Reply_ErrType_DUPLICATE:
 			printf("Duplicate share.\n");
@@ -296,12 +265,10 @@ static int HandleReply(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
 }
 
 
-static int HandleSignal(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
+static int HandleSignal(void *socket) {
 	
 	proto::Signal sig;
-	ReceivePub(sig, item->socket);
-	
-	//sig.PrintDebugString();
+	ReceivePub(sig, socket);
 	
 	if(sig.type() == proto::Signal::NEWBLOCK){
 		
@@ -320,14 +287,13 @@ static int HandleSignal(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
 }
 
 
-static int HandleWorkers(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
+static int HandleWorkers(void *socket) {
 	
 	proto::Share share;
-	bool ret = Receive(share, item->socket);
+	bool ret = Receive(share, socket);
 	if(!ret)
 		return 0;
-	
-	//share.PrintDebugString();
+
 	SubmitShare(share);
 	
 	return 0;
@@ -335,7 +301,7 @@ static int HandleWorkers(zloop_t *wloop, zmq_pollitem_t *item, void *arg) {
 }
 
 
-static int HandleTimer(zloop_t *wloop, int timer_id, void *arg) {
+static int HandleTimer() {
 	
 	if(!gHeartBeat){
 		
@@ -378,7 +344,7 @@ static int HandleTimer(zloop_t *wloop, int timer_id, void *arg) {
 }
 
 
-static int TimeoutCheckProc(zloop_t *wloop, int timer_id, void *arg) {  
+static int TimeoutCheckProc() {  
   time_t currentTime = time(0);
   for (auto &t: timeMap) {
     if (currentTime - t.second >= 5) {
@@ -433,11 +399,10 @@ gBlock.set_height(0);
 		std::getline(std::cin, line);
 		exit(EXIT_FAILURE);
 	}
-	
-	gCtx = zctx_new();
-	
-	gWorkers = zsocket_new(gCtx, ZMQ_PULL);
-	zsocket_bind(gWorkers, "inproc://shares");
+
+	gCtx = zmq_ctx_new();
+	gWorkers = zmq_socket(gCtx, ZMQ_PULL);
+	zmq_bind(gWorkers, "inproc://shares");
 
   gClient = createClient(gCtx);
   
@@ -454,12 +419,13 @@ gBlock.set_height(0);
 		gExit = true;
 		
 		while(gExit){
-			
-			zsocket_destroy(gCtx, gFrontend);
-			gFrontend = zsocket_new(gCtx, ZMQ_DEALER);
-      zsocket_set_linger(gFrontend, 0);
-			
-			int err = zsocket_connect(gFrontend, "tcp://%s:%d", frontHost.c_str(), frontPort);
+			int linger = 0;
+			char endpoint[256];
+			snprintf(endpoint, sizeof(endpoint), "tcp://%s:%d", frontHost.c_str(), frontPort);
+			zmq_close(gFrontend);
+			gFrontend = zmq_socket(gCtx, ZMQ_DEALER);
+			zmq_setsockopt (gFrontend, ZMQ_LINGER, &linger, sizeof(int));                        
+			int err = zmq_connect(gFrontend, endpoint);
 			if(err){
 				printf("ERROR: invalid hostname and/or port.\n");
 				exit(EXIT_FAILURE);
@@ -474,11 +440,7 @@ gBlock.set_height(0);
 			GetNewReqNonce(req);
 			Send(req, gFrontend);
 			
-			bool ready = zsocket_poll(gFrontend, 3*1000);
-			
-			if(zctx_interrupted)
-				break;
-			
+			bool ready = czmq_poll(gFrontend, 3*1000);                        
 			if(!ready)
 				continue;
 			
@@ -504,31 +466,22 @@ gBlock.set_height(0);
 			gExit = false;
 			
 		}
-		
-		zsocket_disconnect(gFrontend, "tcp://%s:%d", frontHost.c_str(), frontPort);
+
+		char endpoint[256];
+		snprintf(endpoint, sizeof(endpoint), "tcp://%s:%d", frontHost.c_str(), frontPort);
+		zmq_disconnect(gFrontend, endpoint);
 		
 		if(gExit)
 			break;
-		
-		zloop_t* wloop = zloop_new();
-		
-		zmq_pollitem_t item_server = {gServer, 0, ZMQ_POLLIN, 0};
-		int err = zloop_poller(wloop, &item_server, &HandleReply, 0);
-		assert(!err);
-		
-		zmq_pollitem_t item_signals = {gSignals, 0, ZMQ_POLLIN, 0};
-		err = zloop_poller(wloop, &item_signals, &HandleSignal, 0);
-		assert(!err);
-		
-		zmq_pollitem_t item_workers = {gWorkers, 0, ZMQ_POLLIN, 0};
-		err = zloop_poller(wloop, &item_workers, &HandleWorkers, 0);
-		assert(!err);
-		
-		err = zloop_timer(wloop, 60*1000, 0, &HandleTimer, 0);
-		assert(err >= 0);
-    
-    err = zloop_timer(wloop, 1000, 0, &TimeoutCheckProc, 0);
-    assert(err >= 0);    
+
+       bool loopActive = true;
+       time_t timer1sec = time(0);
+       time_t timer1min = time(0);                
+       zmq_pollitem_t items[] = {
+         {gServer, 0, ZMQ_POLLIN, 0},
+         {gSignals, 0, ZMQ_POLLIN, 0},
+         {gWorkers, 0, ZMQ_POLLIN, 0}
+       };
 		
 		gHeartBeat = true;
 		gExit = true;
@@ -539,40 +492,61 @@ gBlock.set_height(0);
 			RequestWork();
 		
 		gClient->Toggle();
-		zloop_start(wloop);
+
+		while (loopActive) {
+			int result = zmq_poll(items, sizeof(items)/sizeof(zmq_pollitem_t), 1000);
+			if (result == -1)
+				break;
+         
+			if (result > 0) {
+				if (items[0].revents & ZMQ_POLLIN)
+					loopActive &= (HandleReply(gServer) == 0);
+				if (items[1].revents & ZMQ_POLLIN)
+					loopActive &= (HandleSignal(gSignals) == 0);
+				if (items[2].revents & ZMQ_POLLIN)
+					loopActive &= (HandleWorkers(gWorkers) == 0);
+			}
+			
+			// check timers
+			time_t currentTime = time(0);
+			if (currentTime - timer1sec >= 1) {
+				timer1sec = currentTime;
+				loopActive &= (TimeoutCheckProc() == 0);
+			}
+			
+			if (currentTime - timer1min >= 60) {
+				timer1min = currentTime;
+				loopActive &= (HandleTimer() == 0);
+			}
+		}                
 		
 		gClient->Toggle();
-		zloop_destroy(&wloop);
-		
-		zsocket_destroy(gCtx, gServer);
-		zsocket_destroy(gCtx, gSignals);
-		
+		zmq_close(gServer);
+		zmq_close(gSignals);
 		gServer = 0;
 		gSignals = 0;
-		
 	}
 	
 	delete gClient;
-	
-	zsocket_destroy(gCtx, gWorkers);
-	zsocket_destroy(gCtx, gFrontend);
-	zctx_destroy(&gCtx);
+	zmq_close(gWorkers);
+	zmq_close(gFrontend);
+	zmq_ctx_shutdown(gCtx);
 	
 	return EXIT_SUCCESS;
 	
 }
 
-BaseClient::BaseClient(zctx_t *ctx)
+BaseClient::BaseClient(void *ctx)
 {
   mCtx = ctx;
-  mBlockPub = zsocket_new(mCtx, ZMQ_PUB);
-  mWorkPub = zsocket_new(mCtx, ZMQ_PUB);
-  mStatsPull = zsocket_new(mCtx, ZMQ_PULL);
+  mBlockPub = zmq_socket(ctx, ZMQ_PUB);
+  mWorkPub = zmq_socket(ctx, ZMQ_PUB);
+  mStatsPull = zmq_socket(ctx, ZMQ_PULL);
  
-  zsocket_bind(mBlockPub, "inproc://blocks");
-  zsocket_bind(mWorkPub, "inproc://work");
-  zsocket_bind(mStatsPull, "inproc://stats");
- 
+  zmq_bind(mBlockPub, "inproc://blocks");
+  zmq_bind(mWorkPub, "inproc://work");
+  zmq_bind(mStatsPull, "inproc://stats");
+
   mPaused = true;
   mNumDevices = 0;
   mStatCounter = 0;

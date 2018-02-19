@@ -12,9 +12,6 @@ if (InstallPrefix)
     find_library(SODIUM_LIBRARY sodium PATHS ${InstallPrefix}/lib NO_DEFAULT_PATH)
   endif()
 
-  find_path(CZMQ_INCLUDE_DIRECTORY czmq.h PATHS ${InstallPrefix}/include NO_DEFAULT_PATH)
-  find_library(CZMQ_LIBRARY czmq PATHS ${InstallPrefix}/lib NO_DEFAULT_PATH)
-
   find_path(PROTOBUF_INCLUDE_DIRECTORY google/protobuf/message.h PATHS ${InstallPrefix}/include NO_DEFAULT_PATH)
   find_library(PROTOBUF_LIBRARY protobuf PATHS ${InstallPrefix}/lib NO_DEFAULT_PATH)
 else()
@@ -29,9 +26,6 @@ else()
     find_library(ZMQ_LIBRARY zmq)
     find_library(SODIUM_LIBRARY sodium)
   endif()
-
-  find_path(CZMQ_INCLUDE_DIRECTORY czmq.h)
-  find_library(CZMQ_LIBRARY czmq)
 
   find_path(PROTOBUF_INCLUDE_DIRECTORY google/protobuf/message.h)
   find_library(PROTOBUF_LIBRARY protobuf)

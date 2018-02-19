@@ -12,16 +12,21 @@ find_package(Protobuf REQUIRED)
 include_directories(
   ${GMP_INCLUDE_DIRECTORY}
   ${ZMQ_INCLUDE_DIRECTORY}
-  ${CZMQ_INCLUDE_DIRECTORY}
   ${PROTOBUF_INCLUDE_DIRECTORY}
   ${OPENCL_INCLUDE_DIRECTORY}
   ${CMAKE_SOURCE_DIR}/config4cpp/include
   ${CMAKE_BINARY_DIR}
 )
 
+if (CMAKE_COMPILER_IS_GNUCC)
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6.0)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated -Wno-ignored-attributes")
+  endif()
+endif()
+
 if (WIN32)
   message("Building for Win32")
-  add_definitions(-D_WIN32 -D__WINDOWS__ -DLIBCZMQ_EXPORTS -D__USE_MINGW_ANSI_STDIO=0)
+  add_definitions(-D_WIN32 -D__WINDOWS__ -D__USE_MINGW_ANSI_STDIO=0)
   if (InstallPrefix)
     include_directories(${InstallPrefix}/include)
   endif()
@@ -39,7 +44,6 @@ add_library(config4cpp ${config4cppFiles})
 PROTOBUF_GENERATE_CPP(ProtoSources ProtoHeaders ${CMAKE_SOURCE_DIR}/protocol.proto)
 
 set(LIBRARIES
-  ${CZMQ_LIBRARY}
   ${ZMQ_LIBRARY}
   ${SODIUM_LIBRARY}
   ${GMP_LIBRARY}
@@ -63,6 +67,7 @@ add_executable(xpmclient
   prime.cpp
   primes.cpp
   sha256.cpp
+  zmqextras.cpp
   xpmclient.cpp
   benchmarks.cpp
   ${ProtoSources}
@@ -78,27 +83,6 @@ if (STATIC_BUILD)
   set_target_properties(xpmclient PROPERTIES LINK_SEARCH_END_STATIC 1)
 endif()
 
-# ZCash CPU Client
-
-add_executable(zcashcpuclient
-  baseclient.cpp
-  sha256.cpp
-  zcashcpuclient.cpp
-  zcash/equihash_original.cpp
-  zcash/sha256.cpp
-  ${ProtoSources}
-)
-
-SET_TARGET_PROPERTIES(zcashcpuclient PROPERTIES
-  COMPILE_FLAGS "-std=c++0x"
-)
-
-target_link_libraries(zcashcpuclient ${LIBRARIES})
-
-if (STATIC_BUILD)
-  set_target_properties(zcashcpuclient PROPERTIES LINK_SEARCH_END_STATIC 1)
-endif()
-
 # ZCash GPU Client
 add_definitions(-DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4) 
 
@@ -108,8 +92,8 @@ add_executable(zcashgpuclient
   baseclient.cpp
   opencl.cpp
   sha256.cpp
+  zmqextras.cpp
   zcash/zcashgpuclient.cpp
-#   zcash/blake2b.cpp
   zcash/equihash_original.cpp
   ${ProtoSources}
 )

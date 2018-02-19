@@ -10,7 +10,7 @@
 #endif  
 
 #include "prime.h"
- 
+#include <math.h> 
 #include <set>
  
 enum OpenCLKernels {
@@ -471,7 +471,7 @@ void hashmodBenchmark(cl_context context,
 
   uint64_t totalTime = 0;
   unsigned totalHashes = 0;
-  int numhash = 64 * 131072;
+  unsigned numhash = 64 * 131072;
 
   unsigned multiplierSizes[128];
   memset(multiplierSizes, 0, sizeof(multiplierSizes));
@@ -489,7 +489,7 @@ void hashmodBenchmark(cl_context context,
 
     hashmod.count.copyToDevice(queue, false);
     
-    size_t globalSize[] = { numhash, 1, 1 };
+    size_t globalSize[] = { numhash, 1u, 1u };
     size_t localSize[] = { defaultGroupSize, 1 };
  
     hashmod.count[0] = 0;
@@ -664,7 +664,7 @@ void sieveTestBenchmark(cl_context context,
   clSetKernelArg(mHashMod, 2, sizeof(cl_mem), &hashmod.primorialBitField.DeviceData);
   clSetKernelArg(mHashMod, 3, sizeof(cl_mem), &hashmod.midstate.DeviceData);
 
-  int numhash = 64*262144;
+  unsigned numhash = 64*262144;
 
   unsigned hashm[32];
   memset(hashm, 0, sizeof(hashm));
@@ -941,7 +941,7 @@ void runBenchmarks(cl_context context,
   }
   
   cl_int error;  
-  cl_command_queue queue = clCreateCommandQueue(context, deviceId, 0, &error);
+  cl_command_queue queue = clCreateCommandQueueWithProperties(context, deviceId, 0, &error);
   if (!queue || error != CL_SUCCESS) {
     fprintf(stderr, " * Error: can't create command queue\n");
     return;
@@ -951,9 +951,11 @@ void runBenchmarks(cl_context context,
   {
     mConfig.init(context, 1);
     
+    size_t globalSize = 1;
+    size_t localSize = 1;
     cl_kernel getconf = clCreateKernel(program, "getconfig", &error);
     clSetKernelArg(getconf, 0, sizeof(cl_mem), &mConfig.DeviceData);
-    clEnqueueTask(queue, getconf, 0, 0, 0);
+    clEnqueueNDRangeKernel(queue, getconf, 1, 0, &globalSize, &localSize, 0, 0, 0);
     mConfig.copyToHost(queue, true);
     clFinish(queue);
   }  

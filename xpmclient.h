@@ -182,7 +182,7 @@ public:
 	
 	bool Initialize(cl_context context, cl_program program, cl_device_id dev);
 	
-	static void InvokeMining(void *args, zctx_t *ctx, void *pipe);
+	static void InvokeMining(void *args, void *ctx, void *pipe);
   config_t getConfig() { return mConfig; }
 	
 	bool MakeExit;
@@ -201,7 +201,7 @@ private:
                       cl_kernel fermatKernel,
                       unsigned sievePerRound);
   
-	void Mining(zctx_t *ctx, void *pipe);
+	void Mining(void *ctx, void *pipe);
 	
 	unsigned mID;
 	unsigned mThreads;
@@ -236,7 +236,7 @@ private:
 class XPMClient : public BaseClient {
 public:
 	
-	XPMClient(zctx_t* ctx);
+	XPMClient(void* ctx);
 	virtual ~XPMClient();
   
 	bool Initialize(Configuration* cfg, bool benchmarkOnly = false);

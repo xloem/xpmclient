@@ -182,7 +182,7 @@ unsigned writeCompactSize(size_t size, uint8_t *out)
   return 0;
 }
 
-BaseClient *createClient(zctx_t *ctx)
+BaseClient *createClient(void *ctx)
 {
   return new ZCashGPUClient(ctx);
 }
@@ -349,7 +349,7 @@ bool MinerInstance::init(cl_context context,
   
   _context = context;
   _program = program;
-  queue = clCreateCommandQueue(context, dev, 0, &error);
+  queue = clCreateCommandQueueWithProperties(context, dev, 0, &error);
   
 #ifdef ENABLE_DEBUG
     size_t              dbg_size = NR_ROWS;
@@ -396,27 +396,27 @@ bool ZCashMiner::Initialize(cl_context context,
   return true;
 }
 
-void ZCashMiner::InvokeMining(void *args, zctx_t *ctx, void *pipe) {
+void ZCashMiner::InvokeMining(void *args, void *ctx, void *pipe) {
   
   ((ZCashMiner*)args)->Mining(ctx, pipe); 
 }
 
-void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
+void ZCashMiner::Mining(void *ctx, void *pipe)
 {
-  void* blocksub = zsocket_new(ctx, ZMQ_SUB);
-  void* worksub = zsocket_new(ctx, ZMQ_SUB);
-  void* statspush = zsocket_new(ctx, ZMQ_PUSH);
-  void* sharepush = zsocket_new(ctx, ZMQ_PUSH);
+  void* blocksub = zmq_socket(ctx, ZMQ_SUB);
+  void* worksub = zmq_socket(ctx, ZMQ_SUB);
+  void* statspush = zmq_socket(ctx, ZMQ_PUSH);
+  void* sharepush = zmq_socket(ctx, ZMQ_PUSH); 
   
-  zsocket_connect(blocksub, "inproc://blocks");
-  zsocket_connect(worksub, "inproc://work");
-  zsocket_connect(statspush, "inproc://stats");
-  zsocket_connect(sharepush, "inproc://shares");
+  zmq_connect(blocksub, "inproc://blocks");
+  zmq_connect(worksub, "inproc://work");
+  zmq_connect(statspush, "inproc://stats");
+  zmq_connect(sharepush, "inproc://shares"); 
   
   {
     const char one[2] = {1, 0};
-    zsocket_set_subscribe(blocksub, one);
-    zsocket_set_subscribe(worksub, one);
+    zmq_setsockopt (blocksub, ZMQ_SUBSCRIBE, one, 1);
+    zmq_setsockopt (worksub, ZMQ_SUBSCRIBE, one, 1);
   }
   
   proto::Block block;
@@ -434,8 +434,8 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
   stats.id = mID;
   stats.sols = 0;
   
-  zsocket_signal(pipe);
-  zsocket_poll(pipe, -1);  
+  czmq_signal(pipe);
+  czmq_poll(pipe, -1); 
   
   uint8_t compactSizeData[16];
   unsigned compactSize = writeCompactSize(COMPRESSED_PROOFSIZE, compactSizeData);
@@ -455,14 +455,14 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
     auto timeDiff = time(0) - statsTimeLabel;
     if (timeDiff >= 10) {
       stats.sols = calcStats();
-      zsocket_sendmem(statspush, &stats, sizeof(stats), 0);
+      zmq_send(statspush, &stats, sizeof(stats), 0);
       statsTimeLabel = 0;
       cleanupStats();
     }
     
-    if(zsocket_poll(pipe, 0)){
-      zsocket_wait(pipe);
-      zsocket_wait(pipe);
+    if(czmq_poll(pipe, 0)){
+      czmq_wait(pipe);
+      czmq_wait(pipe);
     }
     
     // get work
@@ -471,13 +471,13 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
       bool getwork = true;
       while(getwork && run){
         
-        if(zsocket_poll(worksub, 0) || work.height() < block.height()){
+        if(czmq_poll(worksub, 0) || work.height() < block.height()){
           run = ReceivePub(work, worksub);
           reset = true;
         }
         
         getwork = false;
-        if(zsocket_poll(blocksub, 0) || work.height() > block.height()){
+        if(czmq_poll(blocksub, 0) || work.height() > block.height()){
           run = ReceivePub(block, blocksub);
           getwork = true;
         }
@@ -670,12 +670,12 @@ void ZCashMiner::Mining(zctx_t *ctx, void *pipe)
   }
   
   printf("thread %d stopped.\n", mID); 
-  zsocket_destroy(ctx, blocksub);
-  zsocket_destroy(ctx, worksub);
-  zsocket_destroy(ctx, statspush);
-  zsocket_destroy(ctx, sharepush);
+  zmq_close(blocksub);
+  zmq_close(worksub);
+  zmq_close(statspush);
+  zmq_close(sharepush);
   
-  zsocket_signal(pipe);    
+  czmq_signal(pipe);    
 }
 
 ZCashGPUClient::~ZCashGPUClient()
@@ -688,15 +688,12 @@ int ZCashGPUClient::GetStats(proto::ClientStats& stats)
   std::vector<bool> running(nw);
   std::vector<stats_t> wstats(nw);
   
-  while(zsocket_poll(mStatsPull, 0)) {
-    zmsg_t* msg = zmsg_recv(mStatsPull);
-    if (!msg)
-      break;
-    
-    zframe_t *frame = zmsg_last(msg);
-    size_t fsize = zframe_size(frame);
-    byte *fbytes = zframe_data(frame);
-    
+  while(czmq_poll(mStatsPull, 0)) {
+    zmq_msg_t msg;
+    zmq_msg_init(&msg);
+    zmq_recvmsg(mStatsPull, &msg, 0);          
+    size_t fsize = zmq_msg_size(&msg);
+    uint8_t *fbytes = (uint8_t*)zmq_msg_data(&msg);
     if (fsize >= sizeof(stats_t)) {
       stats_t *tmp = (stats_t*)fbytes;
       if(tmp->id < nw) {
@@ -705,7 +702,7 @@ int ZCashGPUClient::GetStats(proto::ClientStats& stats)
       }
     }
     
-    zmsg_destroy(&msg);
+    zmq_msg_close(&msg);
   }
   
   double sols = 0;
@@ -895,9 +892,9 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
         if (!miner->Initialize(gContext[i/instancesNum], gProgram[i/instancesNum], gpus[i/instancesNum], 1, threads[i/instancesNum], worksize[i/instancesNum]))
           return false;
         
-        void *pipe = zthread_fork(mCtx, &ZCashMiner::InvokeMining, miner);
-        zsocket_wait(pipe);
-        zsocket_signal(pipe);
+        void *pipe = czmq_thread_fork(mCtx, &ZCashMiner::InvokeMining, miner);
+        czmq_wait(pipe);
+        czmq_signal(pipe);
         worker.first = miner;
         worker.second = pipe;
       } else {
@@ -927,7 +924,7 @@ void ZCashGPUClient::Toggle()
 {
   for(unsigned i = 0; i < mWorkers.size(); ++i)
     if(mWorkers[i].first){
-      zsocket_signal(mWorkers[i].second);
+      czmq_signal(mWorkers[i].second);
     }
   
   mPaused = !mPaused;

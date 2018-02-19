@@ -140,14 +140,14 @@ public:
                   unsigned pipelines,
                   unsigned threadsNum,
                   unsigned threadsPerBlock);
-  static void InvokeMining(void *args, zctx_t *ctx, void *pipe);
-  void Mining(zctx_t *ctx, void *pipe);
+  static void InvokeMining(void *args, void *ctx, void *pipe);
+  void Mining(void *ctx, void *pipe);
   void cancel() { _cancel = true; }
 };
 
 class ZCashGPUClient : public BaseClient {
 public:
-  ZCashGPUClient(zctx_t *ctx) : BaseClient(ctx) {};
+  ZCashGPUClient(void *ctx) : BaseClient(ctx) {};
   virtual ~ZCashGPUClient();
   
   bool Initialize(Configuration* cfg, bool benchmarkOnly = false);
