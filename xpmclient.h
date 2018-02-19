@@ -26,6 +26,17 @@
 
 const unsigned maxHashPrimorial = 16;
 
+enum DeviceTypeTy {
+	// AMD
+	dtUnknown = 0,
+	dtAMDLegacy,
+	dtAMDGCN,
+	dtAMDVega,
+	
+	// NVidia
+	dtNVIDIA
+};
+
 extern unsigned gPrimes[96*1024];
 extern std::vector<unsigned> gPrimes2;
 

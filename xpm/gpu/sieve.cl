@@ -15,7 +15,7 @@ __constant uint nps_all[] = { 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 6 
 #endif
 
 
-#ifdef __NVIDIA
+#if defined(__NVIDIA) || defined(__AMDVEGA)
 __attribute__((reqd_work_group_size(LSIZE, 1, 1)))
 __kernel void sieve(  __global uint* gsieve_all,
                       __global const uint* offset_all,

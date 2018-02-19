@@ -776,25 +776,33 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	}
 	
 	const char *platformId = cfg->lookupString("", "platform");
-  const char *platformName = "";
-  unsigned clKernelLSize = 0;
-  unsigned clKernelLSizeLog2 = 0;
-  bool amdLegacy = false;
+	const char *platformName = "";
+	unsigned clKernelLSize = 0;
+	unsigned clKernelLSizeLog2 = 0;
+	DeviceTypeTy deviceType = dtUnknown;
   
   if (strcmp(platformId, "amd") == 0) {
     platformName = "AMD Accelerated Parallel Processing";
-    platformType = ptAMD;    
+    platformType = ptAMD;
     clKernelLSize = 256;
     clKernelLSizeLog2 = 8;
+		deviceType = dtAMDGCN;
   } else if (strcmp(platformId, "amd legacy") == 0) {
     platformName = "AMD Accelerated Parallel Processing";
-    platformType = ptAMD;    
-    amdLegacy = true;
+    platformType = ptAMD;
+    deviceType = dtAMDLegacy;
     clKernelLSize = 256;
     clKernelLSizeLog2 = 8;
-  } else if (strcmp(platformId, "nvidia") == 0) {
+  } else if (strcmp(platformId, "amd vega") == 0) {
+    platformName = "AMD Accelerated Parallel Processing";
+    platformType = ptAMD;
+    deviceType = dtAMDVega;
+    clKernelLSize = 256;
+    clKernelLSizeLog2 = 8;
+  }  else if (strcmp(platformId, "nvidia") == 0) {
     platformName = "NVIDIA CUDA";
     platformType = ptNVidia;    
+		deviceType = dtNVIDIA;
     clKernelLSize = 1024;
     clKernelLSizeLog2 = 10;
   }
@@ -910,10 +918,14 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
   }
 
   const char *arguments = "";
-  if (platformType == ptAMD && amdLegacy)
-    arguments = "-D__AMDLEGACY";
-  else if (platformType == ptNVidia)
+  if (platformType == ptAMD) {
+		if (deviceType == dtAMDLegacy)
+      arguments = "-D__AMDLEGACY";
+		else if (deviceType == dtAMDVega)
+			arguments = "-D__AMDVEGA";
+	} else if (platformType == ptNVidia) {
     arguments = "-D__NVIDIA -cl-nv-verbose";
+	}
   
   std::vector<cl_int> binstatus;
   binstatus.resize(gpus.size());	
