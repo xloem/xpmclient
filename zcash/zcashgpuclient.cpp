@@ -349,7 +349,7 @@ bool MinerInstance::init(cl_context context,
   
   _context = context;
   _program = program;
-  queue = clCreateCommandQueueWithProperties(context, dev, 0, &error);
+  queue = clCreateCommandQueue(context, dev, 0, &error);
   
 #ifdef ENABLE_DEBUG
     size_t              dbg_size = NR_ROWS;

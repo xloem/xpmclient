@@ -941,7 +941,7 @@ void runBenchmarks(cl_context context,
   }
   
   cl_int error;  
-  cl_command_queue queue = clCreateCommandQueueWithProperties(context, deviceId, 0, &error);
+  cl_command_queue queue = clCreateCommandQueue(context, deviceId, 0, &error);
   if (!queue || error != CL_SUCCESS) {
     fprintf(stderr, " * Error: can't create command queue\n");
     return;

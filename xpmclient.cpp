@@ -102,8 +102,8 @@ bool PrimeMiner::Initialize(cl_context context, cl_program program, cl_device_id
 	mFermatCheck = clCreateKernel(program, "check_fermat", &error);
 	OCLR(error, false);
 	
-	mBig = clCreateCommandQueueWithProperties(context, dev, 0, &error);
-	mSmall = clCreateCommandQueueWithProperties(context, dev, 0, &error);
+	mBig = clCreateCommandQueue(context, dev, 0, &error);
+	mSmall = clCreateCommandQueue(context, dev, 0, &error);
 	OCLR(error, false);
 	
 	{
