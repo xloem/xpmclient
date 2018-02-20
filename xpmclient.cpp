@@ -897,7 +897,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 		return false;
 	};
 	
-	for (size_t i = 0; i < allgpus.size(); i++) {
+	for (size_t i = 0; i < gpus.size(); i++) {
 		cl_context_properties props[] = { CL_CONTEXT_PLATFORM, (cl_context_properties)gPlatform, 0 };
 		cl_int error;
 		gContext[i] = clCreateContext(props, 1, &gpus[i], 0, 0, &error);
