@@ -27,9 +27,6 @@
 #  define htole32(x) (x)
 #  define be32toh(x) __builtin_bswap32 (x)
 #  define le32toh(x) (x)
-
-extern "C"
-void sodium_memzero(void *ptr, size_t cnt) { memset(ptr, 0, cnt); }
 #endif
 
 EhSolverCancelledException solver_cancelled;

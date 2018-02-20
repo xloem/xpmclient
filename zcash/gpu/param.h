@@ -131,14 +131,14 @@
 #define SOL_SIZE      ((1 << PARAM_K) * 4)
 typedef struct  sols_s
 {
-    uint  nr;
-    uint  likely_invalids;
-    uchar valid[MAX_SOLS];
-    uint  values[MAX_SOLS][(1 << PARAM_K)];
+    unsigned int nr;
+    unsigned int  likely_invalids;
+    unsigned char valid[MAX_SOLS];
+    unsigned int  values[MAX_SOLS][(1 << PARAM_K)];
 }   sols_t;
 
 typedef struct  potential_sols_s
 {
-    uint  nr;
-    uint  values[MAX_POTENTIAL_SOLS][2];
+    unsigned int  nr;
+    unsigned int  values[MAX_POTENTIAL_SOLS][2];
 } potential_sols_t;

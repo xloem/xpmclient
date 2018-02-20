@@ -2,7 +2,7 @@
 #include <zmq.h>
 #include <stdlib.h>
 #ifdef __WINDOWS__
-#include <Windows.h>
+#include <process.h>
 #else
 #include <pthread.h>
 #endif
@@ -18,7 +18,7 @@ struct czmq_thread_ctx {
 static unsigned __stdcall czmq_thread_entry_point(void *arg)
 {
   czmq_thread_ctx *thctx = (czmq_thread_ctx *) arg;
-  thctx->proc(thctx->args, thctx->ctx, thctx->pipe);
+  thctx->proc(thctx->arg, thctx->ctx, thctx->pipe);
   free(thctx);
   _endthreadex(0);
   return 0;
@@ -48,7 +48,7 @@ void *czmq_thread_fork(void *ctx, czmq_thread_proc *proc, void *arg)
   zmq_connect(thctx->pipe, endpoint);
   
 #if defined (__WINDOWS__)
-  HANDLE hThread = (HANDLE)_beginthreadex (NULL, 0, &czmq_thread_entry_point, shim, CREATE_SUSPENDED, NULL);
+  HANDLE hThread = (HANDLE)_beginthreadex (NULL, 0, &czmq_thread_entry_point, thctx, CREATE_SUSPENDED, NULL);
   int priority = GetThreadPriority(GetCurrentThread());
   SetThreadPriority(hThread, priority);
   ResumeThread (hThread);
