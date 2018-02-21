@@ -1,0 +1,71 @@
+# Pool websites:
+#   http://xpmforall.org
+#   http://coinsforall.io
+
+server = "xpmforall.org";
+port = "6666";
+
+# Your XPM payout address
+address = "AMgtSW8ge2mvqxaiWo11GqTKx6rQ2J57yA";
+
+# You can give this machine a custom name
+# Computer name is used as default
+#name = "custom_name";
+
+# Platform:
+#  "amd": AMD GCN cards
+#  "amd legacy": AMD HD5xxx & HD6xxx cards
+#  "amd vega": AMD Vega cards
+#  "nvidia": NVidia Maxwell cards
+platform = "amd";
+
+# GPU crash handling (properly untested feature):
+# 0 - do nothing
+# 1 - close miner application
+# 2 - reboot system (need superuser rights)
+onCrash = "0";
+
+# - Valid cpuload range: 0 to 4
+# - More than 2 does not make sense
+# - You can use 0 for really slow CPUs
+cpuload = "1";
+
+# Target Cunningham chain length, default = 10
+target = "10";
+
+# Sieve size in stripes (1 stripe = 16384 bits), recommended 420 for AMD, 210 for NVidia
+# Big sieve size gives more candidates with less prime probability
+sieveSize = "420";
+
+# Weave depth (primes number count using by sieve), recommended 40960 for AMD, 65536 for NVidia
+# Big weave depth increases prime probability, but sieve generate less candidates
+weaveDepth = "40960";
+
+# Sieve layers number, optimal value is target*2, default = 20
+width = "20";
+
+# Sieve window size. Recommended values:
+# AMD GPUs: 4096
+# NVidia GeForce 750Ti: 8188
+# Other NVidia Maxwell GPUs: 12284
+windowSize = "4096";
+
+# - The following settings have one entry per GPU
+# - If you have more than 4 just add more entries or leave it as is to use defaults
+# - All entries must be separated by commas and set between double quotes
+
+# 0 = don't use device
+# 1 = use device
+devices =        ["1", "1", "1", "1", "1"];
+
+# Primorial 13 is optimal
+sieveprimorial = ["13", "13", "13", "13", "13"];
+
+# sieves per round value, default = 5
+sievePerRound = ["5", "5", "5", "5", "5"];
+
+# -1 means don't change
+corefreq =       ["-1", "-1", "-1", "-1", "-1"];
+memfreq =        ["-1", "-1", "-1", "-1", "-1"];
+powertune =      ["-1", "-1", "-1", "-1", "-1"];
+fanspeed =       ["-1", "-1", "-1", "-1", "-1"];
