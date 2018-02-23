@@ -30,8 +30,8 @@ onCrash = "0";
 # - You can use 0 for really slow CPUs
 cpuload = "1";
 
-# Target Cunningham chain length, default = 10
-target = "10";
+# Target Cunningham chain length, default = auto (adjust to difficulty)
+target = "auto";
 
 # Sieve size in stripes (1 stripe = 16384 bits), recommended 420 for AMD, 210 for NVidia
 # Big sieve size gives more candidates with less prime probability
@@ -41,8 +41,8 @@ sieveSize = "420";
 # Big weave depth increases prime probability, but sieve generate less candidates
 weaveDepth = "40960";
 
-# Sieve layers number, optimal value is target*2, default = 20
-width = "20";
+# Sieve layers number, optimal value is target*2; default = auto (target*2)
+width = "auto";
 
 # Sieve window size. Recommended values:
 # AMD GPUs: 4096

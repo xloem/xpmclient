@@ -150,9 +150,9 @@ public:
   ZCashGPUClient(void *ctx) : BaseClient(ctx) {};
   virtual ~ZCashGPUClient();
   
-  bool Initialize(Configuration* cfg, bool benchmarkOnly = false);
+  bool Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adjustedKernelTarget = 0);
   void NotifyBlock(const proto::Block& block);
-  void TakeWork(const proto::Work& work);
+  bool TakeWork(const proto::Work& work);
   int GetStats(proto::ClientStats& stats);
   void Toggle();
   void setup_adl();  

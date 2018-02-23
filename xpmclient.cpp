@@ -400,7 +400,6 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 		{
 			bool getwork = true;
 			while(getwork && run){
-				
 				if(czmq_poll(worksub, 0) || work.height() < block.height()){
 					run = ReceivePub(work, worksub);
 					reset = true;
@@ -444,10 +443,10 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 			testParams.nBits = blockheader.bits;
 			
 			unsigned target = TargetGetLength(blockheader.bits);
-			if(target > mConfig.TARGET){
-				printf("ERROR: This miner is compiled with the wrong target: %d (required target %d)\n", mConfig.TARGET, target);
-				return;
-			}
+// 			if(target > mConfig.TARGET){
+// 				printf("ERROR: This miner is compiled with the wrong target: %d (required target %d)\n", mConfig.TARGET, target);
+// 				return;
+// 			}
 
 			simplePrecalcSHA256(&blockheader, hashmod.midstate, mBig, mHashMod);
 		}
@@ -714,11 +713,6 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 	czmq_signal(pipe);
 }
 
-
-
-XPMClient::XPMClient(void* ctx) : BaseClient(ctx) {
-}
-
 XPMClient::~XPMClient() {
 	
 	for(unsigned i = 0; i < mWorkers.size(); ++i)
@@ -760,10 +754,12 @@ void XPMClient::dumpSieveConstants(unsigned weaveDepth,
   file << "};\n";  
 }
 
-bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
+bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adjustedKernelTarget) {
   cl_context gContext[64] = {0};
   cl_program gProgram[64] = {0};
   
+	_cfg = cfg;
+	
 	{
 		int np = sizeof(gPrimes)/sizeof(unsigned);
 		gPrimes2.resize(np*2);
@@ -818,11 +814,24 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
 	depth = std::min(depth, 5);
 	
   exitType = cfg->lookupInt("", "onCrash", 0);
-  
-  unsigned clKernelTarget = cfg->lookupInt("", "target", 10);
+
+	unsigned clKernelTarget = adjustedKernelTarget ? adjustedKernelTarget : 10;
+	const char *targetValue = cfg->lookupString("", "target", "auto");
+	if (strcmp(targetValue, "auto") != 0) {
+		clKernelTarget = atoi(targetValue);
+		clKernelTargetAutoAdjust = false;
+	}
+
+	bool clKernelWidthAutoAdjust = true;
+	unsigned clKernelWidth = clKernelTarget*2;
+	const char *widthValue = cfg->lookupString("", "width", "auto");
+	if (strcmp(widthValue, "auto") != 0) {
+		clKernelWidthAutoAdjust = false;
+		clKernelWidth = atoi(widthValue);
+	}
+	
   unsigned clKernelStripes = cfg->lookupInt("", "sieveSize", 420);
   unsigned clKernelPCount = cfg->lookupInt("", "weaveDepth", 40960);
-  unsigned clKernelWidth = cfg->lookupInt("", "width", clKernelTarget*2);
   unsigned clKernelWindowSize = cfg->lookupInt("", "windowSize", 4096);
 
 	std::vector<bool> usegpu(mNumDevices, true);
@@ -932,13 +941,18 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
   for (size_t i = 0; i < gpus.size(); i++) {
     char kernelName[64];
     sprintf(kernelName, "kernelxpm_gpu%u.cl", (unsigned)i);
+
+    // force rebuild kernel if adjusted target received
     if (!clCompileKernel(gContext[i],
                          gpus[i],
                          kernelName,
                          { "xpm/gpu/config.cl", "xpm/gpu/procs.cl", "xpm/gpu/fermat.cl", "xpm/gpu/sieve.cl", "xpm/gpu/sha256.cl", "xpm/gpu/benchmarks.cl"},
                          arguments,
                          &binstatus[i],
-                         &gProgram[i])); 
+                         &gProgram[i],
+                         adjustedKernelTarget != 0)) {
+      return false;
+    }
   }
 
   if (platformType == ptAMD)
@@ -960,10 +974,10 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly) {
         PrimeMiner* miner = new PrimeMiner(i, gpus.size(), hashprim[i], primorial[i], sievePerRound[i], depth, clKernelLSize);
         miner->Initialize(gContext[i], gProgram[i], gpus[i]);
         config_t config = miner->getConfig();
-        if (config.TARGET != clKernelTarget ||
+        if ((!clKernelTargetAutoAdjust && config.TARGET != clKernelTarget) ||
+            (!clKernelWidthAutoAdjust && config.WIDTH != clKernelWidth) ||
             config.PCOUNT != clKernelPCount ||
             config.STRIPES != clKernelStripes ||
-            config.WIDTH != clKernelWidth ||
             config.SIZE != clKernelWindowSize) {
           printf("Existing OpenCL kernel (kernel.bin) incompatible with configuration\n");
           printf("Please remove kernel.bin file and restart miner\n");
@@ -997,10 +1011,57 @@ void XPMClient::NotifyBlock(const proto::Block& block) {
 }
 
 
-void XPMClient::TakeWork(const proto::Work& work) {
+bool XPMClient::TakeWork(const proto::Work& work) {
+	
+	const double TargetIncrease = 0.991;
+	const double TargetDecrease = 0.011;
 	
 	SendPub(work, mWorkPub);
 	
+	if (!clKernelTargetAutoAdjust || work.bits() == 0)
+		return true;
+	double difficulty = GetPrimeDifficulty(work.bits());
+
+	bool needReset = false;
+	for(unsigned i = 0; i < mWorkers.size(); ++i) {
+		PrimeMiner *miner = mWorkers[i].first;
+		double target = miner->getConfig().TARGET;
+		if (difficulty > target && difficulty-target >= TargetIncrease) {
+			printf("Target with high difficulty detected, need increase miner target\n");
+			needReset = true;
+			break;
+		} else if (difficulty < target && target-difficulty >= TargetDecrease) {
+			printf("Target with low difficulty detected, need decrease miner target\n");
+			needReset = true;
+			break;
+		}
+	}
+	
+	if (needReset) {
+		unsigned newTarget = TargetGetLength(work.bits());
+		if (difficulty - newTarget >= TargetIncrease)
+			newTarget++;
+		printf("Rebuild miner kernels, adjust target to %u..\n", newTarget);
+		// Stop and destroy all workers
+		for(unsigned i = 0; i < mWorkers.size(); ++i) {
+			printf("attempt to stop GPU %u ...\n", i);
+			if(mWorkers[i].first){
+				mWorkers[i].first->MakeExit = true;
+				if(czmq_poll(mWorkers[i].second, 8000))
+					delete mWorkers[i].first;
+			}
+		}
+		
+		mWorkers.clear();
+		
+		// Build new kernels with adjusted target
+		mPaused = true;
+		Initialize(_cfg, false, newTarget);
+		Toggle();
+		return false;
+	} else {
+		return true;
+	}
 }
 
 

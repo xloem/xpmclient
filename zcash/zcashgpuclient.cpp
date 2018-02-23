@@ -764,7 +764,7 @@ int ZCashGPUClient::GetStats(proto::ClientStats& stats)
 }
 
 
-bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
+bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly, unsigned adjustedKernelTarget)
 {
   cl_context gContext[64] = {0};
   cl_program gProgram[64] = {0};  
@@ -880,7 +880,8 @@ bool ZCashGPUClient::Initialize(Configuration *cfg, bool benchmarkOnly)
                          { "zcash/gpu/param.h", "zcash/gpu/kernel.cl" },
                          "",
                          &binstatus[i],
-                         &gProgram[i]))
+                         &gProgram[i],
+                         false))
       return false;
   }
 
@@ -915,9 +916,10 @@ void ZCashGPUClient::NotifyBlock(const proto::Block& block)
   SendPub(block, mBlockPub); 
 }
 
-void ZCashGPUClient::TakeWork(const proto::Work& work)
+bool ZCashGPUClient::TakeWork(const proto::Work& work)
 {
   SendPub(work, mWorkPub);
+	return true;
 }
 
 void ZCashGPUClient::Toggle()

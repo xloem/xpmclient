@@ -125,9 +125,9 @@ public:
   BaseClient(void *ctx);
   virtual ~BaseClient() {}
   
-  virtual bool Initialize(Configuration* cfg, bool benchmarkOnly = false) = 0;
+  virtual bool Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adjustedKernelTarget = 0) = 0;
   virtual void NotifyBlock(const proto::Block& block) = 0;
-  virtual void TakeWork(const proto::Work& work) = 0;
+  virtual bool TakeWork(const proto::Work& work) = 0;
   virtual int GetStats(proto::ClientStats& stats) = 0;
   virtual void Toggle() = 0;
   virtual void setup_adl() = 0;

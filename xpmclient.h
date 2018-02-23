@@ -247,17 +247,21 @@ private:
 class XPMClient : public BaseClient {
 public:
 	
-	XPMClient(void* ctx);
+	XPMClient(void* ctx) : 
+	  BaseClient(ctx), clKernelTargetAutoAdjust(true) {}
 	virtual ~XPMClient();
   
-	bool Initialize(Configuration* cfg, bool benchmarkOnly = false);
+	bool Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adjustedKernelTarget = 0);
 	void NotifyBlock(const proto::Block& block);
-	void TakeWork(const proto::Work& work);
+	bool TakeWork(const proto::Work& work);
 	int GetStats(proto::ClientStats& stats);
 	void Toggle();
 	void setup_adl();
 	
 private:
+	Configuration *_cfg;
+	bool clKernelTargetAutoAdjust;
+	
   std::vector<std::pair<PrimeMiner*, void*> > mWorkers;
 
   void dumpSieveConstants(unsigned weaveDepth,

@@ -117,7 +117,8 @@ bool clCompileKernel(cl_context gContext,
                      const std::vector<const char*> &sources,
                      const char *arguments,
                      cl_int *binstatus,
-                     cl_program *gProgram);
+                     cl_program *gProgram,
+                     bool needRebuild);
 
 
 

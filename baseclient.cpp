@@ -141,7 +141,7 @@ static void HandleNewBlock(const proto::Block& block) {
 }
 
 
-static void HandleNewWork(const proto::Work& work) {
+static bool HandleNewWork(const proto::Work& work) {
 	
 	float diff = gRequestTimer.diff();
 	gLatency = diff * 1000.;
@@ -149,7 +149,7 @@ static void HandleNewWork(const proto::Work& work) {
 	printf("Work received: height=%d diff=%.8g latency=%dms\n",
 			work.height(), GetPrimeDifficulty(work.bits()), gLatency);
 	
-	gClient->TakeWork(work);
+	return gClient->TakeWork(work);
 	
 }
 
@@ -208,7 +208,10 @@ static int HandleReply(void *socket) {
 		
 		if(rep.has_work()){
 			
-			HandleNewWork(rep.work());
+			if (!HandleNewWork(rep.work())) {
+				gExit = false;
+				return -1;
+			}
 			
 		}
 		

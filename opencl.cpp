@@ -63,17 +63,11 @@ bool clCompileKernel(cl_context gContext,
                      const std::vector<const char*> &sources,
                      const char *arguments,
                      cl_int *binstatus,
-                     cl_program *gProgram)
+                     cl_program *gProgram,
+                     bool needRebuild)
 {
   std::ifstream testfile(binaryName);
-  
-//   size_t binsizes[64];
-
-//   const unsigned char *binaries[64];
-  
-  if(!testfile) {
-    
-    
+  if(needRebuild || !testfile) {
     printf("<info> compiling ...\n");
     
     std::string sourceFile;
@@ -107,22 +101,13 @@ bool clCompileKernel(cl_context gContext,
     
     size_t binsize;
     OCLR(clGetProgramInfo(*gProgram, CL_PROGRAM_BINARY_SIZES, sizeof(size_t), &binsize, 0), false);
-//     for (size_t i = 0; i < 1; i++) {
       if(!binsize) {
         printf("<error> no binary available!\n");
         return false;
       }
-//     }
     
     printf("<info> binsize = %u bytes\n", (unsigned)binsize);
-//     std::unique_ptr<unsigned char[]> binary(new unsigned char[binsize+1]);
-    
-//     for (size_t i = 0; i < gpus.size(); i++)
     std::unique_ptr<unsigned char[]> binary(new unsigned char[binsize+1]);
-//       binaries[i] = new unsigned char[binsizes[i]];
-    
-//     for (auto &b: binaries)
-//       b = binary.get();
     OCLR(clGetProgramInfo(*gProgram, CL_PROGRAM_BINARIES, sizeof(void*), &binary, 0), false);
     
     {
@@ -153,9 +138,6 @@ bool clCompileKernel(cl_context gContext,
   bfile.close();
   
   cl_int error;
-//   binstatus.resize(gpus.size(), 0);
-//   std::vector<size_t> binsizes(gpus.size(), binsize);
-//   std::vector<const unsigned char*> binaries(gpus.size(), (const unsigned char*)&binary[0]);
   const unsigned char *binaryPtr = (const unsigned char*)&binary[0];
   
   *gProgram = clCreateProgramWithBinary(gContext, 1, &gpu, &binsize, &binaryPtr, binstatus, &error);

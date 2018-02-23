@@ -19,6 +19,7 @@ static unsigned __stdcall czmq_thread_entry_point(void *arg)
 {
   czmq_thread_ctx *thctx = (czmq_thread_ctx *) arg;
   thctx->proc(thctx->arg, thctx->ctx, thctx->pipe);
+  zmq_close(thctx->pipe);
   free(thctx);
   _endthreadex(0);
   return 0;
@@ -28,6 +29,7 @@ static void *czmq_thread_entry_point(void *arg)
 {
   czmq_thread_ctx *thctx = (czmq_thread_ctx *) arg;
   thctx->proc(thctx->arg, thctx->ctx, thctx->pipe);
+  zmq_close(thctx->pipe);
   free(thctx);
   return 0;
 }
