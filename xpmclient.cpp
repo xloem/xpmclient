@@ -1013,8 +1013,8 @@ void XPMClient::NotifyBlock(const proto::Block& block) {
 
 bool XPMClient::TakeWork(const proto::Work& work) {
 	
-	const double TargetIncrease = 0.991;
-	const double TargetDecrease = 0.011;
+	const double TargetIncrease = 0.994;
+	const double TargetDecrease = 0.0061;
 	
 	SendPub(work, mWorkPub);
 	
