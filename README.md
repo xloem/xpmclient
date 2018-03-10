@@ -7,7 +7,9 @@ ZCash Miner topic: https://bitcointalk.org/index.php?topic=1660023.0
 
 The miner works with:
 - OpenCL (AMD or NVidia)
-- ZEROMQ message system & CZMQ library (+ libsodium on Linux)
+- ZEROMQ message system
+- libsodium
+- OpenSSL library
 - Google protobuf protocol
 - GMP
 - CMake build system
@@ -19,7 +21,7 @@ How to compile:
 
 Ubuntu building commands:
 
-sudo apt-get install libprotobuf-dev protobuf-compiler libzmq5-dev libczmq-dev libgmp-dev libssl-dev libsodium-dev
+sudo apt-get install libprotobuf-dev protobuf-compiler libzmq5-dev libgmp-dev libssl-dev libsodium-dev
 
 cmake ../xpmclient -DOPENCL_LIBRARY=/usr/lib/x86_64-linux-gnu/libOpenCL.so -DOPENCL_INCLUDE_DIRECTORY=/opt/AMDAPPSDK-3.0/include
 
@@ -39,7 +41,7 @@ For cross-compiling for Windows using mingw:
 
 cmake ../xpmclient -DCMAKE_TOOLCHAIN_FILE=../xpmclient/cmake/Toolchain-cross-mingw32-linux.cmake -DInstallPrefix=/opt/mingw32 -DOPENCL_LIBRARY=/opt/mingw32/lib/x86/OpenCL.lib
 
-/opt/mingw32 - install directory for mingw builds of libraries ZMQ, CZMQ, GMP, protobuf
+/opt/mingw32 - install directory for mingw builds of libraries ZMQ, GMP, protobuf
 
 /opt/mingw32/lib/x86/OpenCL.lib - path to OpenCL library for Win32
 
