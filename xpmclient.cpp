@@ -39,13 +39,11 @@ BaseClient *createClient(void *ctx)
   return new XPMClient(ctx);
 }
 
-PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth, unsigned LSize) {
+PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned sievePerRound, unsigned depth, unsigned LSize) {
 	
 	mID = id;
 	mThreads = threads;
-	
-	mHashPrimorial = hashprim;
-	mPrimorial = prim;
+
   mSievePerRound = sievePerRound;
 	mDepth = depth;
   mLSize = LSize;  
@@ -256,6 +254,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 	stats.primeprob = 0;
 	stats.cpd = 0;
 	
+	const unsigned mPrimorial = 13;
 	uint64_t fermatCount = 1;
 	uint64_t primeCount = 1;
 	
@@ -278,6 +277,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
   pipeline_t fermat352;
 	CPrimalityTestParams testParams;
 	std::vector<fermat_t> candis;
+  unsigned numHashCoeff = 32768;
 	
   cl_mem primeBuf[maxHashPrimorial];
   cl_mem primeBuf2[maxHashPrimorial];
@@ -514,7 +514,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 			//printf("hashlist.size() = %d\n", (int)hashlist.size());
 			hashmod.count[0] = 0;
 			
-      int numhash = ((int)(16*mSievePerRound) - (int)hashes.remaining()) * 65536;
+      int numhash = ((int)(16*mSievePerRound) - (int)hashes.remaining()) * numHashCoeff;
 
 			if(numhash > 0){
         numhash += mLSize - numhash % mLSize;
@@ -543,7 +543,10 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 		// sieve dispatch    
       for (unsigned i = 0; i < mSievePerRound; i++) {
         if(hashes.empty()){
-          if(!reset) printf("warning: ran out of hashes. pipeline stalled.\n");
+          if (!reset) {
+            numHashCoeff += 32768;
+            printf(" * warning: ran out of hashes, increasing sha256 work size coefficient to %u\n", numHashCoeff);
+          }
           break;
         }
         
@@ -620,7 +623,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
              std::max(fermat320.buffer[ridx].count[0], fermat352.buffer[ridx].count[0]),
              mBlockSize);
              
-      printf("increase sieves per round to %u\n", mSievePerRound);
+      printf("   * increase sieves per round to %u\n", mSievePerRound);
     }
 		
 		// check candis
@@ -834,9 +837,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
   unsigned clKernelPCount = cfg->lookupInt("", "weaveDepth", 40960);
   unsigned clKernelWindowSize = cfg->lookupInt("", "windowSize", 4096);
 
+	unsigned multiplierSizeLimits[3] = {26, 33, 36};
 	std::vector<bool> usegpu(mNumDevices, true);
-	std::vector<int> hashprim(mNumDevices, 5);
-	std::vector<int> primorial(mNumDevices, 13);
   std::vector<int> sievePerRound(mNumDevices, 5);
 	mCoreFreq = std::vector<int>(mNumDevices, -1);
 	mMemFreq = std::vector<int>(mNumDevices, -1);
@@ -844,38 +846,40 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
   mFanSpeed = std::vector<int>(mNumDevices, 70);
 	
 	{
+		StringVector cmultiplierlimits;
 		StringVector cdevices;
-		StringVector chashprim;
-		StringVector cprimorial;
-    StringVector csieveperround;
+		StringVector csieveperround;
 		StringVector ccorespeed;
 		StringVector cmemspeed;
 		StringVector cpowertune;
-    StringVector cfanspeed;
+		StringVector cfanspeed;
     
 		try {
 			cfg->lookupList("", "devices", cdevices);
-			cfg->lookupList("", "sieveprimorial", cprimorial);
 			cfg->lookupList("", "corefreq", ccorespeed);
 			cfg->lookupList("", "memfreq", cmemspeed);
 			cfg->lookupList("", "powertune", cpowertune);
       cfg->lookupList("", "fanspeed", cfanspeed);
+			cfg->lookupList("", "multiplierLimits", cmultiplierlimits);
       cfg->lookupList("", "sievePerRound", csieveperround);
 		}catch(const ConfigurationException& ex) {}
+
+		if (cmultiplierlimits.length() == 3) {
+			multiplierSizeLimits[0] = atoi(cmultiplierlimits[0]);
+			multiplierSizeLimits[1] = atoi(cmultiplierlimits[1]);
+			multiplierSizeLimits[2] = atoi(cmultiplierlimits[2]);
+		} else {
+			printf(" * Warning: invalid multiplierLimits parameter in config, must be list of 3 numbers\n");
+		}
+		
 		for(int i = 0; i < (int)mNumDevices; ++i){
 			
 			if(i < cdevices.length())
 				usegpu[i] = !strcmp(cdevices[i], "1");
 			
-			if(i < chashprim.length())
-				hashprim[i] = atoi(chashprim[i]);
+			if (i < csieveperround.length())
+				sievePerRound[i] = atoi(csieveperround[i]);
 			
-			if(i < cprimorial.length())
-				primorial[i] = atoi(cprimorial[i]);
-			
-      if (i < csieveperround.length())
-        sievePerRound[i] = atoi(csieveperround[i]);
-      
 			if(i < ccorespeed.length())
 				mCoreFreq[i] = atoi(ccorespeed[i]);
 			
@@ -923,6 +927,9 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     config << "#define SIZE " << clKernelWindowSize << '\n';
     config << "#define LSIZE " << clKernelLSize << '\n';
     config << "#define LSIZELOG2 " << clKernelLSizeLog2 << '\n';
+    config << "#define LIMIT13 " << multiplierSizeLimits[0] << '\n';
+    config << "#define LIMIT14 " << multiplierSizeLimits[1] << '\n';
+    config << "#define LIMIT15 " << multiplierSizeLimits[2] << '\n';    
     dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config);
   }
 
@@ -961,7 +968,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
   if (benchmarkOnly) {
     for (unsigned i = 0; i < gpus.size(); i++) {
       if (binstatus[i] == CL_SUCCESS) {
-        runBenchmarks(gContext[0], gProgram[0], gpus[i], primorial[i], depth, clKernelLSize);
+        runBenchmarks(gContext[0], gProgram[0], gpus[i], depth, clKernelLSize);
       }
     }
     
@@ -971,14 +978,17 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
       std::pair<PrimeMiner*,void*> worker;
       if(binstatus[i] == CL_SUCCESS){
       
-        PrimeMiner* miner = new PrimeMiner(i, gpus.size(), hashprim[i], primorial[i], sievePerRound[i], depth, clKernelLSize);
+        PrimeMiner* miner = new PrimeMiner(i, gpus.size(), sievePerRound[i], depth, clKernelLSize);
         miner->Initialize(gContext[i], gProgram[i], gpus[i]);
         config_t config = miner->getConfig();
-        if ((!clKernelTargetAutoAdjust && config.TARGET != clKernelTarget) ||
-            (!clKernelWidthAutoAdjust && config.WIDTH != clKernelWidth) ||
-            config.PCOUNT != clKernelPCount ||
-            config.STRIPES != clKernelStripes ||
-            config.SIZE != clKernelWindowSize) {
+				if ((!clKernelTargetAutoAdjust && config.TARGET != clKernelTarget) ||
+						(!clKernelWidthAutoAdjust && config.WIDTH != clKernelWidth) ||
+						config.PCOUNT != clKernelPCount ||
+						config.STRIPES != clKernelStripes ||
+						config.SIZE != clKernelWindowSize ||
+						config.LIMIT13 != multiplierSizeLimits[0] ||
+						config.LIMIT14 != multiplierSizeLimits[1] ||
+						config.LIMIT15 != multiplierSizeLimits[2]) {
           printf("Existing OpenCL kernel (kernel.bin) incompatible with configuration\n");
           printf("Please remove kernel.bin file and restart miner\n");
           exit(1);

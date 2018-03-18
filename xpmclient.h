@@ -67,6 +67,9 @@ struct config_t {
 	cl_uint WIDTH;
 	cl_uint PCOUNT;
 	cl_uint TARGET;
+	cl_uint LIMIT13;
+	cl_uint LIMIT14;
+	cl_uint LIMIT15;
 };
 
 
@@ -188,7 +191,7 @@ public:
   };
 	
 	
-  PrimeMiner(unsigned id, unsigned threads, unsigned hashprim, unsigned prim, unsigned sievePerRound, unsigned depth, unsigned LSize);
+  PrimeMiner(unsigned id, unsigned threads, unsigned sievePerRound, unsigned depth, unsigned LSize);
 	~PrimeMiner();
 	
 	bool Initialize(cl_context context, cl_program program, cl_device_id dev);
@@ -218,9 +221,7 @@ private:
 	unsigned mThreads;
 	
 	config_t mConfig;
-	unsigned mPrimorial;
   unsigned mSievePerRound;
-	unsigned mHashPrimorial;
 	unsigned mBlockSize;
 	cl_uint mDepth;
   unsigned mLSize;  

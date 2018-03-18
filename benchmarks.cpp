@@ -71,6 +71,7 @@ bool trialDivisionChainTest(uint32_t *primes,
   for (unsigned i = 0; i < chainLength; i++) {
     for (unsigned divIdx = 0; divIdx < depth; divIdx += 16) { 
       if (mpz_tdiv_ui(N.get_mpz_t(), primes[divIdx]) == 0) {
+        fprintf(stderr, "Invalid number found; chain position is %u, divisor is %u type is %u\n", i+1, primes[divIdx], fSophieGermain ? 1 : 2);
         return false;
       }
     }
@@ -115,8 +116,10 @@ bool sieveResultsTest(uint32_t *primes,
           if ((~mask & (1 << bit))) {
             mpz_class candidateMultiplier = (mpz_class)(sieveSize + wordIdx*32 + bit) << firstLayer;
             mpz_class chainOrigin = fixedMultiplier*candidateMultiplier;
-            if (!trialDivisionChainTest(primes, chainOrigin, true, chainLength, depth))
+            if (!trialDivisionChainTest(primes, chainOrigin, true, chainLength, depth)) {
+              fprintf(stderr, " * type 1 firstLayer = %u\n", firstLayer);
               ++*invalidCount;
+            }
             
             candidates.insert(candidateMultiplier);
           }
@@ -137,8 +140,10 @@ bool sieveResultsTest(uint32_t *primes,
           if ((~mask & (1 << bit))) {
             mpz_class candidateMultiplier = (mpz_class)(sieveSize + wordIdx*32 + bit) << firstLayer;
             mpz_class chainOrigin = fixedMultiplier*candidateMultiplier;
-            if (!trialDivisionChainTest(primes, chainOrigin, false, chainLength, depth))
+            if (!trialDivisionChainTest(primes, chainOrigin, false, chainLength, depth)) {
+              fprintf(stderr, " * type 2 firstLayer = %u\n", firstLayer);              
               ++*invalidCount;
+            }
             
             candidates.insert(candidateMultiplier);            
           }
@@ -146,11 +151,12 @@ bool sieveResultsTest(uint32_t *primes,
       }
     } 
  
-    for (unsigned firstLayer = 0; firstLayer <= layersNum-chainLength/2; firstLayer++) {
+    unsigned bitwinLayers = chainLength / 2 + chainLength % 2;
+    for (unsigned firstLayer = 0; firstLayer <= layersNum-bitwinLayers; firstLayer++) {
       uint32_t mask = 0;
       for (unsigned layer = 0; layer < chainLength/2; layer++)
         mask |= c1Data[firstLayer + layer] | c2Data[firstLayer + layer];
-      if (chainLength&0x1 && (firstLayer+chainLength/2) < layersNum)
+      if (chainLength & 0x1)      
         mask |= c1Data[firstLayer + chainLength/2];
        
       if (mask != 0xFFFFFFFF) {
@@ -160,8 +166,10 @@ bool sieveResultsTest(uint32_t *primes,
             mpz_class chainOrigin = fixedMultiplier*candidateMultiplier;
             mpz_class chainOriginExtra = chainOrigin;            
             if (!trialDivisionChainTest(primes, chainOrigin, true, (chainLength+1)/2, depth) ||
-                !trialDivisionChainTest(primes, chainOriginExtra, false, chainLength/2, depth))
+                !trialDivisionChainTest(primes, chainOriginExtra, false, chainLength/2, depth)) {
+              fprintf(stderr, " * type bitwin firstLayer = %u\n", firstLayer);   
               ++*invalidCount;
+            }
             candidates.insert(candidateMultiplier);            
           }
         }
@@ -476,6 +484,9 @@ void hashmodBenchmark(cl_context context,
   unsigned multiplierSizes[128];
   memset(multiplierSizes, 0, sizeof(multiplierSizes));
   
+  uint64_t phashCount[20];
+  memset(phashCount, 0, sizeof(phashCount));
+  
   for (unsigned i = 0; i < iterationsNum; i++) {
     {
       uint8_t *pHeader = (uint8_t*)&blockheader;
@@ -544,6 +555,8 @@ void hashmodBenchmark(cl_context context,
           realPrimorial *= gPrimes[j];
       }      
       
+      phashCount[primorialIdx]++;
+      
       mpz_class mpzRealPrimorial;        
       mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);            
       primorialIdx = std::max(mPrimorial, primorialIdx) - mPrimorial;
@@ -594,6 +607,12 @@ void hashmodBenchmark(cl_context context,
     }
   }
   printf(" Average hash multiplier size: %.3lf\n", totalSize / (double)hashes);  
+  
+  for (unsigned i = 0; i < 20; i++) {
+    if (phashCount[i]) {
+      printf("   Hashed with primorial %u is %.3lf%%\n", i, phashCount[i] / (double)hashes * 100.0);
+    }
+  }
 }
 
 void sieveTestBenchmark(cl_context context,
@@ -917,10 +936,10 @@ void sieveTestBenchmark(cl_context context,
 void runBenchmarks(cl_context context,
                    cl_program program,
                    cl_device_id deviceId,
-                   unsigned mPrimorial,
                    unsigned depth,
                    unsigned defaultGroupSize)
 {
+  const unsigned mPrimorial = 13;
   char deviceName[128] = {0};
   cl_uint computeUnits;
   clBuffer<config_t> mConfig;

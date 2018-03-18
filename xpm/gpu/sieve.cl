@@ -441,18 +441,19 @@ __kernel void s_sieve(	__global const uint* gsieve1,
     }
 	}
 	
+  const unsigned bitwinLayers = (TARGET / 2) + (TARGET % 2);
 #pragma unroll	
 	for(int i = 0; i < WIDTH; ++i)
     tmp2[i] |= tmp1[i];	
 #pragma unroll  
-	for(int start = 0; start <= WIDTH-TARGET/2; ++start){
+	for(int start = 0; start <= WIDTH-bitwinLayers; ++start){
 		
 		uint mask = 0;
 #pragma unroll    
 		for(int line = 0; line < TARGET/2; ++line)
 			mask |= tmp2[start+line];
-		
-		if(TARGET & 1u && (start+TARGET/2) < WIDTH)
+
+    if(TARGET & 1u)
 			mask |= tmp1[start+TARGET/2];
 		
 		if(mask != 0xFFFFFFFF) {

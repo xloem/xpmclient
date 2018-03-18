@@ -50,6 +50,11 @@ width = "auto";
 # Other NVidia Maxwell GPUs: 12284
 windowSize = "4096";
 
+# Maximal bit size of multipliers using with primorials 13, 14 and 15;
+# Default values are 26, 33, 36
+# Less values increases prime probability, but sieve generate less candidates
+multiplierLimits = ["26", "33", "36"];
+
 # - The following settings have one entry per GPU
 # - If you have more than 4 just add more entries or leave it as is to use defaults
 # - All entries must be separated by commas and set between double quotes
@@ -57,9 +62,6 @@ windowSize = "4096";
 # 0 = don't use device
 # 1 = use device
 devices =        ["1", "1", "1", "1", "1"];
-
-# Primorial 13 is optimal
-sieveprimorial = ["13", "13", "13", "13", "13"];
 
 # sieves per round value, default = 5
 sievePerRound = ["5", "5", "5", "5", "5"];

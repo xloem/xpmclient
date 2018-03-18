@@ -53,6 +53,9 @@ typedef struct {
 	uint WIDTH_;
 	uint PCOUNT_;
 	uint TARGET_;
+	uint LIMIT13_;
+	uint LIMIT14_;
+	uint LIMIT15_;
 } config_t;
 
 
@@ -66,6 +69,9 @@ __kernel void getconfig(__global config_t* conf)
 	c.WIDTH_ = WIDTH;
 	c.PCOUNT_ = PCOUNT;
 	c.TARGET_ = TARGET;
+	c.LIMIT13_ = LIMIT13;
+	c.LIMIT14_ = LIMIT14;
+	c.LIMIT15_ = LIMIT15;
 	*conf = c;
 }
 

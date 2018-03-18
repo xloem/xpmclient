@@ -21,7 +21,7 @@ __constant uint k[] = {
 
 __constant uint h_init[] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
 
-#define HashPrimorial 19
+#define HashPrimorial 16
 
 #ifdef BITALIGN
   #pragma OPENCL EXTENSION cl_amd_media_ops : enable
@@ -581,10 +581,6 @@ __kernel void bhashmodUsePrecalc(__global uint *found,
       lastBit = isDivisor ? i+5 : lastBit;
     }
     
-    const unsigned limit13 = 26;
-    const unsigned limit14 = 33;
-    const unsigned limit15 = 36;
-    
     uint32_t prod13l = 1;
     for (unsigned i = 0; i < 8; i++)
       prod13l = mul24(prod13l, select(gPrimes[i], 1u, primorialBitField & (1u << i)));
@@ -597,13 +593,13 @@ __kernel void bhashmodUsePrecalc(__global uint *found,
     uint64_t prod14 = prod13 * select(gPrimes[14], 1u, primorialBitField & (1u << 14));
     uint64_t prod15 = prod14 * select(gPrimes[15], 1u, primorialBitField & (1u << 15));
     
-    int p13isValid = ((64-clz(prod13)) < limit13);
+    int p13isValid = ((64-clz(prod13)) < LIMIT13);
     
     int p14Unique = !(p13isValid & (prod14 == prod13));
-    int p14isValid = ((64-clz(prod14)) < limit14) & p14Unique;
+    int p14isValid = ((64-clz(prod14)) < LIMIT14) & p14Unique;
     
     int p15Unique = !(p13isValid & (prod15 == prod13)) & !(p14isValid & (prod15 == prod14));
-    int p15isValid = ((64-clz(prod15)) < limit15) & p15Unique;
+    int p15isValid = ((64-clz(prod15)) < LIMIT15) & p15Unique;
     
     if (p13isValid) {
       const uint index = atomic_inc(fcount);
