@@ -8,6 +8,7 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
 
 include(FindDependencies)
 find_package(Protobuf REQUIRED)
+find_package(CUDA)
 
 include_directories(
   ${GMP_INCLUDE_DIRECTORY}
@@ -68,8 +69,8 @@ add_executable(xpmclient
   primes.cpp
   sha256.cpp
   zmqextras.cpp
-  xpmclient.cpp
-  benchmarks.cpp
+  xpm/opencl/xpmclient.cpp
+  xpm/opencl/benchmarks.cpp
   ${ProtoSources}
 )
 
@@ -77,10 +78,50 @@ SET_TARGET_PROPERTIES(xpmclient PROPERTIES
   COMPILE_FLAGS "-std=c++0x"
 )
 
+target_include_directories(xpmclient PUBLIC
+  ${CMAKE_SOURCE_DIR}
+  ${CMAKE_SOURCE_DIR}/xpm/opencl
+)
+
 target_link_libraries(xpmclient ${LIBRARIES})
 
 if (STATIC_BUILD)
   set_target_properties(xpmclient PROPERTIES LINK_SEARCH_END_STATIC 1)
+endif()
+
+# XPM CUDA GPU Client
+
+find_library(CUDA_driver_LIBRARY cuda ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+find_library(CUDA_nvrtc_LIBRARY nvrtc ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+
+add_executable(xpmclientnv
+  adl.cpp
+  baseclient.cpp
+  cudautil.cpp
+  opencl.cpp
+  prime.cpp
+  primes.cpp
+  sha256.cpp
+  zmqextras.cpp
+  xpm/cuda/xpmclient.cpp
+  xpm/cuda/benchmarks.cpp
+  ${ProtoSources}
+)
+
+target_include_directories(xpmclientnv PUBLIC
+  ${CMAKE_SOURCE_DIR}
+  ${CMAKE_SOURCE_DIR}/xpm/cuda
+  ${CUDA_INCLUDE_DIRS}
+)
+
+SET_TARGET_PROPERTIES(xpmclientnv PROPERTIES
+  COMPILE_FLAGS "-std=c++0x"
+)
+
+target_link_libraries(xpmclientnv ${LIBRARIES} ${CUDA_driver_LIBRARY} ${CUDA_nvrtc_LIBRARY})
+
+if (STATIC_BUILD)
+  set_target_properties(xpmclientnv PROPERTIES LINK_SEARCH_END_STATIC 1)
 endif()
 
 # ZCash GPU Client
