@@ -91,7 +91,7 @@ endif()
 
 # XPM CUDA GPU Client
 
-if (CUDA_found)
+if (CUDA_FOUND)
   find_library(CUDA_driver_LIBRARY cuda ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
   find_library(CUDA_nvrtc_LIBRARY nvrtc ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 
