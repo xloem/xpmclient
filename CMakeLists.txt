@@ -91,39 +91,41 @@ endif()
 
 # XPM CUDA GPU Client
 
-find_library(CUDA_driver_LIBRARY cuda ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
-find_library(CUDA_nvrtc_LIBRARY nvrtc ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+if (CUDA_found)
+  find_library(CUDA_driver_LIBRARY cuda ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+  find_library(CUDA_nvrtc_LIBRARY nvrtc ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 
-add_executable(xpmclientnv
-  adl.cpp
-  baseclient.cpp
-  cudautil.cpp
-  opencl.cpp
-  prime.cpp
-  primes.cpp
-  sha256.cpp
-  zmqextras.cpp
-  xpm/cuda/xpmclient.cpp
-  xpm/cuda/benchmarks.cpp
-  ${ProtoSources}
-)
+  add_executable(xpmclientnv
+    adl.cpp
+    baseclient.cpp
+    cudautil.cpp
+    opencl.cpp
+    prime.cpp
+    primes.cpp
+    sha256.cpp
+    zmqextras.cpp
+    xpm/cuda/xpmclient.cpp
+    xpm/cuda/benchmarks.cpp
+    ${ProtoSources}
+  )
 
-target_include_directories(xpmclientnv PUBLIC
-  ${CMAKE_SOURCE_DIR}
-  ${CMAKE_SOURCE_DIR}/xpm/cuda
-  ${CUDA_INCLUDE_DIRS}
-)
+  target_include_directories(xpmclientnv PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/xpm/cuda
+    ${CUDA_INCLUDE_DIRS}
+  )
 
-SET_TARGET_PROPERTIES(xpmclientnv PROPERTIES
-  COMPILE_FLAGS "-std=c++0x"
-)
+  SET_TARGET_PROPERTIES(xpmclientnv PROPERTIES
+    COMPILE_FLAGS "-std=c++0x"
+  )
 
-target_link_libraries(xpmclientnv ${LIBRARIES} ${CUDA_driver_LIBRARY} ${CUDA_nvrtc_LIBRARY})
-
-if (STATIC_BUILD)
-  set_target_properties(xpmclientnv PROPERTIES LINK_SEARCH_END_STATIC 1)
+  target_link_libraries(xpmclientnv ${LIBRARIES} ${CUDA_driver_LIBRARY} ${CUDA_nvrtc_LIBRARY})
+  
+  if (STATIC_BUILD)
+    set_target_properties(xpmclientnv PROPERTIES LINK_SEARCH_END_STATIC 1)
+  endif()
 endif()
-
+  
 # ZCash GPU Client
 add_definitions(-DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4) 
 

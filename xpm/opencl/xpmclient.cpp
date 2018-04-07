@@ -619,7 +619,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
     if (fermat320.buffer[ridx].count[0] && fermat320.buffer[ridx].count[0] < mBlockSize &&
         fermat352.buffer[ridx].count[0] && fermat352.buffer[ridx].count[0] < mBlockSize) {
       mSievePerRound = std::min((unsigned)SW, mSievePerRound+1);
-      printf(" * warning: no enough candidates (%u available, must be more than %u\n",
+      printf(" * warning: not enough candidates (%u available, must be more than %u\n",
              std::max(fermat320.buffer[ridx].count[0], fermat352.buffer[ridx].count[0]),
              mBlockSize);
              
