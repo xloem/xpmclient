@@ -355,6 +355,10 @@ void fermatTestBenchmark(cl_context context,
   for (unsigned i = 0; i < elementsNum; i++) {
     for (unsigned j = 0; j < operandSize; j++)
       numbers[i*operandSize + j] = (j == operandSize-1) ? (1 << (i % 32)) : rand32();
+    if (rand() % 16 == 0) {
+      numbers[i*operandSize + operandSize-2] = numbers[i*operandSize + operandSize-1];
+      numbers[i*operandSize + operandSize-1] = 0;
+    }
     numbers[i*operandSize] |= 0x1; 
   }
 
@@ -432,7 +436,10 @@ void fermatTestBenchmark(cl_context context,
     mpz_export(&cpuResults[i*operandSize], &exportedLimbs, -1, 4, 0, 0, cpuResultsBuffer[i]);
     if (memcmp(&gpuResults[i*operandSize], &cpuResults[i*operandSize], 4*operandSize) != 0) {
       fprintf(stderr, "element index: %u\n", i);
-      fprintf(stderr, "gmp: ");
+      fprintf(stderr, "element data: \n");
+      for (unsigned j = 0; j < operandSize; j++)
+        fprintf(stderr, "%08X ", numbers[i*operandSize + j]);
+      fprintf(stderr, "\ngmp: ");
       for (unsigned j = 0; j < operandSize; j++)
         fprintf(stderr, "%08X ", cpuResults[i*operandSize + j]);
       fprintf(stderr, "\ngpu: ");

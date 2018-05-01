@@ -919,7 +919,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 	
 	// generate kernel configuration file
   {
-    std::ofstream config("xpm/gpu/config.cl", std::fstream::trunc);
+    std::ofstream config("xpm/opencl/config.cl", std::fstream::trunc);
     config << "#define STRIPES " << clKernelStripes << '\n';
     config << "#define WIDTH " << clKernelWidth << '\n';
     config << "#define PCOUNT " << clKernelPCount << '\n';
@@ -953,7 +953,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     if (!clCompileKernel(gContext[i],
                          gpus[i],
                          kernelName,
-                         { "xpm/gpu/config.cl", "xpm/gpu/procs.cl", "xpm/gpu/fermat.cl", "xpm/gpu/sieve.cl", "xpm/gpu/sha256.cl", "xpm/gpu/benchmarks.cl"},
+                         { "xpm/opencl/config.cl", "xpm/opencl/procs.cl", "xpm/opencl/fermat.cl", "xpm/opencl/sieve.cl", "xpm/opencl/sha256.cl", "xpm/opencl/benchmarks.cl"},
                          arguments,
                          &binstatus[i],
                          &gProgram[i],
