@@ -2,7 +2,7 @@
 #define WIDTH 20
 #define PCOUNT 65536
 #define TARGET 11
-#define SIZE 12284
+#define SIZE 12288
 #define LSIZE 1024
 #define LSIZELOG2 10
 #define LIMIT13 26

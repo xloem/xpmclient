@@ -156,9 +156,20 @@ public:
 		clBuffer<cl_uint> midstate;
 		clBuffer<cl_uint> found;
     clBuffer<cl_uint> primorialBitField;
-		clBuffer<cl_uint> count;
+		clBuffer<cl_uint> count;   
+    
 		
 	};
+  
+	struct search_t_cuda {
+		
+		cudaBuffer<uint32_t> midstate;
+		cudaBuffer<uint32_t> found;
+    cudaBuffer<uint32_t> primorialBitField;
+		cudaBuffer<uint32_t> count;   
+    
+		
+	};  
 	
 	struct hash_t {
 		

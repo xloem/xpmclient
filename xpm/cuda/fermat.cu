@@ -59,17 +59,9 @@ __global__ void getconfig(config_t *conf)
   *conf = c;
 }
 
-__device__ void shl32(uint32_t *data, unsigned size)
-{
-  #pragma unroll
-  for (int j = size-1; j > 0; j--)
-    data[j] = data[j-1];
-  data[0] = 0;
-}
-
 __device__ void shr32(uint32_t *data, unsigned size)
 {
-  #pragma unroll
+#pragma unroll
   for (int j = 1; j < size; j++)
     data[j-1] = data[j];
   data[size-1] = 0;
@@ -92,171 +84,380 @@ __device__ void shr(uint32_t *data, unsigned size, unsigned bits)
   data[size-1] = data[size-1] >> bits;
 }
 
-__device__ void shlreg(uint32_t *data, unsigned size, unsigned bits)
-{
-  for (unsigned i = 0, ie = bits/32; i < ie; i++)
-    shl32(data, size);
-  
-  if (bits%32)
-    shl(data, size, bits%32);
-}
-
-
-__device__ void shrreg(uint32_t *data, unsigned size, unsigned bits)
-{
-  for (unsigned i = 0, ie = bits/32; i < ie; i++)
-    shr32(data, size);
-  if (bits%32)
-    shr(data, size, bits%32);
-}
-
-__device__ uint32_t add128(uint4 *A, uint4 B)
-{
-//   *A += B; 
-  A->x += B.x;
-  A->y += B.y;
-  A->z += B.z;
-  A->w += B.w;
-//   uint4 carry = -convert_uint4((*A) < B);
-  uint4 carry = { -(A->x < B.x), -(A->y < B.y), -(A->z < B.z), -(A->w < B.w) };
-  
-  (*A).y += carry.x; carry.y += ((*A).y < carry.x);
-  (*A).z += carry.y; carry.z += ((*A).z < carry.y);
-  (*A).w += carry.z;
-  return carry.w + ((*A).w < carry.z); 
-}
-
-
-__device__ uint32_t add128Carry(uint4 *A, uint4 B, uint32_t externalCarry)
-{
-//   *A += B;
-  A->x += B.x;
-  A->y += B.y;
-  A->z += B.z;
-  A->w += B.w;  
-//   uint4 carry = -convert_uint4((*A) < B);
-  uint4 carry = { -(A->x < B.x), -(A->y < B.y), -(A->z < B.z), -(A->w < B.w) };
-  
-  (*A).x += externalCarry; carry.x += ((*A).x < externalCarry);
-  (*A).y += carry.x; carry.y += ((*A).y < carry.x);
-  (*A).z += carry.y; carry.z += ((*A).z < carry.y);
-  (*A).w += carry.z;
-  return carry.w + ((*A).w < carry.z); 
-}
-
-__device__ uint32_t add256(uint4 *a0, uint4 *a1, uint4 b0, uint4 b1)
-{
-  return add128Carry(a1, b1, add128(a0, b0));
-}
-
-__device__ uint32_t add384(uint4 *a0, uint4 *a1, uint4 *a2, uint4 b0, uint4 b1, uint4 b2)
-{
-  return add128Carry(a2, b2, add128Carry(a1, b1, add128(a0, b0)));
-}
-
-__device__ uint32_t add512(uint4 *a0, uint4 *a1, uint4 *a2, uint4 *a3, uint4 b0, uint4 b1, uint4 b2, uint4 b3)
-{
-  return add128Carry(a3, b3, add128Carry(a2, b2, add128Carry(a1, b1, add128(a0, b0))));
-}
-
-__device__ uint32_t sub64Borrow(uint2 *A, uint2 B, uint32_t externalBorrow)
-{
-//   uint2 borrow = -convert_uint2((*A) < B);
-  uint2 borrow = { -(A->x < B.x), -(A->y < B.y) };
-//   *A -= B;
-  A->x -= B.x;
-  A->y -= B.y;
-  
-  borrow.x += (*A).x < externalBorrow; (*A).x -= externalBorrow;
-  borrow.y += (*A).y < borrow.x; (*A).y -= borrow.x;
-  return borrow.y;
-}
-
-__device__ uint32_t sub96Borrow(uint4 *A, uint4 B, uint32_t externalBorrow)
-{
-  //   uint2 borrow = -convert_uint2((*A) < B);
-  uint4 borrow = {
-    (*A).x < B.x,
-      (*A).y < B.y,
-      (*A).z < B.z,
-      0
-  };
-  (*A).x -= B.x;
-  (*A).y -= B.y;
-  (*A).z -= B.z;
-  
-  borrow.x += (*A).x < externalBorrow; (*A).x -= externalBorrow;
-  borrow.y += (*A).y < borrow.x; (*A).y -= borrow.x;
-  borrow.z += (*A).z < borrow.y; (*A).z -= borrow.y;
-  
-  return borrow.z;
-}
-
-__device__ uint32_t sub128(uint4 *A, uint4 B)
-{
-  uint4 borrow = {
-    (*A).x < B.x,
-      (*A).y < B.y,
-      (*A).z < B.z,
-      (*A).w < B.w
-  };
-  (*A).x -= B.x;
-  (*A).y -= B.y;
-  (*A).z -= B.z;
-  (*A).w -= B.w;  
-  
-  borrow.y += (*A).y < borrow.x; (*A).y -= borrow.x;
-  borrow.z += (*A).z < borrow.y; (*A).z -= borrow.y;
-  borrow.w += (*A).w < borrow.z; (*A).w -= borrow.z;
-  return borrow.w;
-}
-
-__device__ uint32_t sub128Borrow(uint4 *A, uint4 B, uint32_t externalBorrow)
-{
-//   uint4 borrow = -convert_uint4((*A) < B);
-  uint4 borrow = { -(A->x < B.x), -(A->y < B.y), -(A->z < B.z), -(A->w < B.w) };  
-//   *A -= B;
-  A->x -= B.x;
-  A->y -= B.y;
-  A->z -= B.z;
-  A->w -= B.w;  
-  
-  borrow.x += (*A).x < externalBorrow; (*A).x -= externalBorrow;
-  borrow.y += (*A).y < borrow.x; (*A).y -= borrow.x;
-  borrow.z += (*A).z < borrow.y; (*A).z -= borrow.y;
-  borrow.w += (*A).w < borrow.z; (*A).w -= borrow.z;
-  return borrow.w;
-}
-
-__device__ uint32_t sub256(uint4 *a0, uint4 *a1, uint4 b0, uint4 b1)
-{
-  return sub128Borrow(a1, b1, sub128(a0, b0));
-}
-
-__device__ uint32_t sub320(uint4 *a0, uint4 *a1, uint2 *a2, uint4 b0, uint4 b1, uint2 b2)
-{
-  return sub64Borrow(a2, b2, sub128Borrow(a1, b1, sub128(a0, b0)));
-}
-
-__device__ uint32_t sub352(uint4 *a0, uint4 *a1, uint4 *a2, uint4 b0, uint4 b1, uint4 b2)
-{
-  return sub96Borrow(a2, b2, sub128Borrow(a1, b1, sub128(a0, b0)));
-}
-
-__device__ uint32_t sub384(uint4 *a0, uint4 *a1, uint4 *a2, uint4 b0, uint4 b1, uint4 b2)
-{
-  return sub128Borrow(a2, b2, sub128Borrow(a1, b1, sub128(a0, b0)));
-}
-
-__device__ uint32_t sub448(uint4 *a0, uint4 *a1, uint4 *a2, uint2 *a3, uint4 b0, uint4 b1, uint4 b2, uint2 b3)
-{
-  return sub64Borrow(a3, b3, sub128Borrow(a2, b2, sub128Borrow(a1, b1, sub128(a0, b0))));
-}
-
 __device__ uint32_t invert_limb(uint32_t limb)
 {
   uint32_t inv = binvert_limb_table[(limb/2) & 0x7F];
   inv = 2*inv - inv*inv*limb;
   inv = 2*inv - inv*inv*limb;
   return -inv;
+}
+
+__device__ uint32_t getFromBitfield(const uint32_t *ptr, unsigned bitOffset, unsigned bitSize)
+{
+  union {
+    uint2 v32;
+    uint64_t v64;
+  } data;  
+  
+  unsigned lbitOffset = bitOffset & 0x1F;
+  unsigned lLoLimb = bitOffset >> 5;
+  unsigned lHiLimb = (bitOffset+bitSize) >> 5;
+  data.v32.x = ptr[lLoLimb];
+  data.v32.y = (lLoLimb == lHiLimb) ? 0 : ptr[lHiLimb];
+  data.v32.x = lLoLimb == 0 ? data.v32.x - 1 : data.v32.x;
+  return (data.v64 >> lbitOffset) & ((1 << bitSize) - 1);
+}
+
+__device__ void redcify352(unsigned shiftCount,
+                           const uint32_t *quotient,
+                           const uint32_t *limbs,
+                           uint32_t *result,
+                           uint32_t windowSize)
+{
+  uint32_t q[8];
+  q[0] = quotient[0];
+  q[1] = quotient[1];
+  q[2] = quotient[2];
+  q[3] = quotient[3];
+  q[4] = quotient[4];
+  q[5] = quotient[5];
+  q[6] = quotient[6];
+  q[7] = quotient[7];  
+
+  const unsigned pow2ws = pow2[windowSize];  
+  
+  for (unsigned  i = 0, ie = (pow2ws-shiftCount)/32; i < ie; i++)
+    shr32(q, 8);
+  if ((pow2ws-shiftCount) % 32)
+    shr(q, 8, (pow2ws-shiftCount) % 32);
+
+  if (windowSize == 5)
+    mulProductScan352to96(result, limbs, q);
+  else if (windowSize == 6)
+    mulProductScan352to128(result, limbs, q);
+  else if (windowSize == 7)
+    mulProductScan352to192(result, limbs, q);
+  
+  // substract 2^(384+shiftCount) - q*R
+  for (unsigned i = 0; i < 11; i++)
+    result[i] = ~result[i];
+  result[0]++;
+}
+
+__device__ void FermatTest352(const uint32_t *e, uint32_t *redcl)
+{
+  const int windowSize = 7;    
+  uint32_t inverted = invert_limb(e[0]);  
+  uint32_t q[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int remaining = divide512to352reg(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10],
+                    &q[0], &q[1], &q[2], &q[3], &q[4], &q[5], &q[6], &q[7]);
+  remaining--;
+
+  
+  // Retrieve of "2" in Montgomery representation
+  redcify352(1, q, e, redcl, windowSize);  
+
+  while (remaining > 0) {
+    int size = min(remaining, windowSize);
+    uint32_t index = getFromBitfield(e, remaining-size, size);
+    
+    uint32_t m[11];
+    for (unsigned i = 0; i < size; i++)
+      monSqr352(redcl, e, inverted);
+    
+    redcify352(index, q, e, m, windowSize);    
+    monMul352(redcl, m, e, inverted);
+    remaining -= windowSize;
+  }
+  
+  redcHalf352(redcl, e, inverted);
+}
+
+__device__ void redcify320(unsigned shiftCount,
+                           const uint32_t *quotient,
+                           const uint32_t *limbs,
+                           uint32_t *result,
+                           uint32_t windowSize)
+{
+  uint32_t q[8];
+  q[0] = quotient[0];
+  q[1] = quotient[1];
+  q[2] = quotient[2];
+  q[3] = quotient[3];
+  q[4] = quotient[4];
+  q[5] = quotient[5];
+  q[6] = quotient[6];
+  q[7] = quotient[7];  
+  
+  const unsigned pow2ws = pow2[windowSize];   
+  for (unsigned  i = 0, ie = (pow2ws-shiftCount)/32; i < ie; i++)
+    shr32(q, 8);
+  if ((pow2ws-shiftCount) % 32)
+    shr(q, 8, (pow2ws-shiftCount) % 32);
+
+  if (windowSize == 5)
+    mulProductScan320to96(result, limbs, q);  
+  else if (windowSize == 6)
+    mulProductScan320to128(result, limbs, q);
+  else if (windowSize == 7)
+    mulProductScan320to192(result, limbs, q);
+  
+  // substract 2^(384+shiftCount) - q*R
+  for (unsigned i = 0; i < 10; i++)
+    result[i] = ~result[i];
+  result[0]++;
+}
+
+__device__ void FermatTest320(const uint32_t *e, uint32_t *redcl)
+{
+  const int windowSize = 7;  
+  uint32_t inverted = invert_limb(e[0]);  
+  uint32_t q[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int remaining = divide480to320reg(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9],
+                    &q[0], &q[1], &q[2], &q[3], &q[4], &q[5], &q[6], &q[7]);
+  remaining--;
+  
+  // Retrieve of "2" in Montgomery representation
+  redcify320(1, q, e, redcl, windowSize);
+
+  while (remaining > 0) {
+    int size = min(remaining, windowSize);
+    uint32_t index = getFromBitfield(e, remaining-size, size);
+    
+    uint32_t m[10];
+    for (unsigned i = 0; i < size; i++)
+      monSqr320(redcl, e, inverted);
+    
+    redcify320(index, q, e, m, windowSize);
+    monMul320(redcl, m, e, inverted);     
+    remaining -= windowSize;
+  }
+  
+  redcHalf320(redcl, e, inverted);
+}
+
+__device__ bool fermat352(const uint32_t *p)
+{
+  uint32_t modpowl[11];
+  FermatTest352(p, modpowl);
+  
+  uint32_t result = modpowl[0] - 1;
+  result |= modpowl[1];
+  result |= modpowl[2];
+  result |= modpowl[3];
+  result |= modpowl[4];
+  result |= modpowl[5];
+  result |= modpowl[6];
+  result |= modpowl[7];
+  result |= modpowl[8];
+  result |= modpowl[9];
+  result |= modpowl[10];  
+  return result == 0;
+}
+
+__device__ bool fermat320(const uint32_t *p)
+{
+  uint32_t modpowl[10];  
+  FermatTest320(p, modpowl);
+  
+  uint32_t result = modpowl[0] - 1;
+  result |= modpowl[1];
+  result |= modpowl[2];
+  result |= modpowl[3];
+  result |= modpowl[4];
+  result |= modpowl[5];
+  result |= modpowl[6];
+  result |= modpowl[7];
+  result |= modpowl[8];
+  result |= modpowl[9];
+  return result == 0;  
+}
+
+__device__ uint32_t int_invert(uint32_t a, uint32_t nPrime)
+{
+    // Extended Euclidean algorithm to calculate the inverse of a in finite field defined by nPrime
+    int rem0 = nPrime, rem1 = a % nPrime, rem2;
+    int aux0 = 0, aux1 = 1, aux2;
+    int quotient, inverse;
+    
+    while (1)
+    {
+        if (rem1 <= 1)
+        {
+            inverse = aux1;
+            break;
+        }
+        
+        rem2 = rem0 % rem1;
+        quotient = rem0 / rem1;
+        aux2 = -quotient * aux1 + aux0;
+        
+        if (rem2 <= 1)
+        {
+            inverse = aux2;
+            break;
+        }
+        
+        rem0 = rem1 % rem2;
+        quotient = rem1 / rem2;
+        aux0 = -quotient * aux2 + aux1;
+        
+        if (rem0 <= 1)
+        {
+            inverse = aux0;
+            break;
+        }
+        
+        rem1 = rem2 % rem0;
+        quotient = rem2 / rem0;
+        aux1 = -quotient * aux0 + aux2;
+    }
+    
+    return (inverse + nPrime) % nPrime;
+}
+
+__global__ void setup_fermat(uint32_t *fprimes,
+                            const fermat_t *info_all,
+                            uint32_t *hash)
+{
+  const uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+  const uint32_t gsize = gridDim.x * blockDim.x;
+  const fermat_t info = info_all[id];
+  
+  uint32_t h[11];
+  uint32_t m[11];
+
+  uint32_t *H = &hash[info.hashid*N]; 
+#pragma unroll
+  for (unsigned i = 0; i < 11; i++)
+    h[i] = H[i];
+
+  uint32_t line = info.origin;
+  if(info.type < 2)
+    line += info.chainpos;
+  else
+    line += info.chainpos/2;
+
+  uint32_t modifier = (info.type == 1 || (info.type == 2 && (info.chainpos & 1))) ? 1 : -1;
+
+  mulProductScan352to32(m, h, info.index);
+  if (line)
+    shl(m, 11, line);
+  m[0] += modifier;
+  
+#pragma unroll
+  for (unsigned i = 0; i < 11; i++)
+    fprimes[gsize*i + id] = m[i];
+}
+
+
+__global__ void fermat_kernel(uint8_t *result, const uint32_t *fprimes)
+{
+  const uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+  const uint32_t gsize = gridDim.x * blockDim.x;  
+  uint32_t e[11];
+  
+#pragma unroll
+  for (unsigned i = 0; i < 11; i++)
+    e[i] = fprimes[gsize*i + id];
+  
+  result[id] = fermat352(e);
+}
+
+__global__ void fermat_kernel320(uint8_t *result, const uint32_t *fprimes)
+{
+  const uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+  const uint32_t gsize = gridDim.x * blockDim.x;  
+  uint32_t e[10];
+  
+#pragma unroll
+  for (unsigned i = 0; i < 10; i++)
+    e[i] = fprimes[gsize*i + id];  
+  
+  result[id] = fermat320(e);
+}
+
+
+
+__global__ void check_fermat(fermat_t *info_out,
+                             uint32_t *count,
+                             fermat_t *info_fin_out,
+                             uint32_t *count_fin,
+                             const uint8_t *results,
+                             const fermat_t *info_in,
+                             uint32_t depth)
+{
+	
+	const uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+	
+	if(results[id] == 1){
+		
+		fermat_t info = info_in[id];
+		info.chainpos++;
+		
+		if(info.chainpos < depth){
+			
+			const uint32_t i = atomicAdd(count, 1);
+			info_out[i] = info;
+			
+		}else{
+			
+			const uint32_t i = atomicAdd(count_fin, 1);
+			info_fin_out[i] = info;
+			
+		}
+		
+	}
+	
+}
+
+
+__device__ uint32_t mod32(uint32_t *data, unsigned size, uint32_t *modulos, uint32_t divisor)
+{
+  uint64_t acc = data[0];
+  for (unsigned i = 1; i < size; i++)
+    acc += (uint64_t)modulos[i-1] * (uint64_t)data[i];
+  return acc % divisor;
+}
+
+__global__ void setup_sieve(uint32_t *offset1,
+                            uint32_t *offset2,
+                            const uint32_t *vPrimes,
+                            uint32_t *hash,
+                            uint32_t hashid,
+                            uint32_t *modulos)
+{
+  
+  const uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+  const uint32_t nPrime = vPrimes[id];
+  
+  uint32_t tmp[N];
+#pragma unroll
+  for(int i = 0; i < N; ++i)
+    tmp[i] = hash[hashid*N + i];
+  
+  uint32_t localModulos[N-2];
+#pragma unroll
+  for (unsigned i = 0; i < N-2; i++)
+    localModulos[i] = modulos[PCOUNT*i + id];
+  const uint32_t nFixedFactorMod = mod32(tmp, N-1, localModulos, nPrime);
+  
+  if(nFixedFactorMod == 0){
+    for(uint32_t line = 0; line < WIDTH; ++line){
+      offset1[PCOUNT*line + id] = 0; //1u << 31;
+      offset2[PCOUNT*line + id] = 0; //1u << 31;
+    }
+    return;
+    
+  }
+  
+  uint32_t nFixedInverse = int_invert(nFixedFactorMod, nPrime);
+  for(uint32_t layer = 0; layer < WIDTH; ++layer) {
+    offset1[PCOUNT*layer + id] = nFixedInverse;
+    offset2[PCOUNT*layer + id] = nPrime - nFixedInverse;
+    nFixedInverse = (nFixedInverse & 0x1) ?
+    (nFixedInverse + nPrime) / 2 : nFixedInverse / 2;
+  }    
 }

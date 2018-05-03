@@ -281,3 +281,50 @@ void simplePrecalcSHA256(const void *block,
   OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &new2[2]));
   OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &temp2[3]));
 }
+
+void precalcSHA256(const void *block,
+                   uint32_t *midstate,
+                   sha256precalcData *data)
+{
+  SHA_256 sha;
+  sha.init();
+  sha.transform((const unsigned char*)block, 1u);
+  for(int i = 0; i < 8; ++i)
+    midstate[i] = sha.m_h[i];
+  
+  uint32_t *p = ((uint32_t*)block)+16;   
+  uint32_t msg_merkle = sha2_pack(p[0]);
+  uint32_t msg_time = sha2_pack(p[1]);
+  uint32_t msg_bits = sha2_pack(p[2]);
+  
+  uint32_t msg[16];
+  msg[0] = msg_merkle;
+  msg[1] = msg_time;
+  msg[2] = msg_bits;
+  msg[4] = sha2_pack(0x80);
+  for(int i = 5; i < 15; ++i)
+    msg[i] = 0;
+  msg[15] = 640;  
+  
+  uint32_t out[8];
+  memcpy(out, midstate, 8*4);
+  uint32_t W[64];       // 2 [16-17]
+  uint32_t temp1[64];   // 3
+  uint32_t temp2[64];   // 4
+  uint32_t new1[64];    // 3
+  uint32_t new2[64];    // 3
+  sha256Export(msg, out, W, temp1, temp2, new1, new2);
+  
+  data->merkle = msg_merkle;
+  data->time = msg_time;
+  data->nbits = msg_bits;
+  data->W0 = W[16];
+  data->W1 = W[17];
+  data->new1_0 = new1[0];
+  data->new1_1 = new1[1];
+  data->new1_2 = new1[2];
+  data->new2_0 = new2[0];
+  data->new2_1 = new2[1];
+  data->new2_2 = new2[2];
+  data->temp2_3 = temp2[3];
+}

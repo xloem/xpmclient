@@ -118,3 +118,46 @@ __global__ void multiplyBenchmark352(uint32_t *m1,
 #undef GmpOperandSize
 #undef OperandSize
 }
+
+__global__ void fermatTestBenchMark320(uint32_t *numbers,
+                                       uint32_t *out,
+                                       unsigned elementsNum)
+{
+#define OperandSize 10  
+  unsigned globalSize = gridDim.x * blockDim.x;
+  unsigned globalId = blockIdx.x * blockDim.x + threadIdx.x;
+  for (unsigned i = globalId; i < elementsNum; i += globalSize) {
+    uint32_t result[10];
+    uint32_t lNumbers[OperandSize];
+    for (unsigned j = 0; j < OperandSize; j++)
+      lNumbers[j] = numbers[i*OperandSize+j];
+
+    FermatTest320(lNumbers, result);
+   
+    for (unsigned j = 0; j < OperandSize; j++)
+      out[i*OperandSize + j] = result[j];  
+  }
+#undef OperandSize
+}
+
+
+__global__ void fermatTestBenchMark352(uint32_t *numbers,
+                                       uint32_t *out,
+                                       unsigned elementsNum)
+{
+#define OperandSize 11  
+  unsigned globalSize = gridDim.x * blockDim.x;
+  unsigned globalId = blockIdx.x * blockDim.x + threadIdx.x;
+  for (unsigned i = globalId; i < elementsNum; i += globalSize) {
+    uint32_t result[11];
+    uint32_t lNumbers[OperandSize];
+    for (unsigned j = 0; j < OperandSize; j++)
+      lNumbers[j] = numbers[i*OperandSize+j];
+
+    FermatTest352(lNumbers, result);
+ 
+    for (unsigned j = 0; j < OperandSize; j++)
+      out[i*OperandSize + j] = result[j];  
+  }
+#undef OperandSize
+}

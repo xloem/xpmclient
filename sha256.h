@@ -63,13 +63,32 @@ std::string sha256_str(std::string input);
            | ((SHA_256::uint32) *(((unsigned char*)(str)) + 0) << 24);   \
 }
 
+struct sha256precalcData {
+  uint32_t merkle;
+  uint32_t time;
+  uint32_t nbits;
+  uint32_t W0;
+  uint32_t W1;
+  uint32_t new1_0;
+  uint32_t new1_1;
+  uint32_t new1_2;
+  uint32_t new2_0;
+  uint32_t new2_1;
+  uint32_t new2_2;
+  uint32_t temp2_3;
+};
 
 void simplePrecalcSHA256(const void *block,
                          clBuffer<cl_uint> &midstate,
                          cl_command_queue queue,
                          cl_kernel sha256kernel);
 
-void precalc_hash(const void *block, cl_kernel sha256kernel);
+void precalcSHA256(const void *block,
+                   uint32_t *midstate,
+                   sha256precalcData *data);
+                   
+
+// void precalc_hash(const void *block, cl_kernel sha256kernel);
 
 
 #endif /* SHA256_H_ */

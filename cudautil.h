@@ -53,8 +53,16 @@ public:
     CUDA_SAFE_CALL(cuMemcpyHtoD(_deviceData, _hostData, sizeof(T)*_size));
   }
   
+  void copyToDevice(T *hostData) {
+    CUDA_SAFE_CALL(cuMemcpyHtoD(_deviceData, hostData, sizeof(T)*_size));
+  }
+  
   void copyToHost() {
     CUDA_SAFE_CALL(cuMemcpyDtoH(_hostData, _deviceData, sizeof(T)*_size));
+  }
+  
+  T& get(int index) {
+    return _hostData[index];
   }
   
   T& operator[](int index) {
