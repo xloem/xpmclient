@@ -391,7 +391,7 @@ gBlock.set_height(0);
 	if(!gClientName.size())
 		gClientName = sysinfo::GetClientName();
 	
-	printf("madPrimeMiner-v%d.%d\n", gClientVersion/10, gClientVersion%10);
+	printf("xpmclient-10.2.3\n", gClientVersion/10, gClientVersion%10);
 	printf("ClientName = '%s'  ClientID = %u  InstanceID = %u\n", gClientName.c_str(), gClientID, gInstanceID);
 	printf("Address = '%s'\n", gAddr.c_str());
 	

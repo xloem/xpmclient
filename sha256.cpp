@@ -232,56 +232,6 @@ void sha256Export(const uint32_t *msg, uint32_t *s,
   s[7] += h; 
 }
 
-void simplePrecalcSHA256(const void *block,
-                         clBuffer<cl_uint> &midstate,
-                         cl_command_queue queue,
-                         cl_kernel sha256kernel)
-{
-  SHA_256 sha;
-  sha.init();
-  sha.transform((const unsigned char*)block, 1u);
-  for(int i = 0; i < 8; ++i)
-    midstate[i] = sha.m_h[i];
-  
-  uint32_t *p = ((uint32_t*)block)+16;   
-  cl_uint msg_merkle = sha2_pack(p[0]);
-  cl_uint msg_time = sha2_pack(p[1]);
-  cl_uint msg_bits = sha2_pack(p[2]);
-  
-  uint32_t msg[16];
-  msg[0] = msg_merkle;
-  msg[1] = msg_time;
-  msg[2] = msg_bits;
-  msg[4] = sha2_pack(0x80);
-  for(int i = 5; i < 15; ++i)
-    msg[i] = 0;
-  msg[15] = 640;  
-  
-  uint32_t out[8];
-  memcpy(out, midstate.HostData, 8*4);
-  uint32_t W[64];       // 2 [16-17]
-  uint32_t temp1[64];   // 3
-  uint32_t temp2[64];   // 4
-  uint32_t new1[64];    // 3
-  uint32_t new2[64];    // 3
-  sha256Export(msg, out, W, temp1, temp2, new1, new2);
-  
-  unsigned num = 4;
-  midstate.copyToDevice(queue);
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &msg_merkle));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &msg_time));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &msg_bits));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &W[16]));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &W[17]));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &new1[0]));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &new1[1]));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &new1[2]));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &new2[0]));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &new2[1]));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &new2[2]));
-  OCL(clSetKernelArg(sha256kernel, num++, sizeof(cl_uint), &temp2[3]));
-}
-
 void precalcSHA256(const void *block,
                    uint32_t *midstate,
                    sha256precalcData *data)

@@ -443,12 +443,22 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 			testParams.nBits = blockheader.bits;
 			
 			unsigned target = TargetGetLength(blockheader.bits);
-// 			if(target > mConfig.TARGET){
-// 				printf("ERROR: This miner is compiled with the wrong target: %d (required target %d)\n", mConfig.TARGET, target);
-// 				return;
-// 			}
-
-			simplePrecalcSHA256(&blockheader, hashmod.midstate, mBig, mHashMod);
+      
+      sha256precalcData data;
+      precalcSHA256(&blockheader, hashmod.midstate.HostData, &data);
+      hashmod.midstate.copyToDevice(mBig);
+      OCL(clSetKernelArg(mHashMod, 4, sizeof(cl_uint), &data.merkle));
+      OCL(clSetKernelArg(mHashMod, 5, sizeof(cl_uint), &data.time));
+      OCL(clSetKernelArg(mHashMod, 6, sizeof(cl_uint), &data.nbits));
+      OCL(clSetKernelArg(mHashMod, 7, sizeof(cl_uint), &data.W0));
+      OCL(clSetKernelArg(mHashMod, 8, sizeof(cl_uint), &data.W1));
+      OCL(clSetKernelArg(mHashMod, 9, sizeof(cl_uint), &data.new1_0));
+      OCL(clSetKernelArg(mHashMod, 10, sizeof(cl_uint), &data.new1_1));
+      OCL(clSetKernelArg(mHashMod, 11, sizeof(cl_uint), &data.new1_2));
+      OCL(clSetKernelArg(mHashMod, 12, sizeof(cl_uint), &data.new2_0));
+      OCL(clSetKernelArg(mHashMod, 13, sizeof(cl_uint), &data.new2_1));
+      OCL(clSetKernelArg(mHashMod, 14, sizeof(cl_uint), &data.new2_2));
+      OCL(clSetKernelArg(mHashMod, 15, sizeof(cl_uint), &data.temp2_3));         
 		}
 		
 		// hashmod fetch & dispatch
@@ -519,10 +529,24 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 			if(numhash > 0){
         numhash += mLSize - numhash % mLSize;
 				if(blockheader.nonce > (1u << 31)){
+          sha256precalcData data;
 					blockheader.time += mThreads;
 					blockheader.nonce = 1;
-          simplePrecalcSHA256(&blockheader, hashmod.midstate, mBig, mHashMod);
-				}
+          precalcSHA256(&blockheader, hashmod.midstate.HostData, &data);
+          hashmod.midstate.copyToDevice(mBig);
+          OCL(clSetKernelArg(mHashMod, 4, sizeof(cl_uint), &data.merkle));
+          OCL(clSetKernelArg(mHashMod, 5, sizeof(cl_uint), &data.time));
+          OCL(clSetKernelArg(mHashMod, 6, sizeof(cl_uint), &data.nbits));
+          OCL(clSetKernelArg(mHashMod, 7, sizeof(cl_uint), &data.W0));
+          OCL(clSetKernelArg(mHashMod, 8, sizeof(cl_uint), &data.W1));
+          OCL(clSetKernelArg(mHashMod, 9, sizeof(cl_uint), &data.new1_0));
+          OCL(clSetKernelArg(mHashMod, 10, sizeof(cl_uint), &data.new1_1));
+          OCL(clSetKernelArg(mHashMod, 11, sizeof(cl_uint), &data.new1_2));
+          OCL(clSetKernelArg(mHashMod, 12, sizeof(cl_uint), &data.new2_0));
+          OCL(clSetKernelArg(mHashMod, 13, sizeof(cl_uint), &data.new2_1));
+          OCL(clSetKernelArg(mHashMod, 14, sizeof(cl_uint), &data.new2_2));
+          OCL(clSetKernelArg(mHashMod, 15, sizeof(cl_uint), &data.temp2_3));          
+        }
 
 				size_t globalOffset[] = { blockheader.nonce, 1u, 1u };
 				size_t globalSize[] = { (unsigned)numhash, 1u, 1u };
@@ -628,7 +652,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 		
 		// check candis
 		if(candis.size()){
-			//printf("checking %d candis\n", (int)candis.size());
+			// printf("checking %d candis\n", (int)candis.size());
 			mpz_class chainorg;
 			mpz_class multi;
 			for(unsigned i = 0; i < candis.size(); ++i){

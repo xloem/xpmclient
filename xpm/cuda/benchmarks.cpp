@@ -36,7 +36,7 @@ static const char *gCUDAKernelNames[] = {
   "_Z20multiplyBenchmark352PjS_S_j",
   "_Z22fermatTestBenchMark320PjS_j",
   "_Z22fermatTestBenchMark352PjS_j",
-  "_Z18bhashmodUsePrecalcPjS_S_S_jjjjjjjjjjjj",
+  "_Z18bhashmodUsePrecalcjPjS_S_S_jjjjjjjjjjjj",
   "_Z11setup_sievePjS_PKjS_jS_",
   "_Z5sievePjS_P5uint2",
   "_Z7s_sievePKjS0_P8fermat_tS2_Pjjjj"
@@ -417,7 +417,7 @@ void cudaHashmodBenchmark(CUfunction *kernels,
   const unsigned iterationsNum = 64;
   CUfunction mHashMod = kernels[CUDAKernelHashMod];
   
-  PrimeMiner::search_t_cuda hashmod;
+  PrimeMiner::search_t hashmod;
   PrimeMiner::block_t blockheader;
   
   hashmod.midstate.init(8*sizeof(uint32_t), false);
@@ -451,7 +451,9 @@ void cudaHashmodBenchmark(CUfunction *kernels,
     hashmod.midstate.copyToDevice();
     hashmod.count.copyToDevice();
     
+    int nonceOffset = 0;
     void *arguments[] = {
+      &nonceOffset,
       &hashmod.found._deviceData,
       &hashmod.count._deviceData,
       &hashmod.primorialBitField._deviceData,
@@ -576,7 +578,7 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
   CUfunction mSieve = kernels[CUDAKernelSieve];
   CUfunction mSieveSearch = kernels[CUDAKernelSieveSearch];
   
-  PrimeMiner::search_t_cuda hashmod;
+  PrimeMiner::search_t hashmod;
   PrimeMiner::block_t blockheader;
   lifoBuffer<PrimeMiner::hash_t> hashes(PW);
   cudaBuffer<uint32_t> hashBuf;
@@ -612,7 +614,7 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
     current.copyToDevice();
   }  
   
-  hashmod.midstate.init(8*sizeof(cl_uint), false);
+  hashmod.midstate.init(8, false);
   hashmod.found.init(2048, false);
   hashmod.primorialBitField.init(2048, false);
   hashmod.count.init(1, false);
@@ -637,7 +639,9 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
   hashmod.midstate.copyToDevice();
   hashmod.count.copyToDevice();
 
+  int nonceOffset = 0;
   void *arguments[] = {
+    &nonceOffset,
     &hashmod.found._deviceData,
     &hashmod.count._deviceData,
     &hashmod.primorialBitField._deviceData,

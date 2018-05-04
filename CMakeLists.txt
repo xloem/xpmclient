@@ -49,7 +49,6 @@ set(LIBRARIES
   ${SODIUM_LIBRARY}
   ${GMP_LIBRARY}
   ${PROTOBUF_LIBRARY}
-  ${OPENCL_LIBRARY}
   config4cpp
 )
 
@@ -83,7 +82,7 @@ target_include_directories(xpmclient PUBLIC
   ${CMAKE_SOURCE_DIR}/xpm/opencl
 )
 
-target_link_libraries(xpmclient ${LIBRARIES})
+target_link_libraries(xpmclient ${LIBRARIES} ${OPENCL_LIBRARY})
 
 if (STATIC_BUILD)
   set_target_properties(xpmclient PROPERTIES LINK_SEARCH_END_STATIC 1)
@@ -99,7 +98,6 @@ if (CUDA_FOUND)
     adl.cpp
     baseclient.cpp
     cudautil.cpp
-    opencl.cpp
     prime.cpp
     primes.cpp
     sha256.cpp
@@ -145,7 +143,7 @@ SET_TARGET_PROPERTIES(zcashgpuclient PROPERTIES
   COMPILE_FLAGS "-std=c++0x -msse -msse2 -msse3" 
 )
 
-target_link_libraries(zcashgpuclient ${LIBRARIES})
+target_link_libraries(zcashgpuclient ${LIBRARIES} ${OPENCL_LIBRARY})
 
 if (STATIC_BUILD)
   set_target_properties(zcashgpuclient PROPERTIES LINK_SEARCH_END_STATIC 1)

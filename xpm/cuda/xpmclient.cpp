@@ -25,8 +25,6 @@ extern "C" {
 
 #include <math.h>
 
-cl_platform_id gPlatform = 0;
-
 std::vector<unsigned> gPrimes2;
 
 double GetPrimeDifficulty(unsigned int nBits)
@@ -50,10 +48,10 @@ PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned sievePerRound, un
 	
 	mBlockSize = 0;
 	mConfig = {0};
-	
+
   _context = 0;
-	mBig = 0;
-	mSmall = 0;
+ 	mHMFermatStream = 0;
+ 	mSieveStream = 0;
 	mHashMod = 0;
 	mSieveSetup = 0;
 	mSieve = 0;
@@ -61,76 +59,64 @@ PrimeMiner::PrimeMiner(unsigned id, unsigned threads, unsigned sievePerRound, un
 	mFermatSetup = 0;
 	mFermatKernel352 = 0;
   mFermatKernel320 = 0;  
-	mFermatCheck = 0;
+	mFermatCheck = 0;  
 	
 	MakeExit = false;
 	
 }
 
 PrimeMiner::~PrimeMiner() {
-	
-  if (_context) OCL(clReleaseContext(_context));
-	if(mBig) OCL(clReleaseCommandQueue(mBig));
-	if(mSmall) OCL(clReleaseCommandQueue(mSmall));
-	
-	if(mHashMod) OCL(clReleaseKernel(mHashMod));
-	if(mSieveSetup) OCL(clReleaseKernel(mSieveSetup));
-	if(mSieve) OCL(clReleaseKernel(mSieve));
-	if(mSieveSearch) OCL(clReleaseKernel(mSieveSearch));
-	if(mFermatSetup) OCL(clReleaseKernel(mFermatSetup));
-	if(mFermatKernel352) OCL(clReleaseKernel(mFermatKernel352));
-  if(mFermatKernel320) OCL(clReleaseKernel(mFermatKernel320));  
-	if(mFermatCheck) OCL(clReleaseKernel(mFermatCheck));
-	
+  if (mSieveStream)
+    cuStreamDestroy(mSieveStream);
+  if (mHMFermatStream)
+    cuStreamDestroy(mHMFermatStream);
+  if (_context)
+	  cuCtxDestroy(_context);
 }
 
-
-bool PrimeMiner::Initialize(cl_context context, cl_program program, cl_device_id dev) {
-	
-	cl_int error;
+bool PrimeMiner::Initialize(CUcontext context, CUdevice device, CUmodule module)
+{
   _context = context;
+  cuCtxSetCurrent(context);
   
-  mHashMod = clCreateKernel(program, "bhashmodUsePrecalc", &error);
-	mSieveSetup = clCreateKernel(program, "setup_sieve", &error);
-	mSieve = clCreateKernel(program, "sieve", &error);
-	mSieveSearch = clCreateKernel(program, "s_sieve", &error);
-	mFermatSetup = clCreateKernel(program, "setup_fermat", &error);
-	mFermatKernel352 = clCreateKernel(program, "fermat_kernel", &error);
-  mFermatKernel320 = clCreateKernel(program, "fermat_kernel320", &error);  
-	mFermatCheck = clCreateKernel(program, "check_fermat", &error);
-	OCLR(error, false);
-	
-	mBig = clCreateCommandQueue(context, dev, 0, &error);
-	mSmall = clCreateCommandQueue(context, dev, 0, &error);
-	OCLR(error, false);
-	
-	{
-		clBuffer<config_t> config;
-		config.init(context, 1);
-		
-		cl_kernel getconf = clCreateKernel(program, "getconfig", &error);
-		OCLR(error, false);
-                size_t globalSize = 1;
-                size_t localSize = 1;
-		OCLR(clSetKernelArg(getconf, 0, sizeof(cl_mem), &config.DeviceData), false);
-		OCLR(clEnqueueNDRangeKernel(mSmall, getconf, 1, 0, &globalSize, &localSize, 0, 0, 0), false);
-		config.copyToHost(mSmall, true);
-		
-		mConfig = *config.HostData;
-		
-		OCLR(clReleaseKernel(getconf), false);
-	}
-	
-	printf("N=%d SIZE=%d STRIPES=%d WIDTH=%d PCOUNT=%d TARGET=%d\n",
-			mConfig.N, mConfig.SIZE, mConfig.STRIPES, mConfig.WIDTH, mConfig.PCOUNT, mConfig.TARGET);
-	
-	cl_uint numCU;
-	OCLR(clGetDeviceInfo(dev, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &numCU, 0), false);
-	mBlockSize = numCU * 4 * 64;
-	printf("GPU %d: has %d CUs\n", mID, numCU);
-	
-	return true;
-	
+  // Lookup kernels by mangled name
+  CUDA_SAFE_CALL(cuModuleGetFunction(&mHashMod, module, "_Z18bhashmodUsePrecalcjPjS_S_S_jjjjjjjjjjjj"));
+  CUDA_SAFE_CALL(cuModuleGetFunction(&mSieveSetup, module, "_Z11setup_sievePjS_PKjS_jS_"));
+  CUDA_SAFE_CALL(cuModuleGetFunction(&mSieve, module, "_Z5sievePjS_P5uint2"));
+  CUDA_SAFE_CALL(cuModuleGetFunction(&mSieveSearch, module, "_Z7s_sievePKjS0_P8fermat_tS2_Pjjjj"));
+  CUDA_SAFE_CALL(cuModuleGetFunction(&mFermatSetup, module, "_Z12setup_fermatPjPK8fermat_tS_"));
+  CUDA_SAFE_CALL(cuModuleGetFunction(&mFermatKernel352, module, "_Z13fermat_kernelPhPKj"));
+  CUDA_SAFE_CALL(cuModuleGetFunction(&mFermatKernel320, module, "_Z16fermat_kernel320PhPKj"));
+  CUDA_SAFE_CALL(cuModuleGetFunction(&mFermatCheck, module, "_Z12check_fermatP8fermat_tPjS0_S1_PKhPKS_j"));  
+  
+  CUDA_SAFE_CALL(cuStreamCreate(&mSieveStream, CU_STREAM_NON_BLOCKING));
+  CUDA_SAFE_CALL(cuStreamCreate(&mHMFermatStream, CU_STREAM_NON_BLOCKING));
+  
+  // Get miner config
+  {
+    CUfunction getConfigKernel;
+    CUDA_SAFE_CALL(cuModuleGetFunction(&getConfigKernel, module, "_Z9getconfigP8config_t"));  
+    
+    cudaBuffer<config_t> config;
+    config.init(1, false);
+    void *args[] = { &config._deviceData };
+    CUDA_SAFE_CALL(cuLaunchKernel(getConfigKernel,
+                                  1, 1, 1,
+                                  1, 1, 1,
+                                  0, NULL, args, 0));
+    CUDA_SAFE_CALL(cuCtxSynchronize());
+    config.copyToHost();
+    mConfig = *config._hostData;
+  }
+
+  printf("N=%d SIZE=%d STRIPES=%d WIDTH=%d PCOUNT=%d TARGET=%d\n",
+         mConfig.N, mConfig.SIZE, mConfig.STRIPES, mConfig.WIDTH, mConfig.PCOUNT, mConfig.TARGET);
+  
+  int computeUnits;
+  CUDA_SAFE_CALL(cuDeviceGetAttribute(&computeUnits, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, device));
+  mBlockSize = computeUnits * 4 * 64;
+  printf("GPU %d: has %d CUs\n", mID, computeUnits);
+  return true;
 }
 
 void PrimeMiner::InvokeMining(void *args, void *ctx, void *pipe) {
@@ -143,48 +129,43 @@ void PrimeMiner::FermatInit(pipeline_t &fermat, unsigned mfs)
 {
   fermat.current = 0;
   fermat.bsize = 0;
-  fermat.input.init(_context, mfs*mConfig.N, CL_MEM_HOST_NO_ACCESS);
-  fermat.output.init(_context, mfs, CL_MEM_HOST_NO_ACCESS);
+  fermat.input.init(mfs*mConfig.N, true);
+  fermat.output.init(mfs, true);
 
   for(int i = 0; i < 2; ++i){
-    fermat.buffer[i].info.init(_context, mfs, CL_MEM_HOST_NO_ACCESS);
-    fermat.buffer[i].count.init(_context, 1, CL_MEM_ALLOC_HOST_PTR);
+    fermat.buffer[i].info.init(mfs, true);
+    fermat.buffer[i].count.init(1, false); // CL_MEM_ALLOC_HOST_PTR
   }
 }
 
 void PrimeMiner::FermatDispatch(pipeline_t &fermat,
-                                clBuffer<fermat_t> sieveBuffers[SW][FERMAT_PIPELINES][2],
-                                clBuffer<cl_uint> candidatesCountBuffers[SW][2],
+                                cudaBuffer<fermat_t> sieveBuffers[SW][FERMAT_PIPELINES][2],
+                                cudaBuffer<uint32_t> candidatesCountBuffers[SW][2],
                                 unsigned pipelineIdx,
                                 int ridx,
                                 int widx,
                                 uint64_t &testCount,
                                 uint64_t &fermatCount,
-                                cl_kernel fermatKernel,
+                                CUfunction fermatKernel,
                                 unsigned sievePerRound)
-{ 
+{
   // fermat dispatch
   {
-    cl_uint& count = fermat.buffer[ridx].count[0];
-    
-    cl_uint left = fermat.buffer[widx].count[0] - fermat.bsize;
+    uint32_t &count = fermat.buffer[ridx].count[0];
+    uint32_t left = fermat.buffer[widx].count[0] - fermat.bsize;
     if(left > 0){
-      OCL(clEnqueueCopyBuffer(  mBig,
-                                fermat.buffer[widx].info.DeviceData,
-                                fermat.buffer[ridx].info.DeviceData,
-                                fermat.bsize*sizeof(fermat_t), count*sizeof(fermat_t),
-                                left*sizeof(fermat_t), 0, 0, 0));
+      cuMemcpyDtoDAsync(fermat.buffer[ridx].info._deviceData + count*sizeof(fermat_t),
+                        fermat.buffer[widx].info._deviceData + fermat.bsize*sizeof(fermat_t),
+                        left*sizeof(fermat_t), mHMFermatStream);
       count += left;
     }
     
     for(int i = 0; i < sievePerRound; ++i){
-      cl_uint& avail = (candidatesCountBuffers[i][ridx])[pipelineIdx];
+      uint32_t &avail = (candidatesCountBuffers[i][ridx])[pipelineIdx];
       if(avail){
-        OCL(clEnqueueCopyBuffer(mBig,
-                                sieveBuffers[i][pipelineIdx][ridx].DeviceData,
-                                fermat.buffer[ridx].info.DeviceData,
-                                0, count*sizeof(fermat_t),
-                                avail*sizeof(fermat_t), 0, 0, 0));
+        cuMemcpyDtoDAsync(fermat.buffer[ridx].info._deviceData + count*sizeof(fermat_t),
+                          sieveBuffers[i][pipelineIdx][ridx]._deviceData,
+                          avail*sizeof(fermat_t), mHMFermatStream);
         count += avail;
         testCount += avail;
         fermatCount += avail;
@@ -193,33 +174,67 @@ void PrimeMiner::FermatDispatch(pipeline_t &fermat,
     }
     
     fermat.buffer[widx].count[0] = 0;
-    fermat.buffer[widx].count.copyToDevice(mBig, false);
+    fermat.buffer[widx].count.copyToDevice(mHMFermatStream);
     
     fermat.bsize = 0;
     if(count > mBlockSize){                 
       fermat.bsize = count - (count % mBlockSize);
-      size_t globalSize[] = { fermat.bsize, 1, 1 };
-      size_t localSize[] = { 64, 1, 1 };
-      OCL(clSetKernelArg(mFermatSetup, 0, sizeof(cl_mem), &fermat.input.DeviceData));      
-      OCL(clSetKernelArg(mFermatSetup, 1, sizeof(cl_mem), &fermat.buffer[ridx].info.DeviceData));
-      OCL(clEnqueueNDRangeKernel(mBig, mFermatSetup, 1, 0, globalSize, 0, 0, 0, 0));
-      OCL(clSetKernelArg(fermatKernel, 0, sizeof(cl_mem), &fermat.output.DeviceData));
-      OCL(clSetKernelArg(fermatKernel, 1, sizeof(cl_mem), &fermat.input.DeviceData));      
-      OCL(clEnqueueNDRangeKernel(mBig, fermatKernel, 1, 0, globalSize, localSize, 0, 0, 0));
-      OCL(clSetKernelArg(mFermatCheck, 0, sizeof(cl_mem), &fermat.buffer[widx].info.DeviceData));
-      OCL(clSetKernelArg(mFermatCheck, 1, sizeof(cl_mem), &fermat.buffer[widx].count.DeviceData));
-      OCL(clSetKernelArg(mFermatCheck, 4, sizeof(cl_mem), &fermat.output.DeviceData));      
-      OCL(clSetKernelArg(mFermatCheck, 5, sizeof(cl_mem), &fermat.buffer[ridx].info.DeviceData));
-      OCL(clEnqueueNDRangeKernel(mBig, mFermatCheck, 1, 0, globalSize, 0, 0, 0, 0));
-      fermat.buffer[widx].count.copyToHost(mBig, false);
+      {
+        // Fermat test setup
+        void *arguments[] = {
+          &fermat.input._deviceData,
+          &fermat.buffer[ridx].info._deviceData,
+          &hashBuf._deviceData
+        };
+        
+        CUDA_SAFE_CALL(cuLaunchKernel(mFermatSetup,
+                                      fermat.bsize/256, 1, 1,                                
+                                      256, 1, 1,
+                                      0, mHMFermatStream, arguments, 0));
+      }
+      
+      {
+        // Fermat test
+        void *arguments[] = {
+          &fermat.output._deviceData,
+          &fermat.input._deviceData
+        };
+        
+        CUDA_SAFE_CALL(cuLaunchKernel(fermatKernel,
+                                      fermat.bsize/64, 1, 1,                                
+                                      64, 1, 1,
+                                      0, mHMFermatStream, arguments, 0));        
+      }
+      
+      {
+        // Fermat check
+        void *arguments[] = {
+          &fermat.buffer[widx].info._deviceData,
+          &fermat.buffer[widx].count._deviceData,
+          &final.info._deviceData,
+          &final.count._deviceData,
+          &fermat.output._deviceData,
+          &fermat.buffer[ridx].info._deviceData,
+          &mDepth
+        };        
+        
+        CUDA_SAFE_CALL(cuLaunchKernel(mFermatCheck,
+                                      fermat.bsize/256, 1, 1,                                
+                                      256, 1, 1,
+                                      0, mHMFermatStream, arguments, 0));        
+      }
+      
+//       fermat.buffer[widx].count.copyToHost(mBig);
     } else {
-//       printf(" * warning: no enough candidates available (pipeline %u)\n", pipelineIdx);
+      // printf(" * warning: no enough candidates available (pipeline %u)\n", pipelineIdx);
     }
-    //printf("fermat: total of %d infos, bsize = %d\n", count, fermat.bsize);
+    // printf("fermat: total of %d infos, bsize = %d\n", count, fermat.bsize);
   }
 }
 
 void PrimeMiner::Mining(void *ctx, void *pipe) {
+  cuCtxSetCurrent(_context);
+  time_t starttime = time(0);
 	void* blocksub = zmq_socket(ctx, ZMQ_SUB);
 	void* worksub = zmq_socket(ctx, ZMQ_SUB);
 	void* statspush = zmq_socket(ctx, ZMQ_PUSH);
@@ -265,38 +280,36 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 	unsigned iteration = 0;
 	mpz_class primorial[maxHashPrimorial];
 	block_t blockheader;
-	search_t hashmod;
+  search_t hashmod;
+  sha256precalcData precalcData;
 
   lifoBuffer<hash_t> hashes(PW);
-	clBuffer<cl_uint> hashBuf;
-	clBuffer<cl_uint> sieveBuf[2];
-	clBuffer<cl_uint> sieveOff[2];
-  clBuffer<fermat_t> sieveBuffers[SW][FERMAT_PIPELINES][2];
-  clBuffer<cl_uint> candidatesCountBuffers[SW][2];
-	pipeline_t fermat320;
+	cudaBuffer<uint32_t> sieveBuf[2];
+	cudaBuffer<uint32_t> sieveOff[2];
+  cudaBuffer<fermat_t> sieveBuffers[SW][FERMAT_PIPELINES][2];
+  cudaBuffer<uint32_t> candidatesCountBuffers[SW][2];
+  pipeline_t fermat320;
   pipeline_t fermat352;
 	CPrimalityTestParams testParams;
 	std::vector<fermat_t> candis;
   unsigned numHashCoeff = 32768;
-	
-  cl_mem primeBuf[maxHashPrimorial];
-  cl_mem primeBuf2[maxHashPrimorial];
+
+  cudaBuffer<uint32_t> primeBuf[maxHashPrimorial];
+  cudaBuffer<uint32_t> primeBuf2[maxHashPrimorial];
+  
+  CUevent sieveEvent;
+  CUDA_SAFE_CALL(cuEventCreate(&sieveEvent, CU_EVENT_BLOCKING_SYNC));
   
   for (unsigned i = 0; i < maxHashPrimorial - mPrimorial; i++) {
-    cl_int error = 0;
-    primeBuf[i] = clCreateBuffer(_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                                 mConfig.PCOUNT*sizeof(cl_uint), &gPrimes[mPrimorial+i+1], &error);
-    OCL(error);
-    primeBuf2[i] = clCreateBuffer(_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                                  mConfig.PCOUNT*2*sizeof(cl_uint), &gPrimes2[2*(mPrimorial+i)+2], &error);
-    OCL(error);
-    
+    primeBuf[i].init(mConfig.PCOUNT, true);
+    primeBuf[i].copyToDevice(&gPrimes[mPrimorial+i+1]);
+    primeBuf2[i].init(mConfig.PCOUNT*2, true);
+    primeBuf2[i].copyToDevice(&gPrimes2[2*(mPrimorial+i)+2]);
     mpz_class p = 1;
     for(unsigned j = 0; j <= mPrimorial+i; j++)
-      p *= gPrimes[j];
-    
+      p *= gPrimes[j];    
     primorial[i] = p;
-  }
+  }  
   
 	{
 		unsigned primorialbits = mpz_sizeinbase(primorial[0].get_mpz_t(), 2);
@@ -305,38 +318,38 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 		printf("GPU %d: primorial = %s (%d bits)\n", mID, primorial[0].get_str(10).c_str(), primorialbits);
 		printf("GPU %d: sieve size = %s (%d bits)\n", mID, sievesize.get_str(10).c_str(), sievebits);
 	}
-	
-	hashmod.midstate.init(_context, 8*sizeof(cl_uint), CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY);
-	hashmod.found.init(_context, 128, CL_MEM_ALLOC_HOST_PTR);
-  hashmod.primorialBitField.init(_context, 128, CL_MEM_ALLOC_HOST_PTR);
-	hashmod.count.init(_context, 1, CL_MEM_ALLOC_HOST_PTR);
-	hashBuf.init(_context, PW*mConfig.N, CL_MEM_READ_WRITE);
+  
+  hashmod.midstate.init(8, false);
+  hashmod.found.init(128, false);
+  hashmod.primorialBitField.init(128, false);
+  hashmod.count.init(1, false);
+  hashBuf.init(PW*mConfig.N, false);
 	
 	for(int sieveIdx = 0; sieveIdx < SW; ++sieveIdx) {
     for(int instIdx = 0; instIdx < 2; ++instIdx){    
       for (int pipelineIdx = 0; pipelineIdx < FERMAT_PIPELINES; pipelineIdx++)
-        sieveBuffers[sieveIdx][pipelineIdx][instIdx].init(_context, MSO, CL_MEM_HOST_NO_ACCESS);
+        sieveBuffers[sieveIdx][pipelineIdx][instIdx].init(MSO, true);
       
-      candidatesCountBuffers[sieveIdx][instIdx].init(_context, FERMAT_PIPELINES, CL_MEM_ALLOC_HOST_PTR);
+      candidatesCountBuffers[sieveIdx][instIdx].init(FERMAT_PIPELINES, false); // CL_MEM_ALLOC_HOST_PTR
     }
   }
 	
 	for(int k = 0; k < 2; ++k){
-		sieveBuf[k].init(_context, mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, CL_MEM_HOST_NO_ACCESS);
-		sieveOff[k].init(_context, mConfig.PCOUNT*mConfig.WIDTH, CL_MEM_HOST_NO_ACCESS);
+		sieveBuf[k].init(mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, true);
+		sieveOff[k].init(mConfig.PCOUNT*mConfig.WIDTH, true);
 	}
 	
-	final.info.init(_context, MFS/(4*mDepth), CL_MEM_ALLOC_HOST_PTR);
-  final.count.init(_context, 1, CL_MEM_ALLOC_HOST_PTR);	
-	
-	FermatInit(fermat320, MFS);
-  FermatInit(fermat352, MFS);  
+	final.info.init(MFS/(4*mDepth), false); // CL_MEM_ALLOC_HOST_PTR
+  final.count.init(1, false);	 // CL_MEM_ALLOC_HOST_PTR
 
-  clBuffer<cl_uint> modulosBuf[maxHashPrimorial];
+  FermatInit(fermat320, MFS);
+  FermatInit(fermat352, MFS);    
+
+  cudaBuffer<uint32_t> modulosBuf[maxHashPrimorial];
   unsigned modulosBufferSize = mConfig.PCOUNT*(mConfig.N-1);   
   for (unsigned bufIdx = 0; bufIdx < maxHashPrimorial-mPrimorial; bufIdx++) {
-    clBuffer<cl_uint> &current = modulosBuf[bufIdx];
-    current.init(_context, modulosBufferSize, CL_MEM_READ_ONLY);
+    cudaBuffer<uint32_t> &current = modulosBuf[bufIdx];
+    current.init(modulosBufferSize, false);
     for (unsigned i = 0; i < mConfig.PCOUNT; i++) {
       mpz_class X = 1;
       for (unsigned j = 0; j < mConfig.N-1; j++) {
@@ -346,23 +359,8 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
       }
     }
     
-    current.copyToDevice(mSmall);
-  }
-
-	OCL(clSetKernelArg(mHashMod, 0, sizeof(cl_mem), &hashmod.found.DeviceData));
-	OCL(clSetKernelArg(mHashMod, 1, sizeof(cl_mem), &hashmod.count.DeviceData));
-	OCL(clSetKernelArg(mHashMod, 2, sizeof(cl_mem), &hashmod.primorialBitField.DeviceData));
-	OCL(clSetKernelArg(mHashMod, 3, sizeof(cl_mem), &hashmod.midstate.DeviceData));
-	OCL(clSetKernelArg(mSieveSetup, 0, sizeof(cl_mem), &sieveOff[0].DeviceData));
-	OCL(clSetKernelArg(mSieveSetup, 1, sizeof(cl_mem), &sieveOff[1].DeviceData));
-	OCL(clSetKernelArg(mSieveSetup, 3, sizeof(cl_mem), &hashBuf.DeviceData));
-	OCL(clSetKernelArg(mSieveSearch, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData));
-	OCL(clSetKernelArg(mSieveSearch, 1, sizeof(cl_mem), &sieveBuf[1].DeviceData));
-  OCL(clSetKernelArg(mSieveSearch, 7, sizeof(cl_uint), &mDepth));  
-	OCL(clSetKernelArg(mFermatSetup, 2, sizeof(cl_mem), &hashBuf.DeviceData));
-	OCL(clSetKernelArg(mFermatCheck, 2, sizeof(cl_mem), &final.info.DeviceData));
-	OCL(clSetKernelArg(mFermatCheck, 3, sizeof(cl_mem), &final.count.DeviceData));
-	OCL(clSetKernelArg(mFermatCheck, 6, sizeof(unsigned), &mDepth));
+    current.copyToDevice();
+  }    
 
 	czmq_signal(pipe);
 	czmq_poll(pipe, -1);
@@ -443,17 +441,15 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 			testParams.nBits = blockheader.bits;
 			
 			unsigned target = TargetGetLength(blockheader.bits);
-// 			if(target > mConfig.TARGET){
-// 				printf("ERROR: This miner is compiled with the wrong target: %d (required target %d)\n", mConfig.TARGET, target);
-// 				return;
-// 			}
-
-			simplePrecalcSHA256(&blockheader, hashmod.midstate, mBig, mHashMod);
+      precalcSHA256(&blockheader, hashmod.midstate._hostData, &precalcData);
+      hashmod.count[0] = 0;
+      hashmod.midstate.copyToDevice(mHMFermatStream);
+      hashmod.count.copyToDevice(mHMFermatStream);
 		}
 		
 		// hashmod fetch & dispatch
 		{
-// 			printf("got %d new hashes\n", hashmod.count[0]);
+// 			printf("got %d new hashes\n", hashmod.count[0]); fflush(stdout);
 			for(unsigned i = 0; i < hashmod.count[0]; ++i) {
 				hash_t hash;
 				hash.iter = iteration;
@@ -509,7 +505,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 			}
 			
 			if (hashmod.count[0])
-        hashBuf.copyToDevice(mSmall, false);
+        hashBuf.copyToDevice(mSieveStream);
 			
 			//printf("hashlist.size() = %d\n", (int)hashlist.size());
 			hashmod.count[0] = 0;
@@ -521,20 +517,39 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 				if(blockheader.nonce > (1u << 31)){
 					blockheader.time += mThreads;
 					blockheader.nonce = 1;
-          simplePrecalcSHA256(&blockheader, hashmod.midstate, mBig, mHashMod);
+          precalcSHA256(&blockheader, hashmod.midstate._hostData, &precalcData);
 				}
 
-				size_t globalOffset[] = { blockheader.nonce, 1u, 1u };
-				size_t globalSize[] = { (unsigned)numhash, 1u, 1u };
-        size_t localSize[] = { mLSize, 1 };      
-				hashmod.count.copyToDevice(mBig, false);
-        OCL(clEnqueueNDRangeKernel(mBig, mHashMod, 1, globalOffset, globalSize, localSize, 0, 0, 0));
-				hashmod.found.copyToHost(mBig, false);
-        hashmod.primorialBitField.copyToHost(mBig, false);
-				hashmod.count.copyToHost(mBig, false);
+				hashmod.midstate.copyToDevice(mHMFermatStream);
+				hashmod.count.copyToDevice(mHMFermatStream);
+
+        void *arguments[] = {
+          &blockheader.nonce,
+          &hashmod.found._deviceData,
+          &hashmod.count._deviceData,
+          &hashmod.primorialBitField._deviceData,
+          &hashmod.midstate._deviceData,
+          &precalcData.merkle,
+          &precalcData.time,
+          &precalcData.nbits,
+          &precalcData.W0,
+          &precalcData.W1,
+          &precalcData.new1_0,
+          &precalcData.new1_1,
+          &precalcData.new1_2,
+          &precalcData.new2_0,
+          &precalcData.new2_1,
+          &precalcData.new2_2,
+          &precalcData.temp2_3
+        };
+        
+        CUDA_SAFE_CALL(cuLaunchKernel(mHashMod,
+                                      numhash/mLSize, 1, 1,                                
+                                      mLSize, 1, 1,
+                                      0, mHMFermatStream, arguments, 0));
+        
 				blockheader.nonce += numhash;
 			}
-			
 		}
 
 		int ridx = iteration % 2;
@@ -550,70 +565,107 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
           break;
         }
         
-        cl_int hid = hashes.pop();
-        unsigned primorialIdx = hashes.get(hid).primorialIdx;
-        OCL(clSetKernelArg(mSieveSetup, 2, sizeof(cl_mem), &primeBuf[primorialIdx]));
-        OCL(clSetKernelArg(mSieveSetup, 5, sizeof(cl_mem), &modulosBuf[primorialIdx].DeviceData));          
-        OCL(clSetKernelArg(mSieve, 2, sizeof(cl_mem), &primeBuf2[primorialIdx]));        
-
+        int hid = hashes.pop();
+        unsigned primorialIdx = hashes.get(hid).primorialIdx;    
+        
+        candidatesCountBuffers[i][widx].copyToDevice(mSieveStream);
+        
         {
-					OCL(clSetKernelArg(mSieveSetup, 4, sizeof(cl_int), &hid));
-					size_t globalSize[] = { mConfig.PCOUNT, 1, 1 };
-					OCL(clEnqueueNDRangeKernel(mSmall, mSieveSetup, 1, 0, globalSize, 0, 0, 0, 0));
+          void *arguments[] = {
+            &sieveOff[0]._deviceData,
+            &sieveOff[1]._deviceData,
+            &primeBuf[primorialIdx]._deviceData,
+            &hashBuf._deviceData,
+            &hid,
+            &modulosBuf[primorialIdx]._deviceData
+          };
+          
+          CUDA_SAFE_CALL(cuLaunchKernel(mSieveSetup,
+                                        mConfig.PCOUNT/mLSize, 1, 1,                                
+                                        mLSize, 1, 1,
+                                        0, mSieveStream, arguments, 0));          
 				}
 
         {
-          OCL(clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[0].DeviceData));
-          OCL(clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[0].DeviceData));
-          size_t globalSize[] = { mLSize*mConfig.STRIPES/2, mConfig.WIDTH};
-          size_t localSize[] = { mLSize, 1 };          
-          OCL(clEnqueueNDRangeKernel(mSmall, mSieve, 2, 0, globalSize, localSize, 0, 0, 0));
+          void *arguments[] = {
+            &sieveBuf[0]._deviceData,
+            &sieveOff[0]._deviceData,
+            &primeBuf2[primorialIdx]._deviceData
+          };
+      
+          CUDA_SAFE_CALL(cuLaunchKernel(mSieve,
+                                        mConfig.STRIPES/2, mConfig.WIDTH, 1,                                
+                                        mLSize, 1, 1,
+                                        0, mSieveStream, arguments, 0));
         }
         
         {
-          OCL(clSetKernelArg(mSieve, 0, sizeof(cl_mem), &sieveBuf[1].DeviceData));
-          OCL(clSetKernelArg(mSieve, 1, sizeof(cl_mem), &sieveOff[1].DeviceData));              
-          size_t globalSize[] = { mLSize*mConfig.STRIPES/2, mConfig.WIDTH};
-          size_t localSize[] = { mLSize, 1 };          
-          OCL(clEnqueueNDRangeKernel(mSmall, mSieve, 2, 0, globalSize, localSize, 0, 0, 0));
+          void *arguments[] = {
+            &sieveBuf[1]._deviceData,
+            &sieveOff[1]._deviceData,
+            &primeBuf2[primorialIdx]._deviceData
+          };
+      
+          CUDA_SAFE_CALL(cuLaunchKernel(mSieve,
+                                        mConfig.STRIPES/2, mConfig.WIDTH, 1,                                
+                                        mLSize, 1, 1,
+                                        0, mSieveStream, arguments, 0));          
+          
         }         
-
-				candidatesCountBuffers[i][widx].copyToDevice(mSmall, false);
          
 				{
-          cl_uint multiplierSize = mpz_sizeinbase(hashes.get(hid).shash.get_mpz_t(), 2);
-          OCL(clSetKernelArg(mSieveSearch, 2, sizeof(cl_mem), &sieveBuffers[i][0][widx].DeviceData));
-          OCL(clSetKernelArg(mSieveSearch, 3, sizeof(cl_mem), &sieveBuffers[i][1][widx].DeviceData));          
-          OCL(clSetKernelArg(mSieveSearch, 4, sizeof(cl_mem), &candidatesCountBuffers[i][widx].DeviceData));
-					OCL(clSetKernelArg(mSieveSearch, 5, sizeof(cl_int), &hid));
-          OCL(clSetKernelArg(mSieveSearch, 6, sizeof(cl_uint), &multiplierSize));
-					size_t globalSize[] = { mConfig.SIZE*mConfig.STRIPES/2, 1, 1 };
-					OCL(clEnqueueNDRangeKernel(mSmall, mSieveSearch, 1, 0, globalSize, 0, 0, 0, 0));
+          uint32_t multiplierSize = mpz_sizeinbase(hashes.get(hid).shash.get_mpz_t(), 2);
+          void *arguments[] = {
+            &sieveBuf[0]._deviceData,
+            &sieveBuf[1]._deviceData,
+            &sieveBuffers[i][0][widx]._deviceData,
+            &sieveBuffers[i][1][widx]._deviceData,
+            &candidatesCountBuffers[i][widx]._deviceData,
+            &hid,
+            &multiplierSize,
+            &mDepth
+          };
           
-          candidatesCountBuffers[i][widx].copyToHost(mSmall, false);
+          CUDA_SAFE_CALL(cuLaunchKernel(mSieveSearch,
+                                        (mConfig.SIZE*mConfig.STRIPES/2)/mLSize, 1, 1,
+                                        mLSize, 1, 1,
+                                        0, mSieveStream, arguments, 0));
+          
+          CUDA_SAFE_CALL(cuEventRecord(sieveEvent, mSieveStream)); 
 				}
 			}
 		
     
 		// get candis
 		int numcandis = final.count[0];
-		numcandis = std::min(numcandis, final.info.Size);
+		numcandis = std::min(numcandis, (int)final.info._size);
 		numcandis = std::max(numcandis, 0);
-// 		printf("got %d new candis\n", numcandis);
+//  		printf("got %d new candis\n", numcandis);
 		candis.resize(numcandis);
 		primeCount += numcandis;
 		if(numcandis)
-			memcpy(&candis[0], final.info.HostData, numcandis*sizeof(fermat_t));
+			memcpy(&candis[0], final.info._hostData, numcandis*sizeof(fermat_t));
 		
     final.count[0] = 0;
-    final.count.copyToDevice(mBig, false);    
-    FermatDispatch(fermat320, sieveBuffers, candidatesCountBuffers, 0, ridx, widx, testCount, fermatCount, mFermatKernel320, mSievePerRound);    
+    final.count.copyToDevice(mHMFermatStream);    
+    FermatDispatch(fermat320, sieveBuffers, candidatesCountBuffers, 0, ridx, widx, testCount, fermatCount, mFermatKernel320, mSievePerRound);
     FermatDispatch(fermat352, sieveBuffers, candidatesCountBuffers, 1, ridx, widx, testCount, fermatCount, mFermatKernel352, mSievePerRound);
-    final.info.copyToHost(mBig, false);
-    final.count.copyToHost(mBig, false);         
-		
-		clFlush(mBig);
-		clFlush(mSmall);
+
+    // copyToHost (cuMemcpyDtoHAsync) always blocking sync call!
+    // syncronize our stream one time per iteration
+    // sieve stream is first because it much bigger
+    CUDA_SAFE_CALL(cuEventSynchronize(sieveEvent)); 
+    for (unsigned i = 0; i < mSievePerRound; i++)
+      candidatesCountBuffers[i][widx].copyToHost(mSieveStream);
+    
+    // Synchronize Fermat stream, copy all needed data
+		hashmod.found.copyToHost(mHMFermatStream);
+    hashmod.primorialBitField.copyToHost(mHMFermatStream);
+    hashmod.count.copyToHost(mHMFermatStream);        
+    fermat320.buffer[widx].count.copyToHost(mHMFermatStream);
+    fermat352.buffer[widx].count.copyToHost(mHMFermatStream);       
+    final.info.copyToHost(mHMFermatStream);
+    final.count.copyToHost(mHMFermatStream);          
     
     // adjust sieves per round
     if (fermat320.buffer[ridx].count[0] && fermat320.buffer[ridx].count[0] < mBlockSize &&
@@ -628,7 +680,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 		
 		// check candis
 		if(candis.size()){
-			//printf("checking %d candis\n", (int)candis.size());
+// 			printf("checking %d candis\n", (int)candis.size());
 			mpz_class chainorg;
 			mpz_class multi;
 			for(unsigned i = 0; i < candis.size(); ++i){
@@ -692,10 +744,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 				}
 			}
 		}
-		
-		clFinish(mBig);
-		clFinish(mSmall);
-		
+
 		if(MakeExit)
 			break;
 		
@@ -703,12 +752,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 	}
 	
 	printf("GPU %d stopped.\n", mID);
-	
-  for (unsigned i = 0; i < maxHashPrimorial-mPrimorial; i++) {
-	  clReleaseMemObject(primeBuf[i]);
-	  clReleaseMemObject(primeBuf2[i]);
-  }
-	
+
 	zmq_close(blocksub);
 	zmq_close(worksub);
 	zmq_close(statspush);
@@ -758,9 +802,6 @@ void XPMClient::dumpSieveConstants(unsigned weaveDepth,
 }
 
 bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adjustedKernelTarget) {
-  cl_context gContext[64] = {0};
-  cl_program gProgram[64] = {0};
-  
 	_cfg = cfg;
 	
 	{
@@ -768,56 +809,22 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 		gPrimes2.resize(np*2);
 		for(int i = 0; i < np; ++i){
 			unsigned prime = gPrimes[i];
-			cl_float fiprime = 1.f / cl_float(prime);
+			float fiprime = 1.f / float(prime);
 			gPrimes2[i*2] = prime;
-			memcpy(&gPrimes2[i*2+1], &fiprime, sizeof(cl_float));
+			memcpy(&gPrimes2[i*2+1], &fiprime, sizeof(float));
 		}
 	}
-	
-	const char *platformId = cfg->lookupString("", "platform");
-	const char *platformName = "";
-	unsigned clKernelLSize = 0;
-	unsigned clKernelLSizeLog2 = 0;
-	DeviceTypeTy deviceType = dtUnknown;
-  
-  if (strcmp(platformId, "amd") == 0) {
-    platformName = "AMD Accelerated Parallel Processing";
-    platformType = ptAMD;
-    clKernelLSize = 256;
-    clKernelLSizeLog2 = 8;
-		deviceType = dtAMDGCN;
-  } else if (strcmp(platformId, "amd legacy") == 0) {
-    platformName = "AMD Accelerated Parallel Processing";
-    platformType = ptAMD;
-    deviceType = dtAMDLegacy;
-    clKernelLSize = 256;
-    clKernelLSizeLog2 = 8;
-  } else if (strcmp(platformId, "amd vega") == 0) {
-    platformName = "AMD Accelerated Parallel Processing";
-    platformType = ptAMD;
-    deviceType = dtAMDVega;
-    clKernelLSize = 256;
-    clKernelLSizeLog2 = 8;
-  }  else if (strcmp(platformId, "nvidia") == 0) {
-    platformName = "NVIDIA CUDA";
-    platformType = ptNVidia;    
-		deviceType = dtNVIDIA;
-    clKernelLSize = 1024;
-    clKernelLSizeLog2 = 10;
+
+  unsigned clKernelLSize = 1024;
+  unsigned clKernelLSizeLog2 = 10;
+
+  std::vector<CUDADeviceInfo> gpus;
+  {
+    int devicesNum = 0;
+    CUDA_SAFE_CALL(cuInit(0));
+    CUDA_SAFE_CALL(cuDeviceGetCount(&devicesNum));  
+    mNumDevices = devicesNum;
   }
-
-  // OCL
-  // ==========
-  std::vector<cl_device_id> allgpus;
-  if (!clInitialize(platformName, allgpus))
-    return false;
-  mNumDevices = allgpus.size();
-  // ==========
-  
-
-  
-  int mNumCudaDevices = 0;
-  std::vector<CUDADeviceInfo> cudagpus;
   
 	int cpuload = cfg->lookupInt("", "cpuload", 1);
 	int depth = 5 - cpuload;
@@ -901,46 +908,21 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
         mFanSpeed[i] = atoi(cfanspeed[i]);                        
 		}
 	}
-	
-	std::vector<cl_device_id> gpus;
-	for(unsigned i = 0; i < mNumDevices; ++i)
-		if(usegpu[i]){
-			printf("Using device %d as GPU %d\n", i, (int)gpus.size());
-			mDeviceMap[i] = gpus.size();
-			mDeviceMapRev[gpus.size()] = i;
-			gpus.push_back(allgpus[i]);
-		}else{
-			mDeviceMap[i] = -1;
-		}
-	
-	if(!gpus.size()){
-		printf("EXIT: config.txt says not to use any devices!?\n");
-		return false;
-	};
-	
-	for (size_t i = 0; i < gpus.size(); i++) {
-		cl_context_properties props[] = { CL_CONTEXT_PLATFORM, (cl_context_properties)gPlatform, 0 };
-		cl_int error;
-		gContext[i] = clCreateContext(props, 1, &gpus[i], 0, 0, &error);
-		OCLR(error, false);
-	}
-	
-  CUDA_SAFE_CALL(cuInit(0));
-  CUDA_SAFE_CALL(cuDeviceGetCount(&mNumCudaDevices));
-	for (unsigned i = 0; i < mNumCudaDevices; i++) {
+
+	for (unsigned i = 0; i < mNumDevices; i++) {
 		if (usegpu[i]) {
 			char name[128];
 			CUDADeviceInfo info;
-			mDeviceMap[i] = cudagpus.size();
-			mDeviceMapRev[cudagpus.size()] = i;
+			mDeviceMap[i] = gpus.size();
+			mDeviceMapRev[gpus.size()] = i;
 			info.index = i;
 			CUDA_SAFE_CALL(cuDeviceGet(&info.device, i));
 			CUDA_SAFE_CALL(cuDeviceGetAttribute(&info.majorComputeCapability, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, info.device));
 			CUDA_SAFE_CALL(cuDeviceGetAttribute(&info.minorComputeCapability, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, info.device));
-			CUDA_SAFE_CALL(cuCtxCreate(&info.context, 0, info.device));
+			CUDA_SAFE_CALL(cuCtxCreate(&info.context, CU_CTX_SCHED_AUTO, info.device));
 			CUDA_SAFE_CALL(cuDeviceGetName(name, sizeof(name), info.device));
-			cudagpus.push_back(info);
-			printf("[%i] %s; Compute capability %i.%i\n", (int)cudagpus.size()-1, name, info.majorComputeCapability, info.minorComputeCapability);
+			gpus.push_back(info);
+			printf("[%i] %s; Compute capability %i.%i\n", (int)gpus.size()-1, name, info.majorComputeCapability, info.minorComputeCapability);
 		} else {
 			mDeviceMap[i] = -1;
 		}
@@ -961,45 +943,16 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     config << "#define LIMIT15 " << multiplierSizeLimits[2] << '\n';    
     dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config);
   }
-
-  const char *arguments = "";
-  if (platformType == ptAMD) {
-		if (deviceType == dtAMDLegacy)
-      arguments = "-D__AMDLEGACY";
-		else if (deviceType == dtAMDVega)
-			arguments = "-D__AMDVEGA";
-	} else if (platformType == ptNVidia) {
-    arguments = "-D__NVIDIA -cl-nv-verbose";
-	}
-  
-  std::vector<cl_int> binstatus;
-  binstatus.resize(gpus.size());	
-  for (size_t i = 0; i < gpus.size(); i++) {
-    char kernelName[64];
-    sprintf(kernelName, "kernelxpm_gpu%u.cl", (unsigned)i);
-
-    // force rebuild kernel if adjusted target received
-    if (!clCompileKernel(gContext[i],
-                         gpus[i],
-                         kernelName,
-                         { "xpm/opencl/config.cl", "xpm/opencl/procs.cl", "xpm/opencl/fermat.cl", "xpm/opencl/sieve.cl", "xpm/opencl/sha256.cl", "xpm/opencl/benchmarks.cl"},
-                         arguments,
-                         &binstatus[i],
-                         &gProgram[i],
-                         adjustedKernelTarget != 0)) {
-      return false;
-    }
-  }
   
   std::vector<CUmodule> modules;
-	modules.resize(cudagpus.size());
-  for (unsigned i = 0; i < cudagpus.size(); i++) {
+	modules.resize(gpus.size());
+  for (unsigned i = 0; i < gpus.size(); i++) {
 		char kernelname[64];
 		char ccoption[64];
-		sprintf(kernelname, "kernelxpm_gpu%u.ptx", cudagpus[i].index);
-		sprintf(ccoption, "--gpu-architecture=compute_%i%i", cudagpus[i].majorComputeCapability, cudagpus[i].minorComputeCapability);
+		sprintf(kernelname, "kernelxpm_gpu%u.ptx", gpus[i].index);
+		sprintf(ccoption, "--gpu-architecture=compute_%i%i", gpus[i].majorComputeCapability, gpus[i].minorComputeCapability);
 		const char *options[] = { ccoption };
-		CUDA_SAFE_CALL(cuCtxSetCurrent(cudagpus[i].context));
+		CUDA_SAFE_CALL(cuCtxSetCurrent(gpus[i].context));
 		if (!cudaCompileKernel(kernelname,
 				{ "xpm/cuda/config.cu", "xpm/cuda/procs.cu", "xpm/cuda/fermat.cu", "xpm/cuda/sieve.cu", "xpm/cuda/sha256.cu", "xpm/cuda/benchmarks.cu"},
 				options,
@@ -1009,55 +962,37 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 			return false;
 		}
   }
-
-  if (platformType == ptAMD)
-    setup_adl();
   
-  if (benchmarkOnly) {
-//     for (unsigned i = 0; i < gpus.size(); i++) {
-//       if (binstatus[i] == CL_SUCCESS) {
-//         runBenchmarks(gContext[0], gProgram[0], gpus[i], depth, clKernelLSize);
-//       }
-//     }
-    
-    for (unsigned i = 0; i < cudagpus.size(); i++) {
-      cudaRunBenchmarks(cudagpus[i].context, cudagpus[i].device, modules[i], depth, clKernelLSize);
+  if (benchmarkOnly) {   
+    for (unsigned i = 0; i < gpus.size(); i++) {
+      cudaRunBenchmarks(gpus[i].context, gpus[i].device, modules[i], depth, clKernelLSize);
     }
     
     return false;
   } else {
     for(unsigned i = 0; i < gpus.size(); ++i) {
       std::pair<PrimeMiner*,void*> worker;
-      if(binstatus[i] == CL_SUCCESS){
-      
-        PrimeMiner* miner = new PrimeMiner(i, gpus.size(), sievePerRound[i], depth, clKernelLSize);
-        miner->Initialize(gContext[i], gProgram[i], gpus[i]);
-        config_t config = miner->getConfig();
-				if ((!clKernelTargetAutoAdjust && config.TARGET != clKernelTarget) ||
-						(!clKernelWidthAutoAdjust && config.WIDTH != clKernelWidth) ||
-						config.PCOUNT != clKernelPCount ||
-						config.STRIPES != clKernelStripes ||
-						config.SIZE != clKernelWindowSize ||
-						config.LIMIT13 != multiplierSizeLimits[0] ||
-						config.LIMIT14 != multiplierSizeLimits[1] ||
-						config.LIMIT15 != multiplierSizeLimits[2]) {
-          printf("Existing OpenCL kernel (kernel.bin) incompatible with configuration\n");
-          printf("Please remove kernel.bin file and restart miner\n");
-          exit(1);
-        }
-
-        void *pipe = czmq_thread_fork(mCtx, &PrimeMiner::InvokeMining, miner);
-        czmq_wait(pipe);
-        czmq_signal(pipe);
-        worker.first = miner;
-        worker.second = pipe;
-      } else {
-        printf("GPU %d: failed to load kernel\n", i);
-        worker.first = 0;
-        worker.second = 0;
-      
+      PrimeMiner* miner = new PrimeMiner(i, gpus.size(), sievePerRound[i], depth, clKernelLSize);
+      miner->Initialize(gpus[i].context, gpus[i].device, modules[i]);
+      config_t config = miner->getConfig();
+			if ((!clKernelTargetAutoAdjust && config.TARGET != clKernelTarget) ||
+					(!clKernelWidthAutoAdjust && config.WIDTH != clKernelWidth) ||
+					config.PCOUNT != clKernelPCount ||
+					config.STRIPES != clKernelStripes ||
+					config.SIZE != clKernelWindowSize ||
+					config.LIMIT13 != multiplierSizeLimits[0] ||
+					config.LIMIT14 != multiplierSizeLimits[1] ||
+					config.LIMIT15 != multiplierSizeLimits[2]) {
+        printf("Existing CUDA kernel (kernelxpm_gpu<N>.ptx) incompatible with configuration\n");
+        printf("Please remove kernelxpm_gpu<N>.ptx file and restart miner\n");
+        exit(1);
       }
-    
+
+      void *pipe = czmq_thread_fork(mCtx, &PrimeMiner::InvokeMining, miner);
+      czmq_wait(pipe);
+      czmq_signal(pipe);
+      worker.first = miner;
+      worker.second = pipe;    
       mWorkers.push_back(worker);
     }
   }
@@ -1226,23 +1161,6 @@ void XPMClient::Toggle() {
 }
 
 
-void XPMClient::setup_adl(){
-	
-	init_adl(mNumDevices);
-	
-	for(unsigned i = 0; i < mNumDevices; ++i){
-		
-		if(mCoreFreq[i] > 0)
-			if(set_engineclock(i, mCoreFreq[i]))
-				printf("set_engineclock(%d, %d) failed.\n", i, mCoreFreq[i]);
-		if(mMemFreq[i] > 0)
-			if(set_memoryclock(i, mMemFreq[i]))
-				printf("set_memoryclock(%d, %d) failed.\n", i, mMemFreq[i]);
-		if(mPowertune[i] >= -20 && mPowertune[i] <= 20)
-			if(set_powertune(i, mPowertune[i]))
-				printf("set_powertune(%d, %d) failed.\n", i, mPowertune[i]);
-    if (mFanSpeed[i] > 0)
-      if(set_fanspeed(i, mFanSpeed[i]))
-        printf("set_fanspeed(%d, %d) failed.\n", i, mFanSpeed[i]);
-	}
+void XPMClient::setup_adl()
+{
 }

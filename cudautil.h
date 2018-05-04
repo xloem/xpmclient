@@ -52,14 +52,26 @@ public:
   void copyToDevice() { 
     CUDA_SAFE_CALL(cuMemcpyHtoD(_deviceData, _hostData, sizeof(T)*_size));
   }
+
+  void copyToDevice(CUstream stream) { 
+    CUDA_SAFE_CALL(cuMemcpyHtoDAsync(_deviceData, _hostData, sizeof(T)*_size, stream));
+  }  
   
   void copyToDevice(T *hostData) {
     CUDA_SAFE_CALL(cuMemcpyHtoD(_deviceData, hostData, sizeof(T)*_size));
   }
   
+  void copyToDevice(T *hostData, CUstream stream) {
+    CUDA_SAFE_CALL(cuMemcpyHtoDAsync(_deviceData, hostData, sizeof(T)*_size, stream));
+  }  
+  
   void copyToHost() {
     CUDA_SAFE_CALL(cuMemcpyDtoH(_hostData, _deviceData, sizeof(T)*_size));
   }
+  
+  void copyToHost(CUstream stream) {
+    CUDA_SAFE_CALL(cuMemcpyDtoHAsync(_hostData, _deviceData, sizeof(T)*_size, stream));
+  }  
   
   T& get(int index) {
     return _hostData[index];

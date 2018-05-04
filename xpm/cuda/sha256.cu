@@ -400,7 +400,8 @@ __device__ void sha256UsePrecalc(const uint32_t *msg,
 
 #define select(a, b, c) ((c) ? (b) : (a))
 
-__global__ void bhashmodUsePrecalc(uint32_t *found,
+__global__ void bhashmodUsePrecalc(uint32_t nonceOffset,
+                                   uint32_t *found,
                                    uint32_t *fcount,
                                    uint32_t *resultPrimorial,
                                    uint32_t *midstate,
@@ -417,7 +418,7 @@ __global__ void bhashmodUsePrecalc(uint32_t *found,
                                    uint32_t new2_2,
                                    uint32_t temp2_3)
 {
-  const uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+  const uint32_t id = blockIdx.x * blockDim.x + threadIdx.x + nonceOffset;
   
   uint32_t msg[16];
   msg[0] = merkle;

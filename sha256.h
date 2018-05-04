@@ -11,8 +11,6 @@
 
 #include <string>
 #include <inttypes.h>
-#include "opencl.h"
-
 
 class SHA_256
 {
@@ -78,17 +76,10 @@ struct sha256precalcData {
   uint32_t temp2_3;
 };
 
-void simplePrecalcSHA256(const void *block,
-                         clBuffer<cl_uint> &midstate,
-                         cl_command_queue queue,
-                         cl_kernel sha256kernel);
-
 void precalcSHA256(const void *block,
                    uint32_t *midstate,
                    sha256precalcData *data);
-                   
 
-// void precalc_hash(const void *block, cl_kernel sha256kernel);
 
 
 #endif /* SHA256_H_ */

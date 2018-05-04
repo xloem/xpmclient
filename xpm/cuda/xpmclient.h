@@ -14,7 +14,6 @@
 
 #include "baseclient.h"
 #include "cudautil.h"
-#include "opencl.h"
 #include "uint256.h"
 #include "sha256.h"
 
@@ -26,17 +25,6 @@
 #define MFS 2*SW*MSO  // max fermat size
 
 const unsigned maxHashPrimorial = 16;
-
-enum DeviceTypeTy {
-	// AMD
-	dtUnknown = 0,
-	dtAMDLegacy,
-	dtAMDGCN,
-	dtAMDVega,
-	
-	// NVidia
-	dtNVIDIA
-};
 
 extern unsigned gPrimes[96*1024];
 extern std::vector<unsigned> gPrimes2;
@@ -62,15 +50,15 @@ struct stats_t {
 
 struct config_t {
 	
-	cl_uint N;
-	cl_uint SIZE;
-	cl_uint STRIPES;
-	cl_uint WIDTH;
-	cl_uint PCOUNT;
-	cl_uint TARGET;
-	cl_uint LIMIT13;
-	cl_uint LIMIT14;
-	cl_uint LIMIT15;
+	uint32_t N;
+	uint32_t SIZE;
+	uint32_t STRIPES;
+	uint32_t WIDTH;
+	uint32_t PCOUNT;
+	uint32_t TARGET;
+	uint32_t LIMIT13;
+	uint32_t LIMIT14;
+	uint32_t LIMIT15;
 };
 
 
@@ -150,18 +138,8 @@ public:
 		unsigned int nonce;
 		
 	};
-	
-	struct search_t {
-		
-		clBuffer<cl_uint> midstate;
-		clBuffer<cl_uint> found;
-    clBuffer<cl_uint> primorialBitField;
-		clBuffer<cl_uint> count;   
-    
-		
-	};
   
-	struct search_t_cuda {
+	struct search_t {
 		
 		cudaBuffer<uint32_t> midstate;
 		cudaBuffer<uint32_t> found;
@@ -183,39 +161,31 @@ public:
 	};
 	
 	struct fermat_t {
-		cl_uint index;
-    cl_uint hashid;
-		cl_uchar origin;
-		cl_uchar chainpos;
-		cl_uchar type;
-		cl_uchar reserved;
+		uint32_t index;
+    uint32_t hashid;
+		uint8_t origin;
+		uint8_t chainpos;
+		uint8_t type;
+		uint8_t reserved;
 	};
-	
-	struct info_t {
-		
-		clBuffer<fermat_t> info;
-		clBuffer<cl_uint> count;
-		
-	};
-	
-	struct pipeline_t {
-		unsigned current;
-		unsigned bsize;
-		clBuffer<cl_uint> input;
-		clBuffer<cl_uchar> output;
-		info_t buffer[2];
-	};
-  
-  struct sieve_t {
-    info_t cunningham1[1];
-    info_t cunningham2[1];
+
+  struct info_t {
+    cudaBuffer<fermat_t> info;
+    cudaBuffer<uint32_t> count;
   };
-	
+  
+  struct pipeline_t {
+    unsigned current;
+    unsigned bsize;
+    cudaBuffer<uint32_t> input;
+    cudaBuffer<uint8_t> output;
+    info_t buffer[2];
+  };
 	
   PrimeMiner(unsigned id, unsigned threads, unsigned sievePerRound, unsigned depth, unsigned LSize);
 	~PrimeMiner();
 	
-	bool Initialize(cl_context context, cl_program program, cl_device_id dev);
+  bool Initialize(CUcontext context, CUdevice device, CUmodule module);
 	
 	static void InvokeMining(void *args, void *ctx, void *pipe);
   config_t getConfig() { return mConfig; }
@@ -223,18 +193,18 @@ public:
 	bool MakeExit;
 	
 private:
-  void FermatInit(pipeline_t &fermat, unsigned mfs);
+  void FermatInit(pipeline_t &fermat, unsigned mfs);  
   
   void FermatDispatch(pipeline_t &fermat,
-                      clBuffer<fermat_t>  sieveBuffers[SW][FERMAT_PIPELINES][2],
-                      clBuffer<cl_uint> candidatesCountBuffers[SW][2],
+                      cudaBuffer<fermat_t>  sieveBuffers[SW][FERMAT_PIPELINES][2],
+                      cudaBuffer<uint32_t> candidatesCountBuffers[SW][2],
                       unsigned pipelineIdx,
                       int ridx,
                       int widx,
                       uint64_t &testCount,
                       uint64_t &fermatCount,
-                      cl_kernel fermatKernel,
-                      unsigned sievePerRound);
+                      CUfunction fermatKernel,
+                      unsigned sievePerRound);  
   
 	void Mining(void *ctx, void *pipe);
 	
@@ -244,23 +214,23 @@ private:
 	config_t mConfig;
   unsigned mSievePerRound;
 	unsigned mBlockSize;
-	cl_uint mDepth;
+	uint32_t mDepth;
   unsigned mLSize;  
-	
-  cl_context _context;
-	cl_command_queue mSmall;
-	cl_command_queue mBig;
-	
-	cl_kernel mHashMod;
-	cl_kernel mSieveSetup;
-	cl_kernel mSieve;
-	cl_kernel mSieveSearch;
-	cl_kernel mFermatSetup;
-	cl_kernel mFermatKernel352;
-  cl_kernel mFermatKernel320;  
-	cl_kernel mFermatCheck;
-	
-  info_t final;	
+
+  CUcontext _context;
+  CUstream mSieveStream;
+	CUstream mHMFermatStream;
+
+	CUfunction mHashMod;
+	CUfunction mSieveSetup;
+	CUfunction mSieve;
+	CUfunction mSieveSearch;
+	CUfunction mFermatSetup;
+	CUfunction mFermatKernel352;
+  CUfunction mFermatKernel320;  
+	CUfunction mFermatCheck;
+  info_t final;
+  cudaBuffer<uint32_t> hashBuf;
 };
 
 

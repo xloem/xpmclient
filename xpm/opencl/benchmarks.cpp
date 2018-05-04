@@ -496,13 +496,27 @@ void hashmodBenchmark(cl_context context,
   
   for (unsigned i = 0; i < iterationsNum; i++) {
     {
+      sha256precalcData data;
       uint8_t *pHeader = (uint8_t*)&blockheader;
       for (unsigned i = 0; i < sizeof(blockheader); i++)
         pHeader[i] = rand32();
       blockheader.version = PrimeMiner::block_t::CURRENT_VERSION;
       blockheader.nonce = 1;  
-      
-      simplePrecalcSHA256(&blockheader, hashmod.midstate, queue, mHashMod);
+
+      precalcSHA256(&blockheader, hashmod.midstate.HostData, &data);
+      hashmod.midstate.copyToDevice(queue);
+      OCL(clSetKernelArg(mHashMod, 4, sizeof(cl_uint), &data.merkle));
+      OCL(clSetKernelArg(mHashMod, 5, sizeof(cl_uint), &data.time));
+      OCL(clSetKernelArg(mHashMod, 6, sizeof(cl_uint), &data.nbits));
+      OCL(clSetKernelArg(mHashMod, 7, sizeof(cl_uint), &data.W0));
+      OCL(clSetKernelArg(mHashMod, 8, sizeof(cl_uint), &data.W1));
+      OCL(clSetKernelArg(mHashMod, 9, sizeof(cl_uint), &data.new1_0));
+      OCL(clSetKernelArg(mHashMod, 10, sizeof(cl_uint), &data.new1_1));
+      OCL(clSetKernelArg(mHashMod, 11, sizeof(cl_uint), &data.new1_2));
+      OCL(clSetKernelArg(mHashMod, 12, sizeof(cl_uint), &data.new2_0));
+      OCL(clSetKernelArg(mHashMod, 13, sizeof(cl_uint), &data.new2_1));
+      OCL(clSetKernelArg(mHashMod, 14, sizeof(cl_uint), &data.new2_2));
+      OCL(clSetKernelArg(mHashMod, 15, sizeof(cl_uint), &data.temp2_3));
     }    
 
     hashmod.count.copyToDevice(queue, false);
@@ -696,12 +710,26 @@ void sieveTestBenchmark(cl_context context,
   memset(hashm, 0, sizeof(hashm));
 
   {
+    sha256precalcData data;
     uint8_t *pHeader = (uint8_t*)&blockheader;
     for (unsigned i = 0; i < sizeof(blockheader); i++)
       pHeader[i] = rand();
     blockheader.version = PrimeMiner::block_t::CURRENT_VERSION;
     blockheader.nonce = 1;    
-    simplePrecalcSHA256(&blockheader, hashmod.midstate, queue, mHashMod);
+    precalcSHA256(&blockheader, hashmod.midstate.HostData, &data);
+    hashmod.midstate.copyToDevice(queue);
+    OCL(clSetKernelArg(mHashMod, 4, sizeof(cl_uint), &data.merkle));
+    OCL(clSetKernelArg(mHashMod, 5, sizeof(cl_uint), &data.time));
+    OCL(clSetKernelArg(mHashMod, 6, sizeof(cl_uint), &data.nbits));
+    OCL(clSetKernelArg(mHashMod, 7, sizeof(cl_uint), &data.W0));
+    OCL(clSetKernelArg(mHashMod, 8, sizeof(cl_uint), &data.W1));
+    OCL(clSetKernelArg(mHashMod, 9, sizeof(cl_uint), &data.new1_0));
+    OCL(clSetKernelArg(mHashMod, 10, sizeof(cl_uint), &data.new1_1));
+    OCL(clSetKernelArg(mHashMod, 11, sizeof(cl_uint), &data.new1_2));
+    OCL(clSetKernelArg(mHashMod, 12, sizeof(cl_uint), &data.new2_0));
+    OCL(clSetKernelArg(mHashMod, 13, sizeof(cl_uint), &data.new2_1));
+    OCL(clSetKernelArg(mHashMod, 14, sizeof(cl_uint), &data.new2_2));
+    OCL(clSetKernelArg(mHashMod, 15, sizeof(cl_uint), &data.temp2_3));    
   }    
 
   hashmod.count.copyToDevice(queue, false);
