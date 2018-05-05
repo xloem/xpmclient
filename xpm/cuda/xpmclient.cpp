@@ -70,8 +70,6 @@ PrimeMiner::~PrimeMiner() {
     cuStreamDestroy(mSieveStream);
   if (mHMFermatStream)
     cuStreamDestroy(mHMFermatStream);
-  if (_context)
-	  cuCtxDestroy(_context);
 }
 
 bool PrimeMiner::Initialize(CUcontext context, CUdevice device, CUmodule module)
@@ -655,6 +653,9 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
     // syncronize our stream one time per iteration
     // sieve stream is first because it much bigger
     CUDA_SAFE_CALL(cuEventSynchronize(sieveEvent)); 
+#ifdef __WINDOWS__  
+    CUDA_SAFE_CALL(cuCtxSynchronize());
+#endif
     for (unsigned i = 0; i < mSievePerRound; i++)
       candidatesCountBuffers[i][widx].copyToHost(mSieveStream);
     

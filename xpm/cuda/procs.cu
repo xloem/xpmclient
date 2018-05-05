@@ -1,6 +1,6 @@
 typedef unsigned char uint8_t;
 typedef unsigned int uint32_t;
-typedef unsigned long uint64_t;
+typedef unsigned long long uint64_t;
 
 __device__ void sub(uint32_t *a, const uint32_t *b, int size)
 {
