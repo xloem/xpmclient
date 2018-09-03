@@ -376,6 +376,8 @@ void cudaFermatTestBenchmark(CUfunction *kernels,
     mpz_sub_ui(mpzE.get_mpz_t(), cpuNumbersBuffer[i], 1);
     mpz_powm(cpuResultsBuffer[i], mpzTwo.get_mpz_t(), mpzE.get_mpz_t(), cpuNumbersBuffer[i]);
   }
+  
+  auto cpuEnd = std::chrono::steady_clock::now();    
 
   gpuResults.copyToHost();
 
@@ -401,9 +403,11 @@ void cudaFermatTestBenchmark(CUfunction *kernels,
   }
   
   double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;  
+  double cpuTime = std::chrono::duration_cast<std::chrono::microseconds>(cpuEnd-gpuEnd).count() / 1000.0;    
   double opsNum = ((elementsNum) / 1000000.0) / gpuTime * 1000.0;
+  double cpuOpsNum = ((elementsNum) / 1000000.0) / cpuTime * 1000.0;
   
-  printf("%s %u bits: %.3lfms (%.3lfM ops/sec)\n", "Fermat tests", operandSize*32, gpuTime, opsNum);
+  printf("%s %u bits: %.3lfms (%.3lfM ops/sec, single thread cpu: %.3lfM ops/sec)\n", "Fermat tests", operandSize*32, gpuTime, opsNum, cpuOpsNum);
 }
 
 void cudaHashmodBenchmark(CUfunction *kernels,

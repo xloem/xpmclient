@@ -427,7 +427,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
       fermat352.buffer[1].count[0] = 0;      
 			final.count[0] = 0;
       
-      for(int sieveIdx = 0; sieveIdx < mSievePerRound; ++sieveIdx) {
+      for(int sieveIdx = 0; sieveIdx < SW; ++sieveIdx) {
         for(int instIdx = 0; instIdx < 2; ++instIdx) {
           for (int pipelineIdx = 0; pipelineIdx < FERMAT_PIPELINES; pipelineIdx++)
             (candidatesCountBuffers[sieveIdx][instIdx])[pipelineIdx] = 0;
