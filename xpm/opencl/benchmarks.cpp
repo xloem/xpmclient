@@ -2,6 +2,7 @@
 
 #include "gmpxx.h"
 
+#include "loguru.hpp"
 #include <time.h>
 #include <chrono>
 #include <memory>
@@ -71,7 +72,7 @@ bool trialDivisionChainTest(uint32_t *primes,
   for (unsigned i = 0; i < chainLength; i++) {
     for (unsigned divIdx = 0; divIdx < depth; divIdx += 16) { 
       if (mpz_tdiv_ui(N.get_mpz_t(), primes[divIdx]) == 0) {
-        fprintf(stderr, "Invalid number found; chain position is %u, divisor is %u type is %u\n", i+1, primes[divIdx], fSophieGermain ? 1 : 2);
+        LOG_F(ERROR, "Invalid number found; chain position is %u, divisor is %u type is %u", i+1, primes[divIdx], fSophieGermain ? 1 : 2);
         return false;
       }
     }
@@ -117,7 +118,7 @@ bool sieveResultsTest(uint32_t *primes,
             mpz_class candidateMultiplier = (mpz_class)(sieveSize + wordIdx*32 + bit) << firstLayer;
             mpz_class chainOrigin = fixedMultiplier*candidateMultiplier;
             if (!trialDivisionChainTest(primes, chainOrigin, true, chainLength, depth)) {
-              fprintf(stderr, " * type 1 firstLayer = %u\n", firstLayer);
+              LOG_F(ERROR, " * type 1 firstLayer = %u", firstLayer);
               ++*invalidCount;
             }
             
@@ -141,7 +142,7 @@ bool sieveResultsTest(uint32_t *primes,
             mpz_class candidateMultiplier = (mpz_class)(sieveSize + wordIdx*32 + bit) << firstLayer;
             mpz_class chainOrigin = fixedMultiplier*candidateMultiplier;
             if (!trialDivisionChainTest(primes, chainOrigin, false, chainLength, depth)) {
-              fprintf(stderr, " * type 2 firstLayer = %u\n", firstLayer);              
+              LOG_F(ERROR, " * type 2 firstLayer = %u", firstLayer);
               ++*invalidCount;
             }
             
@@ -167,7 +168,7 @@ bool sieveResultsTest(uint32_t *primes,
             mpz_class chainOriginExtra = chainOrigin;            
             if (!trialDivisionChainTest(primes, chainOrigin, true, (chainLength+1)/2, depth) ||
                 !trialDivisionChainTest(primes, chainOriginExtra, false, chainLength/2, depth)) {
-              fprintf(stderr, " * type bitwin firstLayer = %u\n", firstLayer);   
+              LOG_F(ERROR, " * type bitwin firstLayer = %u", firstLayer);
               ++*invalidCount;
             }
             candidates.insert(candidateMultiplier);            
@@ -196,10 +197,10 @@ void multiplyBenchmark(cl_context context,
   clBuffer<uint32_t> mR;
   clBuffer<uint32_t> cpuR;
   
-  m1.init(context, limbsNum, CL_MEM_READ_WRITE);
-  m2.init(context, limbsNum, CL_MEM_READ_WRITE);
-  mR.init(context, limbsNum*2, CL_MEM_READ_WRITE);
-  cpuR.init(context, limbsNum*2, CL_MEM_READ_WRITE);
+  OCL(m1.init(context, limbsNum, CL_MEM_READ_WRITE));
+  OCL(m2.init(context, limbsNum, CL_MEM_READ_WRITE));
+  OCL(mR.init(context, limbsNum*2, CL_MEM_READ_WRITE));
+  OCL(cpuR.init(context, limbsNum*2, CL_MEM_READ_WRITE));
 
   memset(&m1.get(0), 0, limbsNum*sizeof(uint32_t));
   memset(&m2.get(0), 0, limbsNum*sizeof(uint32_t));
@@ -212,8 +213,8 @@ void multiplyBenchmark(cl_context context,
     }
   }
 
-  m1.copyToDevice(queue);
-  m2.copyToDevice(queue);
+  OCL(m1.copyToDevice(queue));
+  OCL(m2.copyToDevice(queue));
 
   cl_kernel kernel;
   if (isSquaring) {
@@ -222,7 +223,7 @@ void multiplyBenchmark(cl_context context,
     } else if (mulOperandSize == 352/32) {
       kernel = kernels[CLKernelSquareBenchmark352];
     } else {
-      fprintf(stderr, "Can't multiply %u-size operands on OpenCL device\n", mulOperandSize*32);
+      LOG_F(ERROR, "Can't square %u-size operands on OpenCL device", mulOperandSize*32);
       return;
     }
   } else {
@@ -231,7 +232,7 @@ void multiplyBenchmark(cl_context context,
     } else if (mulOperandSize == 352/32) {
       kernel = kernels[CLKernelMultiplyBenchmark352];
     } else {
-      fprintf(stderr, "Can't multiply %u-size operands on OpenCL device\n", mulOperandSize*32);
+      LOG_F(ERROR, "Can't multiply %u-size operands on OpenCL device", mulOperandSize*32);
       return;
     }
   }
@@ -273,12 +274,12 @@ void multiplyBenchmark(cl_context context,
                                          globalThreads,
                                          localThreads,
                                          0, 0, &event)) != CL_SUCCESS) {
-      fprintf(stderr, "clEnqueueNDRangeKernel error!\n");
+      LOG_F(ERROR, "clEnqueueNDRangeKernel error!");
       return;
     }
 
     if (clWaitForEvents(1, &event) != CL_SUCCESS) {
-      fprintf(stderr, "clWaitForEvents error!\n");
+      LOG_F(ERROR, "clWaitForEvents error!");
       return;
     }
     
@@ -310,28 +311,28 @@ void multiplyBenchmark(cl_context context,
     }
   }
 
-  mR.copyToHost(queue);
+  OCL(mR.copyToHost(queue));
   clFinish(queue);
 
   for (unsigned i = 0; i < elementsNum; i++) {
     if (memcmp(&mR[i*mulOperandSize*2], &cpuR[i*mulOperandSize*2], 4*mulOperandSize*2) != 0) {
-      fprintf(stderr, "element index: %u\n", i);
-      fprintf(stderr, "gmp: ");
+      LOG_F(ERROR, "element index: %u", i);
+      LOG_F(ERROR, "gmp: ");
       for (unsigned j = 0; j < mulOperandSize*2; j++)
-        fprintf(stderr, "%08X ", cpuR[i*mulOperandSize*2 + j]);
-      fprintf(stderr, "\ngpu: ");
+        LOG_F(ERROR, "%08X ", cpuR[i*mulOperandSize*2 + j]);
+      LOG_F(ERROR, "gpu: ");
       for (unsigned j = 0; j < mulOperandSize*2; j++)
-        fprintf(stderr, "%08X ", mR[i*mulOperandSize*2 + j]);
-      fprintf(stderr, "\n");
-      fprintf(stderr, "results differ!\n");
+        LOG_F(ERROR, "%08X ", mR[i*mulOperandSize*2 + j]);
+      LOG_F(ERROR, "");
+      LOG_F(ERROR, "results differ!");
       break;
     }
   }
 
-  double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;  
+  double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;
   double opsNum = ((elementsNum*MulOpsNum) / 1000000.0) / gpuTime * 1000.0;
   
-  printf("%s %u bits: %.3lfms (%.3lfM ops/sec)\n", (isSquaring ? "square" : "multiply"), mulOperandSize*32, gpuTime, opsNum);
+  LOG_F(1, "%s %u bits: %.3lfms (%.3lfM ops/sec)", (isSquaring ? "square" : "multiply"), mulOperandSize*32, gpuTime, opsNum);
 }
 
 
@@ -348,9 +349,9 @@ void fermatTestBenchmark(cl_context context,
   clBuffer<uint32_t> gpuResults;
   clBuffer<uint32_t> cpuResults;
   
-  numbers.init(context, numberLimbsNum, CL_MEM_READ_WRITE);
-  gpuResults.init(context, numberLimbsNum, CL_MEM_READ_WRITE);
-  cpuResults.init(context, numberLimbsNum, CL_MEM_READ_WRITE);
+  OCL(numbers.init(context, numberLimbsNum, CL_MEM_READ_WRITE));
+  OCL(gpuResults.init(context, numberLimbsNum, CL_MEM_READ_WRITE));
+  OCL(cpuResults.init(context, numberLimbsNum, CL_MEM_READ_WRITE));
   
   for (unsigned i = 0; i < elementsNum; i++) {
     for (unsigned j = 0; j < operandSize; j++)
@@ -362,8 +363,8 @@ void fermatTestBenchmark(cl_context context,
     numbers[i*operandSize] |= 0x1; 
   }
 
-  numbers.copyToDevice(queue);
-  gpuResults.copyToDevice(queue);
+  OCL(numbers.copyToDevice(queue));
+  OCL(gpuResults.copyToDevice(queue));
 
   cl_kernel kernel;
   if (operandSize == 320/32) {
@@ -371,7 +372,7 @@ void fermatTestBenchmark(cl_context context,
   } else if (operandSize == 352/32) {
     kernel = kernels[CLKernelFermatTestBenchmark352];
   } else {
-    fprintf(stderr, "Can't do Fermat test on %ubit operand\n", operandSize*32);
+    LOG_F(ERROR, "Can't do Fermat test on %ubit operand", operandSize*32);
     return;
   }
   
@@ -406,13 +407,13 @@ void fermatTestBenchmark(cl_context context,
                                          globalThreads,
                                          localThreads,
                                          0, 0, &event)) != CL_SUCCESS) {
-      fprintf(stderr, "clEnqueueNDRangeKernel error!\n");
+      LOG_F(ERROR, "clEnqueueNDRangeKernel error!");
       return;
     }
       
     cl_int error;
     if ((error = clWaitForEvents(1, &event)) != CL_SUCCESS) {
-      fprintf(stderr, "clWaitForEvents error %i!\n", error);
+      LOG_F(ERROR, "clWaitForEvents error %i!", error);
       return;
     }
       
@@ -429,7 +430,7 @@ void fermatTestBenchmark(cl_context context,
 
   auto cpuEnd = std::chrono::steady_clock::now();     
   
-  gpuResults.copyToHost(queue);
+  OCL(gpuResults.copyToHost(queue));
   clFinish(queue);
   
   memset(&cpuResults[0], 0, 4*operandSize*elementsNum);
@@ -437,18 +438,17 @@ void fermatTestBenchmark(cl_context context,
     size_t exportedLimbs;
     mpz_export(&cpuResults[i*operandSize], &exportedLimbs, -1, 4, 0, 0, cpuResultsBuffer[i]);
     if (memcmp(&gpuResults[i*operandSize], &cpuResults[i*operandSize], 4*operandSize) != 0) {
-      fprintf(stderr, "element index: %u\n", i);
-      fprintf(stderr, "element data: \n");
+      LOG_F(ERROR, "element index: %u", i);
+      LOG_F(ERROR, "element data:");
       for (unsigned j = 0; j < operandSize; j++)
-        fprintf(stderr, "%08X ", numbers[i*operandSize + j]);
-      fprintf(stderr, "\ngmp: ");
+        LOG_F(ERROR, "%08X ", numbers[i*operandSize + j]);
+      LOG_F(ERROR, "gmp: ");
       for (unsigned j = 0; j < operandSize; j++)
-        fprintf(stderr, "%08X ", cpuResults[i*operandSize + j]);
-      fprintf(stderr, "\ngpu: ");
+        LOG_F(ERROR, "%08X ", cpuResults[i*operandSize + j]);
+      LOG_F(ERROR, "gpu: ");
       for (unsigned j = 0; j < operandSize; j++)
-        fprintf(stderr, "%08X ", gpuResults[i*operandSize + j]);
-      fprintf(stderr, "\n");
-      fprintf(stderr, "results differ!\n");
+        LOG_F(ERROR, "%08X ", gpuResults[i*operandSize + j]);
+      LOG_F(ERROR, "results differ!");
       break;
     }
   }
@@ -458,7 +458,7 @@ void fermatTestBenchmark(cl_context context,
   double opsNum = ((elementsNum) / 1000000.0) / gpuTime * 1000.0;
   double cpuOpsNum = ((elementsNum) / 1000000.0) / cpuTime * 1000.0;
   
-  printf("%s %u bits: %.3lfms (%.3lfM ops/sec, single thread cpu: %.3lfM ops/sec)\n", "Fermat tests", operandSize*32, gpuTime, opsNum, cpuOpsNum);
+  LOG_F(1, "%s %u bits: %.3lfms (%.3lfM ops/sec, single thread cpu: %.3lfM ops/sec)", "Fermat tests", operandSize*32, gpuTime, opsNum, cpuOpsNum);
 }
 
 
@@ -470,7 +470,7 @@ void hashmodBenchmark(cl_context context,
                       mpz_class *allPrimorials,
                       unsigned mPrimorial)
 {
-  printf("\n *** hashmod benchmark ***\n");  
+  LOG_F(1, "*** hashmod benchmark ***");
   
   const unsigned iterationsNum = 64;
   cl_kernel mHashMod = kernels[CLKernelHashMod];
@@ -478,10 +478,10 @@ void hashmodBenchmark(cl_context context,
   PrimeMiner::search_t hashmod;
   PrimeMiner::block_t blockheader;
   
-  hashmod.midstate.init(context, 8*sizeof(cl_uint), CL_MEM_READ_ONLY);
-  hashmod.found.init(context, 32768, CL_MEM_READ_WRITE);
-  hashmod.primorialBitField.init(context, 2048, CL_MEM_READ_WRITE);
-  hashmod.count.init(context, 1, CL_MEM_READ_WRITE);
+  OCL(hashmod.midstate.init(context, 8*sizeof(cl_uint), CL_MEM_READ_ONLY));
+  OCL(hashmod.found.init(context, 32768, CL_MEM_READ_WRITE));
+  OCL(hashmod.primorialBitField.init(context, 2048, CL_MEM_READ_WRITE));
+  OCL(hashmod.count.init(context, 1, CL_MEM_READ_WRITE));
 
   clSetKernelArg(mHashMod, 0, sizeof(cl_mem), &hashmod.found.DeviceData);
   clSetKernelArg(mHashMod, 1, sizeof(cl_mem), &hashmod.count.DeviceData);
@@ -508,7 +508,7 @@ void hashmodBenchmark(cl_context context,
       blockheader.nonce = 1;  
 
       precalcSHA256(&blockheader, hashmod.midstate.HostData, &data);
-      hashmod.midstate.copyToDevice(queue);
+      OCL(hashmod.midstate.copyToDevice(queue));
       OCL(clSetKernelArg(mHashMod, 4, sizeof(cl_uint), &data.merkle));
       OCL(clSetKernelArg(mHashMod, 5, sizeof(cl_uint), &data.time));
       OCL(clSetKernelArg(mHashMod, 6, sizeof(cl_uint), &data.nbits));
@@ -523,13 +523,13 @@ void hashmodBenchmark(cl_context context,
       OCL(clSetKernelArg(mHashMod, 15, sizeof(cl_uint), &data.temp2_3));
     }    
 
-    hashmod.count.copyToDevice(queue, false);
+    OCL(hashmod.count.copyToDevice(queue, false));
     
     size_t globalSize[] = { numhash, 1u, 1u };
     size_t localSize[] = { defaultGroupSize, 1 };
  
     hashmod.count[0] = 0;
-    hashmod.count.copyToDevice(queue);
+    OCL(hashmod.count.copyToDevice(queue));
     clFinish(queue);
     auto gpuBegin = std::chrono::steady_clock::now();  
     
@@ -544,13 +544,13 @@ void hashmodBenchmark(cl_context context,
                                            localSize,
                                            0,
                                            0, &event)) != CL_SUCCESS) {
-        fprintf(stderr, "clEnqueueNDRangeKernel error!\n");
+        LOG_F(ERROR, "clEnqueueNDRangeKernel error!");
         return;
       }
         
       cl_int error;
       if ((error = clWaitForEvents(1, &event)) != CL_SUCCESS) {
-        fprintf(stderr, "clWaitForEvents error %i!\n", error);
+        LOG_F(ERROR, "clWaitForEvents error %i!", error);
         return;
       }
         
@@ -559,9 +559,9 @@ void hashmodBenchmark(cl_context context,
     
     auto gpuEnd = std::chrono::steady_clock::now();  
     
-    hashmod.found.copyToHost(queue, false);
-    hashmod.primorialBitField.copyToHost(queue, false);
-    hashmod.count.copyToHost(queue, false);
+    OCL(hashmod.found.copyToHost(queue, false));
+    OCL(hashmod.primorialBitField.copyToHost(queue, false));
+    OCL(hashmod.count.copyToHost(queue, false));
     clFinish(queue);
     
     totalTime += std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count();
@@ -598,7 +598,7 @@ void hashmodBenchmark(cl_context context,
       sha.final((unsigned char*)&hashValue);      
       
       if(hashValue < (uint256(1) << 255)){
-        printf(" * error: hash does not meet minimum.\n");
+        LOG_F(ERROR, "hash does not meet minimum");
         continue;
       }
       
@@ -606,7 +606,7 @@ void hashmodBenchmark(cl_context context,
       mpz_class mpzHash;
       mpz_set_uint256(mpzHash.get_mpz_t(), hashValue);
       if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
-        printf(" * error: mpz_divisible_ui_p failed.\n");
+        LOG_F(ERROR, "mpz_divisible_ui_p failed");
         continue;
       }    
       
@@ -620,8 +620,8 @@ void hashmodBenchmark(cl_context context,
   }
   
   double averageHashes = (double)totalHashes / iterationsNum;
-  printf(" MHash per second: %.3lf\n", iterationsNum*numhash / (double)totalTime);
-  printf(" Hash per iteration: %.3lf (%.6lf %%)\n", averageHashes, averageHashes*100/numhash);
+  LOG_F(1, " MHash per second: %.3lf", iterationsNum*numhash / (double)totalTime);
+  LOG_F(1, " Hash per iteration: %.3lf (%.6lf %%)", averageHashes, averageHashes*100/numhash);
  
   uint64_t totalSize = 0;
   unsigned hashes = 0;
@@ -631,11 +631,11 @@ void hashmodBenchmark(cl_context context,
       totalSize += multiplierSizes[i] * i;
     }
   }
-  printf(" Average hash multiplier size: %.3lf\n", totalSize / (double)hashes);  
+  LOG_F(1, " Average hash multiplier size: %.3lf", totalSize / (double)hashes);
   
   for (unsigned i = 0; i < 20; i++) {
     if (phashCount[i]) {
-      printf("   Hashed with primorial %u is %.3lf%%\n", i, phashCount[i] / (double)hashes * 100.0);
+      LOG_F(1, "   Hashed with primorial %u is %.3lf%%", i, phashCount[i] / (double)hashes * 100.0);
     }
   }
 }
@@ -651,7 +651,7 @@ void sieveTestBenchmark(cl_context context,
                         unsigned mDepth,
                         bool checkCandidates)
 {
-  printf("\n *** sieve (%s) benchmark ***\n", checkCandidates ? "check" : "performance");  
+  LOG_F(1, "*** sieve (%s) benchmark ***", checkCandidates ? "check" : "performance");
   
   cl_kernel mHashMod = kernels[CLKernelHashMod];
   cl_kernel mSieveSetup = kernels[CLKernelSieveSetup];
@@ -684,7 +684,7 @@ void sieveTestBenchmark(cl_context context,
   unsigned modulosBufferSize = mConfig.PCOUNT*(mConfig.N-1);   
   for (unsigned bufIdx = 0; bufIdx < maxHashPrimorial-mPrimorial; bufIdx++) {
     clBuffer<cl_uint> &current = modulosBuf[bufIdx];
-    current.init(context, modulosBufferSize, CL_MEM_READ_ONLY);
+    OCL(current.init(context, modulosBufferSize, CL_MEM_READ_ONLY));
     for (unsigned i = 0; i < mConfig.PCOUNT; i++) {
       mpz_class X = 1;
       for (unsigned j = 0; j < mConfig.N-1; j++) {
@@ -694,14 +694,14 @@ void sieveTestBenchmark(cl_context context,
       }
     }
     
-    current.copyToDevice(queue);
+    OCL(current.copyToDevice(queue));
   }  
   
-  hashmod.midstate.init(context, 8*sizeof(cl_uint), CL_MEM_READ_ONLY);
-  hashmod.found.init(context, 2048, CL_MEM_READ_WRITE);
-  hashmod.primorialBitField.init(context, 2048, CL_MEM_READ_WRITE);
-  hashmod.count.init(context, 1, CL_MEM_READ_WRITE);
-  hashBuf.init(context, PW*mConfig.N, CL_MEM_READ_WRITE);
+  OCL(hashmod.midstate.init(context, 8*sizeof(cl_uint), CL_MEM_READ_ONLY));
+  OCL(hashmod.found.init(context, 2048, CL_MEM_READ_WRITE));
+  OCL(hashmod.primorialBitField.init(context, 2048, CL_MEM_READ_WRITE));
+  OCL(hashmod.count.init(context, 1, CL_MEM_READ_WRITE));
+  OCL(hashBuf.init(context, PW*mConfig.N, CL_MEM_READ_WRITE));
 
   clSetKernelArg(mHashMod, 0, sizeof(cl_mem), &hashmod.found.DeviceData);
   clSetKernelArg(mHashMod, 1, sizeof(cl_mem), &hashmod.count.DeviceData);
@@ -711,8 +711,10 @@ void sieveTestBenchmark(cl_context context,
   unsigned numhash = 64*262144;
 
   unsigned hashm[32];
+  unsigned foundHashNum = 0;
   memset(hashm, 0, sizeof(hashm));
 
+  while (foundHashNum < 64) {
   {
     sha256precalcData data;
     uint8_t *pHeader = (uint8_t*)&blockheader;
@@ -721,7 +723,7 @@ void sieveTestBenchmark(cl_context context,
     blockheader.version = PrimeMiner::block_t::CURRENT_VERSION;
     blockheader.nonce = 1;    
     precalcSHA256(&blockheader, hashmod.midstate.HostData, &data);
-    hashmod.midstate.copyToDevice(queue);
+    OCL(hashmod.midstate.copyToDevice(queue));
     OCL(clSetKernelArg(mHashMod, 4, sizeof(cl_uint), &data.merkle));
     OCL(clSetKernelArg(mHashMod, 5, sizeof(cl_uint), &data.time));
     OCL(clSetKernelArg(mHashMod, 6, sizeof(cl_uint), &data.nbits));
@@ -736,13 +738,13 @@ void sieveTestBenchmark(cl_context context,
     OCL(clSetKernelArg(mHashMod, 15, sizeof(cl_uint), &data.temp2_3));    
   }    
 
-  hashmod.count.copyToDevice(queue, false);
+  OCL(hashmod.count.copyToDevice(queue, false));
     
   size_t globalSize[] = { numhash, 1, 1 };
   size_t localSize[] = { defaultGroupSize, 1 };    
  
   hashmod.count[0] = 0;
-  hashmod.count.copyToDevice(queue);
+  OCL(hashmod.count.copyToDevice(queue));
 
   {
     cl_event event;
@@ -755,22 +757,22 @@ void sieveTestBenchmark(cl_context context,
                                          localSize,
                                          0,
                                          0, &event)) != CL_SUCCESS) {
-      fprintf(stderr, "[mHashMod] clEnqueueNDRangeKernel error!\n");
+      LOG_F(ERROR, "[mHashMod] clEnqueueNDRangeKernel error!");
       return;
     }
         
     cl_int error;
     if ((error = clWaitForEvents(1, &event)) != CL_SUCCESS) {
-      fprintf(stderr, "[mHashMod] clWaitForEvents error %i!\n", error);
+      LOG_F(ERROR, "[mHashMod] clWaitForEvents error %i!", error);
       return;
     }
       
     clReleaseEvent(event);
   }
     
-  hashmod.found.copyToHost(queue, false);
-  hashmod.primorialBitField.copyToHost(queue, false);
-  hashmod.count.copyToHost(queue, false);
+  OCL(hashmod.found.copyToHost(queue, false));
+  OCL(hashmod.primorialBitField.copyToHost(queue, false));
+  OCL(hashmod.count.copyToHost(queue, false));
   clFinish(queue);
 
   for(unsigned i = 0; i < hashmod.count[0]; ++i) {
@@ -804,14 +806,14 @@ void sieveTestBenchmark(cl_context context,
     sha.final((unsigned char*)&hash.hash);
 
     if(hash.hash < (uint256(1) << 255)){
-      printf(" * error: hash does not meet minimum.\n");
+      LOG_F(ERROR, " * error: hash does not meet minimum");
       continue;
     }
     
     mpz_class mpzHash;
     mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
     if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
-      printf(" * error: mpz_divisible_ui_p failed.\n");
+      LOG_F(ERROR, " * error: mpz_divisible_ui_p failed");
       continue;
     }    
 
@@ -821,22 +823,26 @@ void sieveTestBenchmark(cl_context context,
     hash.shash = mpzHash * hash.primorial;      
     
     unsigned hid = hashes.push(hash);
+    if (hid >= 64)
+      break;
     memset(&hashBuf[hid*mConfig.N], 0, sizeof(uint32_t)*mConfig.N);
     mpz_export(&hashBuf[hid*mConfig.N], 0, -1, 4, 0, 0, hashes.get(hid).shash.get_mpz_t());        
+    foundHashNum = hid + 1;
+  }
   }
 
-  hashBuf.copyToDevice(queue, false);
+  OCL(hashBuf.copyToDevice(queue, false));
   
   for(int sieveIdx = 0; sieveIdx < 64; ++sieveIdx) {
     for (int pipelineIdx = 0; pipelineIdx < FERMAT_PIPELINES; pipelineIdx++)
-      sieveBuffers[sieveIdx][pipelineIdx].init(context, MSO, CL_MEM_READ_WRITE);
+      OCL(sieveBuffers[sieveIdx][pipelineIdx].init(context, MSO, CL_MEM_READ_WRITE));
       
-    candidatesCountBuffers[sieveIdx].init(context, FERMAT_PIPELINES, CL_MEM_READ_WRITE);
+    OCL(candidatesCountBuffers[sieveIdx].init(context, FERMAT_PIPELINES, CL_MEM_READ_WRITE));
   }  
   
   for(int k = 0; k < 2; ++k){
-    sieveBuf[k].init(context, mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, CL_MEM_READ_WRITE);
-    sieveOff[k].init(context, mConfig.PCOUNT*mConfig.WIDTH, CL_MEM_READ_WRITE);
+    OCL(sieveBuf[k].init(context, mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, CL_MEM_READ_WRITE));
+    OCL(sieveOff[k].init(context, mConfig.PCOUNT*mConfig.WIDTH, CL_MEM_READ_WRITE));
   }  
 
   clSetKernelArg(mSieveSetup, 0, sizeof(cl_mem), &sieveOff[0].DeviceData);
@@ -884,12 +890,12 @@ void sieveTestBenchmark(cl_context context,
 
     candidatesCountBuffers[i][0] = 0;
     candidatesCountBuffers[i][1] = 0;    
-    candidatesCountBuffers[i].copyToDevice(queue, false);
+    OCL(candidatesCountBuffers[i].copyToDevice(queue, false));
         
     {
       cl_uint multiplierSize = mpz_sizeinbase(hashes.get(hid).shash.get_mpz_t(), 2);
       clSetKernelArg(mSieveSearch, 2, sizeof(cl_mem), &sieveBuffers[i][0].DeviceData);
-      clSetKernelArg(mSieveSearch, 3, sizeof(cl_mem), &sieveBuffers[i][1].DeviceData);          
+      clSetKernelArg(mSieveSearch, 3, sizeof(cl_mem), &sieveBuffers[i][1].DeviceData);
       clSetKernelArg(mSieveSearch, 4, sizeof(cl_mem), &candidatesCountBuffers[i].DeviceData);
       clSetKernelArg(mSieveSearch, 5, sizeof(cl_int), &hid);
       clSetKernelArg(mSieveSearch, 6, sizeof(cl_uint), &multiplierSize);
@@ -897,14 +903,14 @@ void sieveTestBenchmark(cl_context context,
       size_t localSize[] = { 256, 1 };
       OCL(clEnqueueNDRangeKernel(queue, mSieveSearch, 1, 0, globalSize, localSize, 0, 0, 0));
           
-      candidatesCountBuffers[i].copyToHost(queue, false);   
+      OCL(candidatesCountBuffers[i].copyToHost(queue, false));
     }
   
     if (checkCandidates) {
-      sieveBuf[0].copyToHost(queue);
-      sieveBuf[1].copyToHost(queue);
-      sieveBuffers[i][0].copyToHost(queue);
-      sieveBuffers[i][1].copyToHost(queue);
+      OCL(sieveBuf[0].copyToHost(queue));
+      OCL(sieveBuf[1].copyToHost(queue));
+      OCL(sieveBuffers[i][0].copyToHost(queue));
+      OCL(sieveBuffers[i][1].copyToHost(queue));
       clFinish(queue);
       
       std::set<mpz_class> multipliers;
@@ -936,13 +942,21 @@ void sieveTestBenchmark(cl_context context,
       }      
       
       double coeff = fabs(n320+n352 - multipliers.size()) / multipliers.size();
-
-      printf(" * [%s] found candidates by CPU: %u by GPU: %u\n",
-             coeff <= 0.01  ? "OK" : "FAILED",
-             (unsigned)multipliers.size(),
-             n320 + n352);
-      printf(" * [%s] invalid candidates: %u\n", !invalidCount ? "OK" : "FAILED", invalidCount);
-      printf(" * [%s] CPU/GPU candidates difference: %u\n", !diff ? "OK" : "FAILED", diff);
+      if (coeff <= 0.01) {
+        LOG_F(1, " * [%s] found candidates by CPU: %u by GPU: %u",
+              coeff <= 0.01  ? "OK" : "FAILED",
+              (unsigned)multipliers.size(),
+              n320 + n352);
+        LOG_F(1, " * [%s] invalid candidates: %u", !invalidCount ? "OK" : "FAILED", invalidCount);
+        LOG_F(1, " * [%s] CPU/GPU candidates difference: %u", !diff ? "OK" : "FAILED", diff);
+      } else {
+        LOG_F(ERROR, " * [%s] found candidates by CPU: %u by GPU: %u",
+              coeff <= 0.01  ? "OK" : "FAILED",
+              (unsigned)multipliers.size(),
+              n320 + n352);
+        LOG_F(ERROR, " * [%s] invalid candidates: %u", !invalidCount ? "OK" : "FAILED", invalidCount);
+        LOG_F(ERROR, " * [%s] CPU/GPU candidates difference: %u", !diff ? "OK" : "FAILED", diff);
+      }
     }
   }
 
@@ -960,15 +974,14 @@ void sieveTestBenchmark(cl_context context,
       n352 += candidatesCountBuffers[i][1];
     }
 
-    printf(" * scan speed: %.3lf G\n", scanSpeed/1000.0);
-    printf(" * iteration time: %.3lfms\n", iterationTime/1000.0);  
-    printf(" * candidates per second: %.3lf\n", (n320+n352)/(totalTime/1000000.0));
-    printf(" * candidates per iteration: %.2lf (%.2lf 320bit, %.2lf 352bit)\n",
+    LOG_F(1, " * scan speed: %.3lf G", scanSpeed/1000.0);
+    LOG_F(1, " * iteration time: %.3lfms", iterationTime/1000.0);
+    LOG_F(1, " * candidates per second: %.3lf", (n320+n352)/(totalTime/1000000.0));
+    LOG_F(1, " * candidates per iteration: %.2lf (%.2lf 320bit, %.2lf 352bit)",
            (double)(n320+n352) / count,
            (double)n320 / count,
            (double)n352 / count);
-    printf(" * 320bit/352bit ratio: %.3lf/1\n", (double)n320/(double)n352);
-    printf("\n");
+    LOG_F(1, " * 320bit/352bit ratio: %.3lf/1", (double)n320/(double)n352);
   }
 }
 
@@ -978,6 +991,7 @@ void runBenchmarks(cl_context context,
                    unsigned depth,
                    unsigned defaultGroupSize)
 {
+  srand(12345);
   const unsigned mPrimorial = 13;
   char deviceName[128] = {0};
   cl_uint computeUnits;
@@ -986,14 +1000,14 @@ void runBenchmarks(cl_context context,
 
   clGetDeviceInfo(deviceId, CL_DEVICE_NAME, sizeof(deviceName), deviceName, 0);
   clGetDeviceInfo(deviceId, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(computeUnits), &computeUnits, 0);
-  printf("%s; %u compute units\n", deviceName, computeUnits);  
+  LOG_F(INFO, "%s; %u compute units", deviceName, computeUnits);
   
   std::unique_ptr<cl_kernel[]> kernels(new cl_kernel[CLKernelsNum]);
   for (unsigned i = 0; i < CLKernelsNum; i++) {
     cl_int clResult;
     kernels[i] = clCreateKernel(program, gOpenCLKernelNames[i], &clResult);
     if (clResult != CL_SUCCESS) {
-      fprintf(stderr, " * Error: can't found kernel %s\n", gOpenCLKernelNames[i]);
+      LOG_F(ERROR, " * Error: can't found kernel %s", gOpenCLKernelNames[i]);
       return;
     }
   }
@@ -1001,20 +1015,20 @@ void runBenchmarks(cl_context context,
   cl_int error;  
   cl_command_queue queue = clCreateCommandQueue(context, deviceId, 0, &error);
   if (!queue || error != CL_SUCCESS) {
-    fprintf(stderr, " * Error: can't create command queue\n");
+    LOG_F(ERROR, " * Error: can't create command queue");
     return;
   }
   
   // Get miner config
   {
-    mConfig.init(context, 1);
+    OCL(mConfig.init(context, 1));
     
     size_t globalSize = 1;
     size_t localSize = 1;
     cl_kernel getconf = clCreateKernel(program, "getconfig", &error);
     clSetKernelArg(getconf, 0, sizeof(cl_mem), &mConfig.DeviceData);
     clEnqueueNDRangeKernel(queue, getconf, 1, 0, &globalSize, &localSize, 0, 0, 0);
-    mConfig.copyToHost(queue, true);
+    OCL(mConfig.copyToHost(queue, true));
     clFinish(queue);
   }  
   
@@ -1028,11 +1042,11 @@ void runBenchmarks(cl_context context,
     }    
   }  
 
-  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, true);  
+  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, true);
 
   multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, true);
   multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, false);
-  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 352/32, 262144, true);    
+  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 352/32, 262144, true);
   multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 352/32, 262144, false);
 
   fermatTestBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 131072);

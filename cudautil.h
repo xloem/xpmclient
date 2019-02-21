@@ -10,7 +10,7 @@
 do { \
   nvrtcResult result = x; \
   if (result != NVRTC_SUCCESS) { \
-    fprintf(stderr, "\nerror: %i\nfailed with error %s at %s:%d\n", (int)result, nvrtcGetErrorString(result), __FILE__, __LINE__); \
+    fprintf(stderr, "\nerror: %i\nfailed with error %s at %s:%d\n", static_cast<int>(result), nvrtcGetErrorString(result), __FILE__, __LINE__); \
     exit(1); \
   } \
 } while(0)
@@ -21,7 +21,7 @@ do { \
   if (result != CUDA_SUCCESS) { \
     const char *msg; \
     cuGetErrorName(result, &msg); \
-    fprintf(stderr, "\nerror: %i\nfailed with error %s at %s:%d\n", (int)result, msg, __FILE__, __LINE__); \
+    fprintf(stderr, "\nerror: %i\nfailed with error %s at %s:%d\n", static_cast<int>(result), msg, __FILE__, __LINE__); \
     exit(1); \
   } \
 } while(0)
@@ -42,35 +42,35 @@ public:
       CUDA_SAFE_CALL(cuMemFree(_deviceData)); 
   }
   
-  void init(size_t size, bool hostNoAccess) {
+  CUresult init(size_t size, bool hostNoAccess) {
     _size = size;
     if (!hostNoAccess)
       _hostData = new T[size];
-    CUDA_SAFE_CALL(cuMemAlloc(&_deviceData, sizeof(T)*size));
+    return cuMemAlloc(&_deviceData, sizeof(T)*size);
   }
   
-  void copyToDevice() { 
-    CUDA_SAFE_CALL(cuMemcpyHtoD(_deviceData, _hostData, sizeof(T)*_size));
+  CUresult copyToDevice() {
+    return cuMemcpyHtoD(_deviceData, _hostData, sizeof(T)*_size);
   }
 
-  void copyToDevice(CUstream stream) { 
-    CUDA_SAFE_CALL(cuMemcpyHtoDAsync(_deviceData, _hostData, sizeof(T)*_size, stream));
+  CUresult copyToDevice(CUstream stream) {
+    return cuMemcpyHtoDAsync(_deviceData, _hostData, sizeof(T)*_size, stream);
   }  
   
-  void copyToDevice(T *hostData) {
-    CUDA_SAFE_CALL(cuMemcpyHtoD(_deviceData, hostData, sizeof(T)*_size));
+  CUresult copyToDevice(T *hostData) {
+    return cuMemcpyHtoD(_deviceData, hostData, sizeof(T)*_size);
   }
   
-  void copyToDevice(T *hostData, CUstream stream) {
-    CUDA_SAFE_CALL(cuMemcpyHtoDAsync(_deviceData, hostData, sizeof(T)*_size, stream));
+  CUresult copyToDevice(T *hostData, CUstream stream) {
+    return cuMemcpyHtoDAsync(_deviceData, hostData, sizeof(T)*_size, stream);
   }  
   
-  void copyToHost() {
-    CUDA_SAFE_CALL(cuMemcpyDtoH(_hostData, _deviceData, sizeof(T)*_size));
+  CUresult copyToHost() {
+    return cuMemcpyDtoH(_hostData, _deviceData, sizeof(T)*_size);
   }
   
-  void copyToHost(CUstream stream) {
-    CUDA_SAFE_CALL(cuMemcpyDtoHAsync(_hostData, _deviceData, sizeof(T)*_size, stream));
+  CUresult copyToHost(CUstream stream) {
+    return cuMemcpyDtoHAsync(_hostData, _deviceData, sizeof(T)*_size, stream);
   }  
   
   T& get(int index) {

@@ -17,7 +17,7 @@
 #define OCL(error) \
   if(cl_int err = error){ \
     printf("OpenCL error: %d at %s:%d\n", err, __FILE__, __LINE__); \
-    return; \
+    exit(err); \
   }
 
 #define OCLR(error, ret) \
@@ -25,16 +25,6 @@
     printf("OpenCL error: %d at %s:%d\n", err, __FILE__, __LINE__); \
     return ret; \
   }
-
-#define OCLE(error) \
-  if(cl_int err = error){ \
-    printf("OpenCL error: %d at %s:%d\n", err, __FILE__, __LINE__); \
-    exit(err); \
-  }
-
-
-
-
 
 template<typename T>
 class clBuffer {
@@ -58,7 +48,7 @@ public:
     
   }
   
-  void init(cl_context gContext, int size, cl_mem_flags flags = 0) {
+  cl_int init(cl_context gContext, int size, cl_mem_flags flags = 0) {
     Size = size;
     
     if(!(flags & CL_MEM_HOST_NO_ACCESS)){
@@ -74,21 +64,21 @@ public:
       DeviceData = clCreateBuffer(gContext, flags, Size*sizeof(T), HostData, &error);
     else
       DeviceData = clCreateBuffer(gContext, flags, Size*sizeof(T), 0, &error);
-    OCL(error);
+    return error;
   }
   
-  void copyToDevice(cl_command_queue cq, bool blocking = true) {
+  cl_int copyToDevice(cl_command_queue cq, bool blocking = true) {
     
-    OCL(clEnqueueWriteBuffer(cq, DeviceData, blocking, 0, Size*sizeof(T), HostData, 0, 0, 0));
+    return clEnqueueWriteBuffer(cq, DeviceData, blocking, 0, Size*sizeof(T), HostData, 0, 0, 0);
     
   }
   
-  void copyToHost(cl_command_queue cq, bool blocking = true, unsigned size = 0) {
+  cl_int copyToHost(cl_command_queue cq, bool blocking = true, unsigned size = 0) {
     
     if(size == 0)
       size = Size;
     
-    OCL(clEnqueueReadBuffer(cq, DeviceData, blocking, 0, size*sizeof(T), HostData, 0, 0, 0));
+    return clEnqueueReadBuffer(cq, DeviceData, blocking, 0, size*sizeof(T), HostData, 0, 0, 0);
     
   }
   

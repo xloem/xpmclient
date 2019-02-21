@@ -11,6 +11,7 @@
 #include "sysinfo.h"
 #include "prime.h"
 
+#include "loguru.hpp"
 #include <iostream>
 
 std::string gClientName;
@@ -26,7 +27,7 @@ static void* gSignals = 0;
 static void* gWorkers = 0;
 
 static unsigned gStaleShareChain = 0;
-static std::map<unsigned, time_t> timeMap;
+//static std::map<unsigned, time_t> timeMap;
 
 std::string gAddr = "";
 proto::Block gBlock;
@@ -38,7 +39,12 @@ static unsigned gLatency = 0;
 static bool gHeartBeat = true;
 static bool gExit = false;
 
-static std::map<unsigned, int> gSharesSent;
+struct shareData {
+  int length;
+  decltype(std::chrono::steady_clock::now()) time;
+};
+
+static std::map<unsigned, shareData> gSharesSent;
 static std::map<unsigned, share_t> gShares;
 static BaseClient *gClient;
 
@@ -46,7 +52,7 @@ static BaseClient *gClient;
 static bool ConnectBitcoin() {
 	
 	const proto::ServerInfo& sinfo = gServerInfo;
-	printf("Connecting to bitcoin: %s:%d ...\n", sinfo.host().c_str(), sinfo.router());
+  LOG_F(INFO, "Connecting to bitcoin: %s:%d ...", sinfo.host().c_str(), sinfo.router());
 
 	int linger = 0;
 	char endpoint[256];
@@ -66,7 +72,7 @@ static bool ConnectBitcoin() {
 static bool ConnectSignals() {
 	
 	const proto::ServerInfo& sinfo = gServerInfo;
-	printf("Connecting to signals: %s:%d ...\n", sinfo.host().c_str(), sinfo.pub());
+  LOG_F(INFO, "Connecting to signals: %s:%d ...", sinfo.host().c_str(), sinfo.pub());
 	
 	int linger = 0;
 	char endpoint[256];
@@ -146,7 +152,7 @@ static bool HandleNewWork(const proto::Work& work) {
 	float diff = gRequestTimer.diff();
 	gLatency = diff * 1000.;
 	
-	printf("Work received: height=%d diff=%.8g latency=%dms\n",
+  LOG_F(INFO, "Work received: height=%d diff=%.8g latency=%dms",
 			work.height(), GetPrimeDifficulty(work.bits()), gLatency);
 	
 	return gClient->TakeWork(work);
@@ -166,27 +172,32 @@ static void SubmitShare(const proto::Share& share) {
 	GetNewReqNonce(req);
 	Send(req, gServer);
 	
-  timeMap[req.reqid()] = time(0);
-	gSharesSent[req.reqid()] = share.length();
+//  timeMap[req.reqid()] = time(0);
+  shareData data;
+  data.time = std::chrono::steady_clock::now();
+  data.length = share.length();
+  gSharesSent[req.reqid()] = data;
 	
 }
 
 
 static void PrintStats() {
-	
-	printf("(ST/INV/DUP):");
+  char buffer[512] = "(ST/INV/DUP):";
+//	printf("(ST/INV/DUP):");
 	for(std::map<unsigned, share_t>::const_iterator iter = gShares.begin(); iter != gShares.end(); ++iter){
-		
+    char lbuffer[128];
 		const share_t& share = iter->second;
-		printf(" %dx %dch(%d/%d/%d)", share.accepted, iter->first, share.stale, share.invalid, share.duplicate);
+    snprintf(lbuffer, sizeof(lbuffer), " %dx %dch(%d/%d/%d)", share.accepted, iter->first, share.stale, share.invalid, share.duplicate);
+    strcat(buffer, lbuffer);
 		
 	}
 	
 	if(!gShares.size())
-		printf(" none");
+    strcat(buffer, " none");
+//		printf(" none");
 		
-	printf("\n");
-	
+//	printf("\n");
+  LOG_F(INFO, "%s", buffer);
 }
 
 
@@ -196,7 +207,7 @@ static int HandleReply(void *socket) {
 	Receive(rep, socket);
 	
 	if(rep.has_errstr())
-		printf("Message from server: %s\n", rep.errstr().c_str());
+    LOG_F(ERROR, "Message from server: %s", rep.errstr().c_str());
 	
 	if(rep.has_block()){
 		
@@ -216,24 +227,24 @@ static int HandleReply(void *socket) {
 		}
 		
 	}else if(rep.type() == proto::Request::SHARE){
-		timeMap.erase(rep.reqid());
-    
-		unsigned length = gSharesSent[rep.reqid()];
+    auto currentTime = std::chrono::steady_clock::now();
+    auto info = gSharesSent[rep.reqid()];
+    auto ms = static_cast<unsigned>(std::chrono::duration_cast<std::chrono::milliseconds>(currentTime-info.time).count());
 		gSharesSent.erase(rep.reqid());
 
 		switch(rep.error()){
 		case proto::Reply::NONE:
-			printf("Share accepted.\n");
+      LOG_F(1, "Share accepted %ums", ms);
 			gStaleShareChain = 0;
-			gShares[length].accepted++;  
+      gShares[info.length].accepted++;
 			break;
 		case proto::Reply::INVALID:
-			printf("Invalid share.\n");
-			gShares[length].invalid++;
+      LOG_F(WARNING, "Invalid share %ums", ms);
+      gShares[info.length].invalid++;
 			break;
 		case proto::Reply::STALE:
-			printf("Stale share.\n");
-			gShares[length].stale++;
+      LOG_F(WARNING, "Stale share %ums", ms);
+      gShares[info.length].stale++;
 			gStaleShareChain++;
 			if (gStaleShareChain >= 4) {
 				gStaleShareChain = 0;
@@ -242,8 +253,8 @@ static int HandleReply(void *socket) {
 			}
 			break;
 		case proto::Reply_ErrType_DUPLICATE:
-			printf("Duplicate share.\n");
-			gShares[length].duplicate++;
+      LOG_F(WARNING, "Duplicate share");
+      gShares[info.length].duplicate++;
 			break;
 		default: break;
 		}
@@ -253,7 +264,7 @@ static int HandleReply(void *socket) {
 		if(rep.error() == proto::Reply::NONE)
 			{}//printf("Statistics accepted.\n");
 		else
-			printf("Statistics rejected.\n");
+      LOG_F(WARNING, "Statistics rejected");
 		
 	}else if(rep.type() == proto::Request::PING){
 		
@@ -279,7 +290,7 @@ static int HandleSignal(void *socket) {
 		
 	}else if(sig.type() == proto::Signal::SHUTDOWN){
 		
-		printf("Server is shutting down, reconnecting...\n");
+    LOG_F(WARNING, "Server is shutting down, reconnecting...");
 		gExit = false;
 		return -1;
 		
@@ -308,7 +319,7 @@ static int HandleTimer() {
 	
 	if(!gHeartBeat){
 		
-		printf("Connection lost, reconnecting...\n");
+    LOG_F(WARNING, "Connection lost, reconnecting...");
 		gExit = false;
 		return -1;
 		
@@ -348,11 +359,12 @@ static int HandleTimer() {
 
 
 static int TimeoutCheckProc() {  
-  time_t currentTime = time(0);
-  for (auto &t: timeMap) {
-    if (currentTime - t.second >= 5) {
-      timeMap.clear();
-      printf("Connection lost, reconnecting...\n");
+//  time_t currentTime = time(0);
+  auto currentTime = std::chrono::steady_clock::now();
+  for (auto &t: gSharesSent) {
+    if (std::chrono::duration_cast<std::chrono::seconds>(currentTime-t.second.time).count() >= 5) {
+      gSharesSent.clear();
+      LOG_F(WARNING, "Connection lost, reconnecting...");
       gExit = false;
       return -1;
     }
@@ -363,8 +375,23 @@ static int TimeoutCheckProc() {
 }
 
 
-int main(int argc, char **argv) {
-gBlock.set_height(0);
+int main(int argc, char **argv)
+{
+  char logFileName[64];
+  {
+    auto t = std::time(nullptr);
+    auto now = std::localtime(&t);
+    snprintf(logFileName, sizeof(logFileName), "miner-%04u-%02u-%02u.log", now->tm_year + 1900, now->tm_mon, now->tm_mday);
+  }
+  loguru::g_stderr_verbosity = loguru::Verbosity_OFF;
+  loguru::g_preamble_thread = false;
+  loguru::g_preamble_file = false;
+  loguru::g_flush_interval_ms = 100;
+  loguru::init(argc, argv);
+  loguru::add_file(logFileName, loguru::Append, 1);
+  loguru::g_stderr_verbosity = 1;
+
+  gBlock.set_height(0);
 	gClientName = sysinfo::GetClientName();
 	gClientID = sysinfo::GetClientID();
 	gInstanceID = gClientID * (unsigned)time(0);
@@ -381,25 +408,19 @@ gBlock.set_height(0);
 		gAddr = cfg->lookupString("", "address", "");
 		gClientName = cfg->lookupString("", "name", gClientName.c_str());
 	}catch(const ConfigurationException& ex){
-		printf("ERROR: %s\n", ex.c_str());
-		printf("hit return to exit...\n");
-		std::string line;
-		std::getline(std::cin, line);
+    LOG_F(ERROR, "%s\n", ex.c_str());
 		exit(EXIT_FAILURE);
 	}
 	
 	if(!gClientName.size())
 		gClientName = sysinfo::GetClientName();
 	
-	printf("xpmclient-10.2.3\n", gClientVersion/10, gClientVersion%10);
-	printf("ClientName = '%s'  ClientID = %u  InstanceID = %u\n", gClientName.c_str(), gClientID, gInstanceID);
-	printf("Address = '%s'\n", gAddr.c_str());
+  LOG_F(INFO, "xpmclient-10.3");
+  LOG_F(INFO, "ClientName = '%s'  ClientID = %u  InstanceID = %u", gClientName.c_str(), gClientID, gInstanceID);
+  LOG_F(INFO, "Address = '%s'", gAddr.c_str());
 	
 	if(!gAddr.size()){
-		printf("ERROR: address not specified in config.txt\n");
-		printf("hit return to exit...\n");
-		std::string line;
-		std::getline(std::cin, line);
+    LOG_F(ERROR, "address not specified in config.txt\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -415,7 +436,7 @@ gBlock.set_height(0);
 	gExit = !gClient->Initialize(cfg, benchmarkOnly);
 	
 	while(!gExit){
-		printf("Connecting to frontend: %s:%d ...\n", frontHost.c_str(), frontPort);
+    LOG_F(INFO, "Connecting to frontend: %s:%d ...", frontHost.c_str(), frontPort);
 		
 		gBlock.Clear();
 		proto::Reply rep;
@@ -430,7 +451,7 @@ gBlock.set_height(0);
 			zmq_setsockopt (gFrontend, ZMQ_LINGER, &linger, sizeof(int));                        
 			int err = zmq_connect(gFrontend, endpoint);
 			if(err){
-				printf("ERROR: invalid hostname and/or port.\n");
+        LOG_F(ERROR, "invalid hostname and/or port");
 				exit(EXIT_FAILURE);
 			}
 			
@@ -450,9 +471,9 @@ gBlock.set_height(0);
 			Receive(rep, gFrontend);
 			
 			if(rep.error() != proto::Reply::NONE){
-				printf("ERROR: %s\n", proto::Reply::ErrType_Name(rep.error()).c_str());
+        LOG_F(ERROR, "%s", proto::Reply::ErrType_Name(rep.error()).c_str());
 				if(rep.has_errstr())
-					printf("Message from server: %s\n", rep.errstr().c_str());
+          LOG_F(ERROR, "Message from server: %s", rep.errstr().c_str());
 			}
 			
 			if(!rep.has_sinfo())

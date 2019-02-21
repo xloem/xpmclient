@@ -2,7 +2,7 @@
 #include <fstream>
 #include <vector>
 #include <memory>
-#include <stdio.h>
+#include "loguru.hpp"
 
 extern cl_platform_id gPlatform;
 // extern cl_program gProgram;
@@ -13,7 +13,7 @@ bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
   cl_uint numPlatforms;
   OCLR(clGetPlatformIDs(sizeof(platforms)/sizeof(cl_platform_id), platforms, &numPlatforms), false);
   if (!numPlatforms) {
-    printf("<error> no OpenCL platforms found\n");
+    LOG_F(ERROR, "no OpenCL platforms found");
     return false;
   }
   
@@ -22,7 +22,7 @@ bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
     for (decltype(numPlatforms) i = 0; i < numPlatforms; i++) {
       char name[1024] = {0};
       OCLR(clGetPlatformInfo(platforms[i], CL_PLATFORM_NAME, sizeof(name), name, 0), false);
-      printf("found platform[%i] name = '%s'\n", (int)i, name);
+      LOG_F(INFO, "found platform[%i] name = '%s'", (int)i, name);
       if (strcmp(name, requiredPlatform) == 0) {
         platformIdx = i;
         break;
@@ -34,7 +34,7 @@ bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
   
   
   if (platformIdx == -1) {
-    printf("<error> platform %s not exists\n", requiredPlatform);
+    LOG_F(ERROR, "platform %s not exists", requiredPlatform);
     return false;
   }
   
@@ -44,9 +44,9 @@ bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
   cl_device_id devices[64];
   clGetDeviceIDs(gPlatform, CL_DEVICE_TYPE_GPU, sizeof(devices)/sizeof(cl_device_id), devices, &numDevices);
   if (numDevices) {
-    printf("<info> found %d devices\n", numDevices);
+    LOG_F(INFO, "found %d devices", numDevices);
   } else {
-    printf("<error> no OpenCL GPU devices found.\n");
+    LOG_F(ERROR, "no OpenCL GPU devices found.");
     return false;
   }
 
@@ -68,7 +68,7 @@ bool clCompileKernel(cl_context gContext,
 {
   std::ifstream testfile(binaryName);
   if(needRebuild || !testfile) {
-    printf("<info> compiling ...\n");
+    LOG_F(INFO, "compiling ...");
     
     std::string sourceFile;
     for (auto &i: sources) {
@@ -77,9 +77,9 @@ bool clCompileKernel(cl_context gContext,
       sourceFile.append(str);
     }
     
-    printf("<info> source: %u bytes\n", (unsigned)sourceFile.size());
+    LOG_F(INFO, "source: %u bytes", (unsigned)sourceFile.size());
     if(sourceFile.size() < 1){
-      fprintf(stderr, "<error> source files not found or empty\n");
+      LOG_F(ERROR, "source files not found or empty");
       return false;
     }
     
@@ -88,13 +88,13 @@ bool clCompileKernel(cl_context gContext,
     *gProgram = clCreateProgramWithSource(gContext, 1, sources, 0, &error);
     OCLR(error, false);
     
-    if (clBuildProgram(*gProgram, 1, &gpu, arguments, 0, 0) != CL_SUCCESS) {    
+    if (clBuildProgram(*gProgram, 1, &gpu, arguments, 0, 0) != CL_SUCCESS) {
       size_t logSize;
       clGetProgramBuildInfo(*gProgram, gpu, CL_PROGRAM_BUILD_LOG, 0, 0, &logSize);
       
       std::unique_ptr<char[]> log(new char[logSize]);
       clGetProgramBuildInfo(*gProgram, gpu, CL_PROGRAM_BUILD_LOG, logSize, log.get(), 0);
-      printf("%s\n", log.get());
+      LOG_F(INFO, "%s\n", log.get());
 
       return false;
     }
@@ -102,11 +102,11 @@ bool clCompileKernel(cl_context gContext,
     size_t binsize;
     OCLR(clGetProgramInfo(*gProgram, CL_PROGRAM_BINARY_SIZES, sizeof(size_t), &binsize, 0), false);
       if(!binsize) {
-        printf("<error> no binary available!\n");
+        LOG_F(ERROR, "no binary available!");
         return false;
       }
     
-    printf("<info> binsize = %u bytes\n", (unsigned)binsize);
+    LOG_F(INFO, "binsize = %u bytes", (unsigned)binsize);
     std::unique_ptr<unsigned char[]> binary(new unsigned char[binsize+1]);
     OCLR(clGetProgramInfo(*gProgram, CL_PROGRAM_BINARIES, sizeof(void*), &binary, 0), false);
     
@@ -121,7 +121,7 @@ bool clCompileKernel(cl_context gContext,
   
   std::ifstream bfile(binaryName, std::ifstream::binary);
   if(!bfile) {
-    printf("<error> %s not found\n", binaryName);
+    LOG_F(ERROR, "%s not found", binaryName);
     return false;
   }  
   
@@ -129,7 +129,7 @@ bool clCompileKernel(cl_context gContext,
   size_t binsize = bfile.tellg();
   bfile.seekg(0, bfile.beg);
   if(!binsize){
-    printf("<error> %s empty\n", binaryName);
+    LOG_F(ERROR, "<error> %s empty", binaryName);
     return false;
   }
   

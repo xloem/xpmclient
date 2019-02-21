@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include "loguru.hpp"
 
 bool cudaCompileKernel(const char *kernelName,
                        const std::vector<const char*> &sources,
@@ -12,7 +13,7 @@ bool cudaCompileKernel(const char *kernelName,
 {
   std::ifstream testfile(kernelName);
   if(needRebuild || !testfile) {
-    printf("<info> compiling ...\n");
+    LOG_F(INFO, "compiling ...");
     
     std::string sourceFile;
     for (auto &i: sources) {
@@ -21,9 +22,9 @@ bool cudaCompileKernel(const char *kernelName,
       sourceFile.append(str);
     }
     
-    printf("<info> source: %u bytes\n", (unsigned)sourceFile.size());
+    LOG_F(INFO, "source: %u bytes", (unsigned)sourceFile.size());
     if(sourceFile.size() < 1){
-      fprintf(stderr, "<error> source files not found or empty\n");
+      LOG_F(ERROR, "source files not found or empty");
       return false;
     }
     
@@ -43,7 +44,6 @@ bool cudaCompileKernel(const char *kernelName,
     NVRTC_SAFE_CALL(nvrtcGetProgramLogSize(prog, &logSize));
     char *log = new char[logSize];
     NVRTC_SAFE_CALL(nvrtcGetProgramLog(prog, log));
-    std::cout << log << '\n';
     delete[] log;
     if (compileResult != NVRTC_SUCCESS) {
       return false;
@@ -69,7 +69,6 @@ bool cudaCompileKernel(const char *kernelName,
   
   std::ifstream bfile(kernelName, std::ifstream::binary);
   if(!bfile) {
-    printf("<error> %s not found\n", kernelName);
     return false;
   }  
   
@@ -77,7 +76,7 @@ bool cudaCompileKernel(const char *kernelName,
   size_t binsize = bfile.tellg();
   bfile.seekg(0, bfile.beg);
   if(!binsize){
-    printf("<error> %s empty\n", kernelName);
+    LOG_F(ERROR, "%s empty", kernelName);
     return false;
   }
   

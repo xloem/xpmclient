@@ -15,6 +15,8 @@ extern "C" {
 	#include "adl.h"
 }
 
+#include "loguru.hpp"
+
 #include <fstream>
 #include <set>
 #include <memory>
@@ -96,24 +98,24 @@ bool PrimeMiner::Initialize(CUcontext context, CUdevice device, CUmodule module)
     CUDA_SAFE_CALL(cuModuleGetFunction(&getConfigKernel, module, "_Z9getconfigP8config_t"));  
     
     cudaBuffer<config_t> config;
-    config.init(1, false);
+    CUDA_SAFE_CALL(config.init(1, false));
     void *args[] = { &config._deviceData };
     CUDA_SAFE_CALL(cuLaunchKernel(getConfigKernel,
                                   1, 1, 1,
                                   1, 1, 1,
                                   0, NULL, args, 0));
     CUDA_SAFE_CALL(cuCtxSynchronize());
-    config.copyToHost();
+    CUDA_SAFE_CALL(config.copyToHost());
     mConfig = *config._hostData;
   }
 
-  printf("N=%d SIZE=%d STRIPES=%d WIDTH=%d PCOUNT=%d TARGET=%d\n",
+  LOG_F(INFO, "N=%d SIZE=%d STRIPES=%d WIDTH=%d PCOUNT=%d TARGET=%d",
          mConfig.N, mConfig.SIZE, mConfig.STRIPES, mConfig.WIDTH, mConfig.PCOUNT, mConfig.TARGET);
   
   int computeUnits;
   CUDA_SAFE_CALL(cuDeviceGetAttribute(&computeUnits, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, device));
   mBlockSize = computeUnits * 4 * 64;
-  printf("GPU %d: has %d CUs\n", mID, computeUnits);
+  LOG_F(INFO, "GPU %d: has %d CUs", mID, computeUnits);
   return true;
 }
 
@@ -127,12 +129,12 @@ void PrimeMiner::FermatInit(pipeline_t &fermat, unsigned mfs)
 {
   fermat.current = 0;
   fermat.bsize = 0;
-  fermat.input.init(mfs*mConfig.N, true);
-  fermat.output.init(mfs, true);
+  CUDA_SAFE_CALL(fermat.input.init(mfs*mConfig.N, true));
+  CUDA_SAFE_CALL(fermat.output.init(mfs, true));
 
   for(int i = 0; i < 2; ++i){
-    fermat.buffer[i].info.init(mfs, true);
-    fermat.buffer[i].count.init(1, false); // CL_MEM_ALLOC_HOST_PTR
+    CUDA_SAFE_CALL(fermat.buffer[i].info.init(mfs, true));
+    CUDA_SAFE_CALL(fermat.buffer[i].count.init(1, false)); // CL_MEM_ALLOC_HOST_PTR
   }
 }
 
@@ -172,7 +174,7 @@ void PrimeMiner::FermatDispatch(pipeline_t &fermat,
     }
     
     fermat.buffer[widx].count[0] = 0;
-    fermat.buffer[widx].count.copyToDevice(mHMFermatStream);
+    CUDA_SAFE_CALL(fermat.buffer[widx].count.copyToDevice(mHMFermatStream));
     
     fermat.bsize = 0;
     if(count > mBlockSize){                 
@@ -299,10 +301,10 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
   CUDA_SAFE_CALL(cuEventCreate(&sieveEvent, CU_EVENT_BLOCKING_SYNC));
   
   for (unsigned i = 0; i < maxHashPrimorial - mPrimorial; i++) {
-    primeBuf[i].init(mConfig.PCOUNT, true);
-    primeBuf[i].copyToDevice(&gPrimes[mPrimorial+i+1]);
-    primeBuf2[i].init(mConfig.PCOUNT*2, true);
-    primeBuf2[i].copyToDevice(&gPrimes2[2*(mPrimorial+i)+2]);
+    CUDA_SAFE_CALL(primeBuf[i].init(mConfig.PCOUNT, true));
+    CUDA_SAFE_CALL(primeBuf[i].copyToDevice(&gPrimes[mPrimorial+i+1]));
+    CUDA_SAFE_CALL(primeBuf2[i].init(mConfig.PCOUNT*2, true));
+    CUDA_SAFE_CALL(primeBuf2[i].copyToDevice(&gPrimes2[2*(mPrimorial+i)+2]));
     mpz_class p = 1;
     for(unsigned j = 0; j <= mPrimorial+i; j++)
       p *= gPrimes[j];    
@@ -313,32 +315,32 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 		unsigned primorialbits = mpz_sizeinbase(primorial[0].get_mpz_t(), 2);
 		mpz_class sievesize = mConfig.SIZE*32*mConfig.STRIPES;
 		unsigned sievebits = mpz_sizeinbase(sievesize.get_mpz_t(), 2);
-		printf("GPU %d: primorial = %s (%d bits)\n", mID, primorial[0].get_str(10).c_str(), primorialbits);
-		printf("GPU %d: sieve size = %s (%d bits)\n", mID, sievesize.get_str(10).c_str(), sievebits);
+    LOG_F(INFO, "GPU %d: primorial = %s (%d bits)", mID, primorial[0].get_str(10).c_str(), primorialbits);
+    LOG_F(INFO, "GPU %d: sieve size = %s (%d bits)", mID, sievesize.get_str(10).c_str(), sievebits);
 	}
   
-  hashmod.midstate.init(8, false);
-  hashmod.found.init(128, false);
-  hashmod.primorialBitField.init(128, false);
-  hashmod.count.init(1, false);
-  hashBuf.init(PW*mConfig.N, false);
+  CUDA_SAFE_CALL(hashmod.midstate.init(8, false));
+  CUDA_SAFE_CALL(hashmod.found.init(128, false));
+  CUDA_SAFE_CALL(hashmod.primorialBitField.init(128, false));
+  CUDA_SAFE_CALL(hashmod.count.init(1, false));
+  CUDA_SAFE_CALL(hashBuf.init(PW*mConfig.N, false));
 	
 	for(int sieveIdx = 0; sieveIdx < SW; ++sieveIdx) {
     for(int instIdx = 0; instIdx < 2; ++instIdx){    
       for (int pipelineIdx = 0; pipelineIdx < FERMAT_PIPELINES; pipelineIdx++)
-        sieveBuffers[sieveIdx][pipelineIdx][instIdx].init(MSO, true);
+        CUDA_SAFE_CALL(sieveBuffers[sieveIdx][pipelineIdx][instIdx].init(MSO, true));
       
-      candidatesCountBuffers[sieveIdx][instIdx].init(FERMAT_PIPELINES, false); // CL_MEM_ALLOC_HOST_PTR
+      CUDA_SAFE_CALL(candidatesCountBuffers[sieveIdx][instIdx].init(FERMAT_PIPELINES, false)); // CL_MEM_ALLOC_HOST_PTR
     }
   }
 	
 	for(int k = 0; k < 2; ++k){
-		sieveBuf[k].init(mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, true);
-		sieveOff[k].init(mConfig.PCOUNT*mConfig.WIDTH, true);
+    CUDA_SAFE_CALL(sieveBuf[k].init(mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, true));
+    CUDA_SAFE_CALL(sieveOff[k].init(mConfig.PCOUNT*mConfig.WIDTH, true));
 	}
 	
-	final.info.init(MFS/(4*mDepth), false); // CL_MEM_ALLOC_HOST_PTR
-  final.count.init(1, false);	 // CL_MEM_ALLOC_HOST_PTR
+  CUDA_SAFE_CALL(final.info.init(MFS/(4*mDepth), false)); // CL_MEM_ALLOC_HOST_PTR
+  CUDA_SAFE_CALL(final.count.init(1, false));	 // CL_MEM_ALLOC_HOST_PTR
 
   FermatInit(fermat320, MFS);
   FermatInit(fermat352, MFS);    
@@ -347,7 +349,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
   unsigned modulosBufferSize = mConfig.PCOUNT*(mConfig.N-1);   
   for (unsigned bufIdx = 0; bufIdx < maxHashPrimorial-mPrimorial; bufIdx++) {
     cudaBuffer<uint32_t> &current = modulosBuf[bufIdx];
-    current.init(modulosBufferSize, false);
+    CUDA_SAFE_CALL(current.init(modulosBufferSize, false));
     for (unsigned i = 0; i < mConfig.PCOUNT; i++) {
       mpz_class X = 1;
       for (unsigned j = 0; j < mConfig.N-1; j++) {
@@ -357,7 +359,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
       }
     }
     
-    current.copyToDevice();
+    CUDA_SAFE_CALL(current.copyToDevice());
   }    
 
 	czmq_signal(pipe);
@@ -441,8 +443,8 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 			unsigned target = TargetGetLength(blockheader.bits);
       precalcSHA256(&blockheader, hashmod.midstate._hostData, &precalcData);
       hashmod.count[0] = 0;
-      hashmod.midstate.copyToDevice(mHMFermatStream);
-      hashmod.count.copyToDevice(mHMFermatStream);
+      CUDA_SAFE_CALL(hashmod.midstate.copyToDevice(mHMFermatStream));
+      CUDA_SAFE_CALL(hashmod.count.copyToDevice(mHMFermatStream));
 		}
 		
 		// hashmod fetch & dispatch
@@ -480,7 +482,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 				sha.final((unsigned char*)&hash.hash);
 				
 				if(hash.hash < (uint256(1) << 255)){
-					printf("error: hash does not meet minimum.\n");
+          LOG_F(WARNING, "hash does not meet minimum.\n");
 					stats.errors++;
 					continue;
 				}
@@ -488,7 +490,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 				mpz_class mpzHash;
 				mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
         if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
-					printf("error: mpz_divisible_ui_p failed.\n");
+          LOG_F(WARNING, "mpz_divisible_ui_p failed.\n");
 					stats.errors++;
 					continue;
 				}
@@ -503,7 +505,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 			}
 			
 			if (hashmod.count[0])
-        hashBuf.copyToDevice(mSieveStream);
+        CUDA_SAFE_CALL(hashBuf.copyToDevice(mSieveStream));
 			
 			//printf("hashlist.size() = %d\n", (int)hashlist.size());
 			hashmod.count[0] = 0;
@@ -518,8 +520,8 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
           precalcSHA256(&blockheader, hashmod.midstate._hostData, &precalcData);
 				}
 
-				hashmod.midstate.copyToDevice(mHMFermatStream);
-				hashmod.count.copyToDevice(mHMFermatStream);
+        CUDA_SAFE_CALL(hashmod.midstate.copyToDevice(mHMFermatStream));
+        CUDA_SAFE_CALL(hashmod.count.copyToDevice(mHMFermatStream));
 
         void *arguments[] = {
           &blockheader.nonce,
@@ -558,7 +560,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
         if(hashes.empty()){
           if (!reset) {
             numHashCoeff += 32768;
-            printf(" * warning: ran out of hashes, increasing sha256 work size coefficient to %u\n", numHashCoeff);
+            LOG_F(WARNING, "ran out of hashes, increasing sha256 work size coefficient to %u", numHashCoeff);
           }
           break;
         }
@@ -566,7 +568,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
         int hid = hashes.pop();
         unsigned primorialIdx = hashes.get(hid).primorialIdx;    
         
-        candidatesCountBuffers[i][widx].copyToDevice(mSieveStream);
+        CUDA_SAFE_CALL(candidatesCountBuffers[i][widx].copyToDevice(mSieveStream));
         
         {
           void *arguments[] = {
@@ -625,8 +627,8 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
           };
           
           CUDA_SAFE_CALL(cuLaunchKernel(mSieveSearch,
-                                        (mConfig.SIZE*mConfig.STRIPES/2)/mLSize, 1, 1,
-                                        mLSize, 1, 1,
+                                        (mConfig.SIZE*mConfig.STRIPES/2)/256, 1, 1,
+                                        256, 1, 1,
                                         0, mSieveStream, arguments, 0));
           
           CUDA_SAFE_CALL(cuEventRecord(sieveEvent, mSieveStream)); 
@@ -645,7 +647,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 			memcpy(&candis[0], final.info._hostData, numcandis*sizeof(fermat_t));
 		
     final.count[0] = 0;
-    final.count.copyToDevice(mHMFermatStream);    
+    CUDA_SAFE_CALL(final.count.copyToDevice(mHMFermatStream));
     FermatDispatch(fermat320, sieveBuffers, candidatesCountBuffers, 0, ridx, widx, testCount, fermatCount, mFermatKernel320, mSievePerRound);
     FermatDispatch(fermat352, sieveBuffers, candidatesCountBuffers, 1, ridx, widx, testCount, fermatCount, mFermatKernel352, mSievePerRound);
 
@@ -657,26 +659,26 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
     CUDA_SAFE_CALL(cuCtxSynchronize());
 #endif
     for (unsigned i = 0; i < mSievePerRound; i++)
-      candidatesCountBuffers[i][widx].copyToHost(mSieveStream);
+      CUDA_SAFE_CALL(candidatesCountBuffers[i][widx].copyToHost(mSieveStream));
     
     // Synchronize Fermat stream, copy all needed data
-		hashmod.found.copyToHost(mHMFermatStream);
-    hashmod.primorialBitField.copyToHost(mHMFermatStream);
-    hashmod.count.copyToHost(mHMFermatStream);        
-    fermat320.buffer[widx].count.copyToHost(mHMFermatStream);
-    fermat352.buffer[widx].count.copyToHost(mHMFermatStream);       
-    final.info.copyToHost(mHMFermatStream);
-    final.count.copyToHost(mHMFermatStream);          
+    CUDA_SAFE_CALL(hashmod.found.copyToHost(mHMFermatStream));
+    CUDA_SAFE_CALL(hashmod.primorialBitField.copyToHost(mHMFermatStream));
+    CUDA_SAFE_CALL(hashmod.count.copyToHost(mHMFermatStream));
+    CUDA_SAFE_CALL(fermat320.buffer[widx].count.copyToHost(mHMFermatStream));
+    CUDA_SAFE_CALL(fermat352.buffer[widx].count.copyToHost(mHMFermatStream));
+    CUDA_SAFE_CALL(final.info.copyToHost(mHMFermatStream));
+    CUDA_SAFE_CALL(final.count.copyToHost(mHMFermatStream));
     
     // adjust sieves per round
     if (fermat320.buffer[ridx].count[0] && fermat320.buffer[ridx].count[0] < mBlockSize &&
         fermat352.buffer[ridx].count[0] && fermat352.buffer[ridx].count[0] < mBlockSize) {
       mSievePerRound = std::min((unsigned)SW, mSievePerRound+1);
-      printf(" * warning: not enough candidates (%u available, must be more than %u\n",
+      LOG_F(WARNING, "not enough candidates (%u available, must be more than %u",
              std::max(fermat320.buffer[ridx].count[0], fermat352.buffer[ridx].count[0]),
              mBlockSize);
              
-      printf("   * increase sieves per round to %u\n", mSievePerRound);
+      LOG_F(WARNING, "increase sieves per round to %u", mSievePerRound);
     }
 		
 		// check candis
@@ -691,7 +693,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 				
 				unsigned age = iteration - hash.iter;
 				if(age > PW/2)
-					printf("WARNING: candidate age > PW/2 with %d\n", age);
+          LOG_F(WARNING, "candidate age > PW/2 with %d", age);
 				
 				multi = candi.index;
 				multi <<= candi.origin;
@@ -718,29 +720,28 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 					share.set_chaintype(candi.type);
 					share.set_isblock(isblock);
 					
-					printf("GPU %d found share: %d-ch type %d\n", mID, chainlength, candi.type+1);
+          LOG_F(1, "GPU %d found share: %d-ch type %d", mID, chainlength, candi.type+1);
 					if(isblock)
-						printf("GPU %d found BLOCK!\n", mID);
+            LOG_F(1, "GPU %d found BLOCK!", mID);
 					
 					Send(share, sharepush);
 					
 				}else if(chainlength < mDepth){
-					printf("error: ProbablePrimeChainTestFast %ubits %d/%d\n", (unsigned)mpz_sizeinbase(chainorg.get_mpz_t(), 2), chainlength, mDepth);
-          printf(" * origin: %s\n", chainorg.get_str().c_str());
-          printf(" * type: %u\n", (unsigned)candi.type);
-          printf(" * multiplier: %u\n", (unsigned)candi.index);
-          printf(" * layer: %u\n", (unsigned)candi.origin);
-          printf(" * hash primorial: %s\n", hash.primorial.get_str().c_str());
-          printf("   * primorial multipliers: ");
+          LOG_F(WARNING, "ProbablePrimeChainTestFast %ubits %d/%d", (unsigned)mpz_sizeinbase(chainorg.get_mpz_t(), 2), chainlength, mDepth);
+          LOG_F(WARNING, "origin: %s", chainorg.get_str().c_str());
+          LOG_F(WARNING, "type: %u", (unsigned)candi.type);
+          LOG_F(WARNING, "multiplier: %u", (unsigned)candi.index);
+          LOG_F(WARNING, "layer: %u", (unsigned)candi.origin);
+          LOG_F(WARNING, "hash primorial: %s", hash.primorial.get_str().c_str());
+          LOG_F(WARNING, "primorial multipliers: ");
           for (unsigned i = 0; i < mPrimorial;) {
             if (hash.primorial % gPrimes[i] == 0) {
               hash.primorial /= gPrimes[i];
-              printf("[%u]%u ", i+1, gPrimes[i]);
+              LOG_F(WARNING, " * [%u]%u", i+1, gPrimes[i]);
             } else {
               i++;
             }
           }
-          printf("\n");
 					stats.errors++;
 				}
 			}
@@ -752,7 +753,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 		iteration++;
 	}
 	
-	printf("GPU %d stopped.\n", mID);
+  LOG_F(INFO, "GPU %d stopped.", mID);
 
 	zmq_close(blocksub);
 	zmq_close(worksub);
@@ -794,12 +795,10 @@ void XPMClient::dumpSieveConstants(unsigned weaveDepth,
     if (ranges[2] == 0 && windowSize/prime == 0)
       ranges[2] = i;
   }
-  
-  file << "__constant__ unsigned int sieveRanges[3] = {";
-  file << ranges[0] << ", ";
-  file << ranges[1] << ", " ;
-  file << ranges[2];
-  file << "};\n";  
+
+  file << "#define SIEVERANGE1 " << ranges[0] << "\n";
+  file << "#define SIEVERANGE2 " << ranges[1] << "\n";
+  file << "#define SIEVERANGE3 " << ranges[2] << "\n";
 }
 
 bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adjustedKernelTarget) {
@@ -885,7 +884,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 			multiplierSizeLimits[1] = atoi(cmultiplierlimits[1]);
 			multiplierSizeLimits[2] = atoi(cmultiplierlimits[2]);
 		} else {
-			printf(" * Warning: invalid multiplierLimits parameter in config, must be list of 3 numbers\n");
+      LOG_F(WARNING, "invalid multiplierLimits parameter in config, must be list of 3 numbers");
 		}
 		
 		for(int i = 0; i < (int)mNumDevices; ++i){
@@ -923,7 +922,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 			CUDA_SAFE_CALL(cuCtxCreate(&info.context, CU_CTX_SCHED_AUTO, info.device));
 			CUDA_SAFE_CALL(cuDeviceGetName(name, sizeof(name), info.device));
 			gpus.push_back(info);
-			printf("[%i] %s; Compute capability %i.%i\n", (int)gpus.size()-1, name, info.majorComputeCapability, info.minorComputeCapability);
+      LOG_F(INFO, "[%i] %s; Compute capability %i.%i", (int)gpus.size()-1, name, info.majorComputeCapability, info.minorComputeCapability);
 		} else {
 			mDeviceMap[i] = -1;
 		}
@@ -984,8 +983,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 					config.LIMIT13 != multiplierSizeLimits[0] ||
 					config.LIMIT14 != multiplierSizeLimits[1] ||
 					config.LIMIT15 != multiplierSizeLimits[2]) {
-        printf("Existing CUDA kernel (kernelxpm_gpu<N>.ptx) incompatible with configuration\n");
-        printf("Please remove kernelxpm_gpu<N>.ptx file and restart miner\n");
+        LOG_F(ERROR, "Existing CUDA kernel (kernelxpm_gpu<N>.ptx) incompatible with configuration");
+        LOG_F(ERROR, "Please remove kernelxpm_gpu<N>.ptx file and restart miner");
         exit(1);
       }
 
@@ -1025,11 +1024,11 @@ bool XPMClient::TakeWork(const proto::Work& work) {
 		PrimeMiner *miner = mWorkers[i].first;
 		double target = miner->getConfig().TARGET;
 		if (difficulty > target && difficulty-target >= TargetIncrease) {
-			printf("Target with high difficulty detected, need increase miner target\n");
+      LOG_F(WARNING, "Target with high difficulty detected, need increase miner target");
 			needReset = true;
 			break;
 		} else if (difficulty < target && target-difficulty >= TargetDecrease) {
-			printf("Target with low difficulty detected, need decrease miner target\n");
+      LOG_F(WARNING, "Target with low difficulty detected, need decrease miner target");
 			needReset = true;
 			break;
 		}
@@ -1039,10 +1038,10 @@ bool XPMClient::TakeWork(const proto::Work& work) {
 		unsigned newTarget = TargetGetLength(work.bits());
 		if (difficulty - newTarget >= TargetIncrease)
 			newTarget++;
-		printf("Rebuild miner kernels, adjust target to %u..\n", newTarget);
+    LOG_F(WARNING, "Rebuild miner kernels, adjust target to %u..", newTarget);
 		// Stop and destroy all workers
 		for(unsigned i = 0; i < mWorkers.size(); ++i) {
-			printf("attempt to stop GPU %u ...\n", i);
+      LOG_F(WARNING, "attempt to stop GPU %u ...", i);
 			if(mWorkers[i].first){
 				mWorkers[i].first->MakeExit = true;
 				if(czmq_poll(mWorkers[i].second, 8000))
@@ -1106,15 +1105,15 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 		
 		if(running[i]){
 			ngpus++;
-			printf("[GPU %d] T=%dC A=%d%% E=%d primes=%f fermat=%d/sec cpd=%.2f/day\n",
+      LOG_F(INFO, "[GPU %d] T=%dC A=%d%% E=%d primes=%f fermat=%d/sec cpd=%.2f/day",
 					i, temp, activity, wstats[i].errors, wstats[i].primeprob, wstats[i].fps, wstats[i].cpd);
 		}else if(!mWorkers[i].first)
-			printf("[GPU %d] failed to start!\n", i);
+      LOG_F(ERROR, "[GPU %d] failed to start!\n", i);
 		else if(mPaused) {
-			printf("[GPU %d] paused\n", i);
+      LOG_F(INFO, "[GPU %d] paused", i);
     } else {
       crashed++;
-			printf("[GPU %d] crashed!\n", i);
+      LOG_F(ERROR, "[GPU %d] crashed!", i);
     }
 		
 	}
@@ -1135,7 +1134,7 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 		for(unsigned i = 0; i < mNumDevices; ++i){
 			int gpuid = mDeviceMap[i];
 			if(gpuid >= 0)
-				printf("GPU %d: core=%dMHz mem=%dMHz powertune=%d fanspeed=%d\n",
+        LOG_F(INFO, "GPU %d: core=%dMHz mem=%dMHz powertune=%d fanspeed=%d",
 						gpuid, gpu_engineclock(i), gpu_memclock(i), gpu_powertune(i), gpu_fanspeed(i));
 		}
 	

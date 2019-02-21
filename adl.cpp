@@ -7,7 +7,7 @@
  * any later version.  See COPYING for more details.
  */
 
-//#include "config.h"
+#include "loguru.hpp"
 #define HAVE_ADL
 
 #ifdef _WIN32
@@ -201,7 +201,7 @@ static bool prepare_adl(void)
 		hDLL = LoadLibrary("atiadlxy.dll");
 #endif
 	if (hDLL == NULL) {
-		printf("Unable to load ati adl library");
+    LOG_F(ERROR, "Unable to load ati adl library");
 		return false;
 	}
 	ADL_Main_Control_Create = (ADL_MAIN_CONTROL_CREATE) GetProcAddress(hDLL,"ADL_Main_Control_Create");
@@ -231,7 +231,7 @@ static bool prepare_adl(void)
 		!ADL_Overdrive5_ODPerformanceLevels_Get || !ADL_Overdrive5_ODPerformanceLevels_Set ||
 		!ADL_Main_Control_Refresh || !ADL_Overdrive5_PowerControl_Get ||
 		!ADL_Overdrive5_PowerControl_Set || !ADL_Overdrive5_FanSpeedToDefault_Set) {
-			printf("ATI ADL's API is missing");
+      LOG_F(ERROR, "ATI ADL's API is missing");
 		return false;
 	}
 
@@ -239,13 +239,13 @@ static bool prepare_adl(void)
 	// retrieve adapter information only for adapters that are physically present and enabled in the system
 	result = ADL_Main_Control_Create (ADL_Main_Memory_Alloc, 1);
 	if (result != ADL_OK) {
-		printf("ADL Initialisation Error! Error %d!", result);
+    LOG_F(ERROR, "ADL Initialisation Error! Error %d!", result);
 		return false;
 	}
 
 	result = ADL_Main_Control_Refresh();
 	if (result != ADL_OK) {
-		printf("ADL Refresh Error! Error %d!", result);
+    LOG_F(ERROR, "ADL Refresh Error! Error %d!", result);
 		return false;
 	}
 
@@ -261,19 +261,19 @@ void init_adl(int nDevs)
 	memset(gpus, 0, sizeof(gpus));
 
 	/*if (pthread_mutex_init(&adl_lock, NULL)) {
-		printf("Failed to init adl_lock in init_adl");
+    LOG_F(INFO, "Failed to init adl_lock in init_adl");
 		return;
 	}*/
 
 	if (!prepare_adl())
 		return;
         
-        printf("prepare_adl success\n");
+        LOG_F(INFO, "prepare_adl success");
 
 	// Obtain the number of adapters for the system
 	result = ADL_Adapter_NumberOfAdapters_Get (&iNumberAdapters);
 	if (result != ADL_OK) {
-		printf("Cannot get the number of adapters! Error %d!", result);
+    LOG_F(ERROR, "Cannot get the number of adapters! Error %d!", result);
 		return ;
 	}
 
@@ -285,11 +285,11 @@ void init_adl(int nDevs)
 		// Get the AdapterInfo structure for all adapters in the system
 		result = ADL_Adapter_AdapterInfo_Get (lpInfo, sizeof (AdapterInfo) * iNumberAdapters);
 		if (result != ADL_OK) {
-			printf("ADL_Adapter_AdapterInfo_Get Error! Error %d\n", result);
+      LOG_F(ERROR, "ADL_Adapter_AdapterInfo_Get Error! Error %d\n", result);
 			return ;
 		}
 	} else {
-		printf("No adapters found");
+    LOG_F(INFO, "No adapters found");
 		return;
 	}
 
@@ -302,9 +302,9 @@ void init_adl(int nDevs)
 		/* Get unique identifier of the adapter, 0 means not AMD */
 		result = ADL_Adapter_ID_Get(iAdapterIndex, &lpAdapterID);
 		if (result != ADL_OK) {
-			printf("Failed to ADL_Adapter_ID_Get. Error %d", result);
+      LOG_F(ERROR, "Failed to ADL_Adapter_ID_Get. Error %d", result);
 			if (result == -10)
-				printf("This error says the device is not enabled");
+        LOG_F(ERROR, "This error says the device is not enabled");
 			continue;
 		}
 		
@@ -312,7 +312,7 @@ void init_adl(int nDevs)
 		if (lpAdapterID == last_adapter)
 			continue;
 
-                printf("GPU %d "
+                LOG_F(INFO, "GPU %d "
                        "iAdapterIndex %d "
                        "strUDID %s "
                        "iBusNumber %d "
@@ -328,8 +328,6 @@ void init_adl(int nDevs)
                        lpInfo[i].iFunctionNumber,
                        lpInfo[i].iVendorID,
                        lpInfo[i].strAdapterName);
-                
-                printf("\n");   
 
 		adapters[devices].iAdapterIndex = iAdapterIndex;
 		adapters[devices].iBusNumber = lpInfo[i].iBusNumber;
@@ -340,23 +338,23 @@ void init_adl(int nDevs)
 		 * opencl enumerated devices and the ADL enumerated
 		 * ones, we have to assume they're in the same order.*/
 		if (++devices > nDevs && devs_match) {
-			printf("ADL found more devices than opencl!");
-			printf("There is possibly at least one GPU that doesn't support OpenCL");
-			printf("Use the gpu map feature to reliably map OpenCL to ADL");
+      LOG_F(ERROR, "ADL found more devices than opencl!");
+      LOG_F(ERROR, "There is possibly at least one GPU that doesn't support OpenCL");
+      LOG_F(ERROR, "Use the gpu map feature to reliably map OpenCL to ADL");
 			devs_match = false;
 		}
 		last_adapter = lpAdapterID;
 
 		if (!lpAdapterID) {
-			printf("Adapter returns ID 0 meaning not AMD. Card order might be confused");
+      LOG_F(ERROR, "Adapter returns ID 0 meaning not AMD. Card order might be confused");
 			continue;
 		}
 	}
 
 	if (devices < nDevs) {
-		printf("ADL found less devices than opencl!");
-		printf("There is possibly more than one display attached to a GPU");
-		printf("Use the gpu map feature to reliably map OpenCL to ADL");
+    LOG_F(ERROR, "ADL found less devices than opencl!");
+    LOG_F(ERROR, "There is possibly more than one display attached to a GPU");
+    LOG_F(ERROR, "Use the gpu map feature to reliably map OpenCL to ADL");
 		devs_match = false;
 	}
 
@@ -369,14 +367,14 @@ void init_adl(int nDevs)
 	for (i = 0; i < nDevs; i++) {
 		if (gpus[i].mapped) {
 			vadapters[gpus[i].virtual_adl].virtual_gpu = i;
-			printf("Mapping OpenCL device %d to ADL device %d", i, gpus[i].virtual_adl);
+      LOG_F(ERROR, "Mapping OpenCL device %d to ADL device %d", i, gpus[i].virtual_adl);
 		} else
 			gpus[i].virtual_adl = i;
 	}
 
 	if (!devs_match) {
-		printf("WARNING: Number of OpenCL and ADL devices did not match!");
-		printf("Hardware monitoring may NOT match up with devices!");
+    LOG_F(ERROR, "WARNING: Number of OpenCL and ADL devices did not match!");
+    LOG_F(ERROR, "Hardware monitoring may NOT match up with devices!");
 	} else if (opt_reorder) {
 		/* Windows has some kind of random ordering for bus number IDs and
 		 * ordering the GPUs according to ascending order fixes it. Linux
@@ -396,7 +394,7 @@ void init_adl(int nDevs)
 					virtual_gpu++;
 			}
 			if (virtual_gpu != i) {
-				printf("Mapping device %d to GPU %d according to Bus Number order",
+        LOG_F(INFO, "Mapping device %d to GPU %d according to Bus Number order",
 				       i, virtual_gpu);
 				vadapters[virtual_gpu].virtual_gpu = i;
 				vadapters[virtual_gpu].id = adapters[i].id;
@@ -422,7 +420,7 @@ void init_adl(int nDevs)
 		/* Get unique identifier of the adapter, 0 means not AMD */
 		result = ADL_Adapter_ID_Get(iAdapterIndex, &lpAdapterID);
 		if (result != ADL_OK) {
-			printf("Failed to ADL_Adapter_ID_Get. Error %d", result);
+      LOG_F(ERROR, "Failed to ADL_Adapter_ID_Get. Error %d", result);
 			continue;
 		}
 
@@ -435,7 +433,7 @@ void init_adl(int nDevs)
 			continue;
 		}
 
-		printf("GPU %d %s hardware monitoring enabled\n", gpu, lpInfo[i].strAdapterName);
+    LOG_F(INFO, "GPU %d %s hardware monitoring enabled", gpu, lpInfo[i].strAdapterName);
 		if (gpus[gpu].name)
 			free(gpus[gpu].name);
 		gpus[gpu].name = lpInfo[i].strAdapterName;
@@ -455,7 +453,7 @@ void init_adl(int nDevs)
 
 		ga->lpOdParameters.iSize = sizeof(ADLODParameters);
 		if (ADL_Overdrive5_ODParameters_Get(iAdapterIndex, &ga->lpOdParameters) != ADL_OK)
-			printf("Failed to ADL_Overdrive5_ODParameters_Get");
+      LOG_F(ERROR, "Failed to ADL_Overdrive5_ODParameters_Get");
 
 		lev = ga->lpOdParameters.iNumberOfPerformanceLevels - 1;
 		/* We're only interested in the top performance level */
@@ -464,7 +462,7 @@ void init_adl(int nDevs)
 
 		/* Get default performance levels first */
 		if (ADL_Overdrive5_ODPerformanceLevels_Get(iAdapterIndex, 1, lpOdPerformanceLevels) != ADL_OK)
-			printf("Failed to ADL_Overdrive5_ODPerformanceLevels_Get");
+      LOG_F(ERROR, "Failed to ADL_Overdrive5_ODPerformanceLevels_Get");
 		/* Set the limits we'd use based on default gpu speeds */
 		ga->maxspeed = ga->minspeed = lpOdPerformanceLevels->aLevels[lev].iEngineClock;
 
@@ -485,7 +483,7 @@ void init_adl(int nDevs)
 					lpOdPerformanceLevels->aLevels[j].iEngineClock = setengine;
 			}
 			lpOdPerformanceLevels->aLevels[lev].iEngineClock = setengine;
-			printf("Setting GPU %d engine clock to %d", gpu, gpus[gpu].gpu_engine);
+      LOG_F(INFO, "Setting GPU %d engine clock to %d", gpu, gpus[gpu].gpu_engine);
 			ADL_Overdrive5_ODPerformanceLevels_Set(iAdapterIndex, lpOdPerformanceLevels);
 			ga->maxspeed = setengine;
 			if (gpus[gpu].min_engine)
@@ -503,7 +501,7 @@ void init_adl(int nDevs)
 					lpOdPerformanceLevels->aLevels[j].iMemoryClock = setmem;
 			}
 			lpOdPerformanceLevels->aLevels[lev].iMemoryClock = setmem;
-			printf("Setting GPU %d memory clock to %d", gpu, gpus[gpu].gpu_memclock);
+      LOG_F(INFO, "Setting GPU %d memory clock to %d", gpu, gpus[gpu].gpu_memclock);
 			ADL_Overdrive5_ODPerformanceLevels_Set(iAdapterIndex, lpOdPerformanceLevels);
 			ga->managed = true;
 		}
@@ -516,7 +514,7 @@ void init_adl(int nDevs)
 					lpOdPerformanceLevels->aLevels[j].iVddc = setv;
 			}
 			lpOdPerformanceLevels->aLevels[lev].iVddc = setv;
-			printf("Setting GPU %d voltage to %.3f", gpu, gpus[gpu].gpu_vddc);
+      LOG_F(INFO, "Setting GPU %d voltage to %.3f", gpu, gpus[gpu].gpu_vddc);
 			ADL_Overdrive5_ODPerformanceLevels_Set(iAdapterIndex, lpOdPerformanceLevels);
 			ga->managed = true;
 		}
@@ -528,7 +526,7 @@ void init_adl(int nDevs)
 		ga->iBusNumber = lpInfo[i].iBusNumber;
 
 		if (ADL_Overdrive5_FanSpeedInfo_Get(iAdapterIndex, 0, &ga->lpFanSpeedInfo) != ADL_OK)
-			printf("Failed to ADL_Overdrive5_FanSpeedInfo_Get");
+      LOG_F(ERROR, "Failed to ADL_Overdrive5_FanSpeedInfo_Get");
 		else
 			ga->has_fanspeed = true;
 
@@ -541,7 +539,7 @@ void init_adl(int nDevs)
 
 		/* Not fatal if powercontrol get fails */
 		if (ADL_Overdrive5_PowerControl_Get(ga->iAdapterIndex, &ga->iPercentage, &dummy) != ADL_OK)
-			printf("Failed to ADL_Overdrive5_PowerControl_get");
+      LOG_F(ERROR, "Failed to ADL_Overdrive5_PowerControl_get");
 
 		if (gpus[gpu].gpu_powertune) {
 			ADL_Overdrive5_PowerControl_Set(ga->iAdapterIndex, gpus[gpu].gpu_powertune);
@@ -592,7 +590,7 @@ void init_adl(int nDevs)
 			 * while the other won't. */
 			if (!ga->has_fanspeed) {
 				if (fanspeed_twin(ga, other_ga)) {
-					printf("Dual GPUs detected: %d and %d",
+          LOG_F(INFO, "Dual GPUs detected: %d and %d",
 						ga->gpu, other_ga->gpu);
 					ga->twin = other_ga;
 					other_ga->twin = ga;
@@ -776,16 +774,16 @@ int gpu_fanpercent(int gpu)
 	if (ga->has_fanspeed && ret == -1) {
 #if 0
 		/* Recursive calling applog causes a hang, so disable messages */
-		printf("GPU %d stopped reporting fanspeed due to driver corruption", gpu);
+    LOG_F(INFO, "GPU %d stopped reporting fanspeed due to driver corruption", gpu);
 		if (opt_restart) {
-			printf("Restart enabled, will attempt to restart cgminer");
-			printf("You can disable this with the --no-restart option");
+      LOG_F(INFO, "Restart enabled, will attempt to restart cgminer");
+      LOG_F(INFO, "You can disable this with the --no-restart option");
 			app_restart();
 		}
-		printf("Disabling fanspeed monitoring on this device");
+    LOG_F(INFO, "Disabling fanspeed monitoring on this device");
 		ga->has_fanspeed = false;
 		if (ga->twin) {
-			printf("Disabling fanspeed linking on GPU twins");
+      LOG_F(INFO, "Disabling fanspeed linking on GPU twins");
 			ga->twin->twin = NULL;;
 			ga->twin = NULL;
 		}
@@ -862,7 +860,7 @@ static void get_enginerange(int gpu, int *imin, int *imax)
 	struct gpu_adl *ga;
 
 	if (!gpus[gpu].has_adl || !adl_active) {
-		printf("Get enginerange not supported\n");
+    LOG_F(INFO, "Get enginerange not supported\n");
 		return;
 	}
 	ga = &gpus[gpu].adl;
@@ -879,7 +877,7 @@ int set_engineclock(int gpu, int iEngineClock)
 	struct gpu_adl *ga;
 
 	if (!gpus[gpu].has_adl || !adl_active) {
-		printf("Set engineclock not supported\n");
+    LOG_F(WARNING, "Set engineclock not supported");
 		return ret;
 	}
 
@@ -930,7 +928,7 @@ static void get_memoryrange(int gpu, int *imin, int *imax)
 	struct gpu_adl *ga;
 
 	if (!gpus[gpu].has_adl || !adl_active) {
-		printf("Get memoryrange not supported\n");
+    LOG_F(WARNING, "Get memoryrange not supported");
 		return;
 	}
 	ga = &gpus[gpu].adl;
@@ -946,7 +944,7 @@ int set_memoryclock(int gpu, int iMemoryClock)
 	struct gpu_adl *ga;
 
 	if (!gpus[gpu].has_adl || !adl_active) {
-		printf("Set memoryclock not supported\n");
+    LOG_F(WARNING, "Set memoryclock not supported");
 		return ret;
 	}
 
@@ -984,7 +982,7 @@ static void get_vddcrange(int gpu, float *imin, float *imax)
 	struct gpu_adl *ga;
 
 	if (!gpus[gpu].has_adl || !adl_active) {
-		printf("Get vddcrange not supported\n");
+    LOG_F(WARNING, "Get vddcrange not supported");
 		return;
 	}
 	ga = &gpus[gpu].adl;
@@ -1011,7 +1009,7 @@ int set_vddc(int gpu, float fVddc)
 	struct gpu_adl *ga;
 
 	if (!gpus[gpu].has_adl || !adl_active) {
-		printf("Set vddc not supported\n");
+    LOG_F(WARNING, "Set vddc not supported");
 		return ret;
 	}
 
@@ -1048,7 +1046,7 @@ static void get_fanrange(int gpu, int *imin, int *imax)
 	struct gpu_adl *ga;
 
 	if (!gpus[gpu].has_adl || !adl_active) {
-		printf("Get fanrange not supported\n");
+    LOG_F(WARNING, "Get fanrange not supported");
 		return;
 	}
 	ga = &gpus[gpu].adl;
@@ -1062,13 +1060,13 @@ int set_fanspeed(int gpu, int iFanSpeed)
 	int ret = 1;
 
 	if (!gpus[gpu].has_adl || !adl_active) {
-		printf("Set fanspeed not supported\n");
+    LOG_F(WARNING, "Set fanspeed not supported");
 		return ret;
 	}
 
 	ga = &gpus[gpu].adl;
 	if (!(ga->lpFanSpeedInfo.iFlags & (ADL_DL_FANCTRL_SUPPORTS_RPM_WRITE | ADL_DL_FANCTRL_SUPPORTS_PERCENT_WRITE ))) {
-		printf("GPU %d doesn't support rpm or percent write", gpu);
+    LOG_F(WARNING, "GPU %d doesn't support rpm or percent write", gpu);
 		return ret;
 	}
 
@@ -1082,7 +1080,7 @@ int set_fanspeed(int gpu, int iFanSpeed)
         ga->lpFanSpeedValue.iFlags = ADL_DL_FANCTRL_FLAG_USER_DEFINED_SPEED;        
         int result = ADL_Overdrive5_FanSpeed_Get(ga->iAdapterIndex, 0, &ga->lpFanSpeedValue);
 	if (result != ADL_OK) {
-		printf("GPU %d call to fanspeed get failed (error %i)\n", gpu, result);
+    LOG_F(ERROR, "GPU %d call to fanspeed get failed (error %i)", gpu, result);
 	}
 	if (!(ga->lpFanSpeedInfo.iFlags & ADL_DL_FANCTRL_SUPPORTS_PERCENT_WRITE)) {
 		/* Must convert speed to an RPM */
@@ -1110,7 +1108,7 @@ int set_powertune(int gpu, int iPercentage)
 	int dummy, ret = 1;
 
 	if (!gpus[gpu].has_adl || !adl_active) {
-		printf("Set powertune not supported\n");
+    LOG_F(WARNING, "Set powertune not supported");
 		return ret;
 	}
 
@@ -1143,12 +1141,12 @@ static bool fan_autotune(int gpu, int temp, int fanpercent, int lasttemp, bool *
 
 	get_fanrange(gpu, &iMin, &iMax);
 	if (temp > ga->overtemp && fanpercent < iMax) {
-		printf("Overheat detected on GPU %d, increasing fan to 100%%", gpu);
+    LOG_F(WARNING, "Overheat detected on GPU %d, increasing fan to 100%%", gpu);
 		newpercent = iMax;
 
 		dev_error(cgpu, REASON_DEV_OVER_HEAT);
 	} else if (temp > ga->targettemp && fanpercent < top && tdiff >= 0) {
-		printf("Temperature over target, increasing fanspeed");
+    LOG_F(WARNING, "Temperature over target, increasing fanspeed");
 		if (temp > ga->targettemp + opt_hysteresis)
 			newpercent = ga->targetfan + 10;
 		else
@@ -1159,10 +1157,10 @@ static bool fan_autotune(int gpu, int temp, int fanpercent, int lasttemp, bool *
 		/* Detect large swings of 5 degrees or more and change fan by
 		 * a proportion more */
 		if (tdiff <= 0) {
-			printf("Temperature %d degrees below target, decreasing fanspeed", opt_hysteresis);
+      LOG_F(WARNING, "Temperature %d degrees below target, decreasing fanspeed", opt_hysteresis);
 			newpercent = ga->targetfan - 1 + tdiff / 5;
 		} else if (tdiff >= 5) {
-			printf("Temperature climbed %d while below target, increasing fanspeed", tdiff);
+      LOG_F(WARNING, "Temperature climbed %d while below target, increasing fanspeed", tdiff);
 			newpercent = ga->targetfan + tdiff / 5;
 		}
 	} else {
@@ -1170,10 +1168,10 @@ static bool fan_autotune(int gpu, int temp, int fanpercent, int lasttemp, bool *
 		/* We're in the optimal range, make minor adjustments if the
 		 * temp is still drifting */
 		if (fanpercent > bot && tdiff < 0 && lasttemp < ga->targettemp) {
-			printf("Temperature dropping while in target range, decreasing fanspeed");
+      LOG_F(WARNING, "Temperature dropping while in target range, decreasing fanspeed");
 			newpercent = ga->targetfan + tdiff;
 		} else if (fanpercent < top && tdiff > 0 && temp > ga->targettemp - opt_hysteresis) {
-			printf("Temperature rising while in target range, increasing fanspeed");
+      LOG_F(WARNING, "Temperature rising while in target range, increasing fanspeed");
 			newpercent = ga->targetfan + tdiff;
 		}
 	}
@@ -1189,7 +1187,7 @@ static bool fan_autotune(int gpu, int temp, int fanpercent, int lasttemp, bool *
 		*fan_window = false;
 
 	if (newpercent != fanpercent) {
-		printf("Setting GPU %d fan percentage to %d", gpu, newpercent);
+    LOG_F(INFO, "Setting GPU %d fan percentage to %d", gpu, newpercent);
 		set_fanspeed(gpu, newpercent);
 		/* If the fanspeed is going down and we're below the top speed,
 		 * consider the fan optimal to prevent minute changes in
@@ -1247,28 +1245,28 @@ void gpu_autotune(int gpu, enum dev_enable *denable)
 
 	if (engine && ga->autoengine) {
 		if (temp > cgpu->cutofftemp) {
-			printf("Hit thermal cutoff limit on GPU %d, disabling!", gpu);
+      LOG_F(WARNING, "Hit thermal cutoff limit on GPU %d, disabling!", gpu);
 			*denable = DEV_RECOVER;
 			newengine = ga->minspeed;
 			dev_error(cgpu, REASON_DEV_THERMAL_CUTOFF);
 		} else if (temp > ga->overtemp && engine > ga->minspeed) {
-			printf("Overheat detected, decreasing GPU %d clock speed", gpu);
+      LOG_F(WARNING, "Overheat detected, decreasing GPU %d clock speed", gpu);
 			newengine = ga->minspeed;
 
 			dev_error(cgpu, REASON_DEV_OVER_HEAT);
 		} else if (temp > ga->targettemp + opt_hysteresis && engine > ga->minspeed && fan_optimal) {
-			printf("Temperature %d degrees over target, decreasing clock speed", opt_hysteresis);
+      LOG_F(WARNING, "Temperature %d degrees over target, decreasing clock speed", opt_hysteresis);
 			newengine = engine - ga->lpOdParameters.sEngineClock.iStep;
 			/* Only try to tune engine speed up if this GPU is not disabled */
 		} else if (temp < ga->targettemp && engine < ga->maxspeed && fan_window && *denable == DEV_ENABLED) {
 			int iStep = ga->lpOdParameters.sEngineClock.iStep;
 
-			printf("Temperature below target, increasing clock speed");
+      LOG_F(WARNING, "Temperature below target, increasing clock speed");
 			if (temp < ga->targettemp - opt_hysteresis)
 				iStep *= 2;
 			newengine = engine + iStep;
 		} else if (temp < ga->targettemp && *denable == DEV_RECOVER && opt_restart) {
-			printf("Device recovered to temperature below target, re-enabling");
+      LOG_F(WARNING, "Device recovered to temperature below target, re-enabling");
 			*denable = DEV_ENABLED;
 		}
 
@@ -1283,7 +1281,7 @@ void gpu_autotune(int gpu, enum dev_enable *denable)
 		 * a speed relateive to a lower profile during idle periods. */
 		if (newengine < engine || (newengine > engine && newengine > ga->lastengine)) {
 			newengine /= 100;
-			printf("Setting GPU %d engine clock to %d", gpu, newengine);
+      LOG_F(INFO, "Setting GPU %d engine clock to %d", gpu, newengine);
 			set_engineclock(gpu, newengine);
 		}
 	}
@@ -1321,44 +1319,44 @@ void change_autosettings(int gpu)
 	char input;
 	int val;
 
-	printf("Target temperature: %d\n", ga->targettemp);
-	printf("Overheat temperature: %d\n", ga->overtemp);
-	printf("Cutoff temperature: %d\n", gpus[gpu].cutofftemp);
-	printf("Toggle [F]an auto [G]PU auto\nChange [T]arget [O]verheat [C]utoff\n");
-	printf("Or press any other key to continue\n");
+  LOG_F(INFO, "Target temperature: %d\n", ga->targettemp);
+  LOG_F(INFO, "Overheat temperature: %d\n", ga->overtemp);
+  LOG_F(INFO, "Cutoff temperature: %d\n", gpus[gpu].cutofftemp);
+  LOG_F(INFO, "Toggle [F]an auto [G]PU auto\nChange [T]arget [O]verheat [C]utoff\n");
+  LOG_F(INFO, "Or press any other key to continue\n");
 	input = getch();
 	if (!strncasecmp(&input, "f", 1)) {
 		ga->autofan ^= true;
-		printf("Fan autotune is now %s\n", ga->autofan ? "enabled" : "disabled");
+    LOG_F(INFO, "Fan autotune is now %s\n", ga->autofan ? "enabled" : "disabled");
 		if (!ga->autofan) {
-			printf("Resetting fan to startup settings\n");
+      LOG_F(INFO, "Resetting fan to startup settings\n");
 			set_defaultfan(gpu);
 		}
 	} else if (!strncasecmp(&input, "g", 1)) {
 		ga->autoengine ^= true;
-		printf("GPU engine clock autotune is now %s\n", ga->autoengine ? "enabled" : "disabled");
+    LOG_F(INFO, "GPU engine clock autotune is now %s\n", ga->autoengine ? "enabled" : "disabled");
 		if (!ga->autoengine) {
-			printf("Resetting GPU engine clock to startup settings\n");
+      LOG_F(INFO, "Resetting GPU engine clock to startup settings\n");
 			set_defaultengine(gpu);
 		}
 	} else if (!strncasecmp(&input, "t", 1)) {
 		val = curses_int("Enter target temperature for this GPU in C (0-200)");
 		if (val < 0 || val > 200)
-			printf("Invalid temperature");
+      LOG_F(INFO, "Invalid temperature");
 		else
 			ga->targettemp = val;
 	} else if (!strncasecmp(&input, "o", 1)) {
-		printf("Enter overheat temperature for this GPU in C (%d+)", ga->targettemp);
+    LOG_F(INFO, "Enter overheat temperature for this GPU in C (%d+)", ga->targettemp);
 		val = curses_int("");
 		if (val <= ga->targettemp || val > 200)
-			printf("Invalid temperature");
+      LOG_F(INFO, "Invalid temperature");
 		else
 			ga->overtemp = val;
 	} else if (!strncasecmp(&input, "c", 1)) {
-		printf("Enter cutoff temperature for this GPU in C (%d+)", ga->overtemp);
+    LOG_F(INFO, "Enter cutoff temperature for this GPU in C (%d+)", ga->overtemp);
 		val = curses_int("");
 		if (val <= ga->overtemp || val > 200)
-			printf("Invalid temperature");
+      LOG_F(INFO, "Invalid temperature");
 		else
 			gpus[gpu].cutofftemp = val;
 	}
@@ -1375,95 +1373,95 @@ void change_gpusettings(int gpu)
 
 updated:
 	if (gpu_stats(gpu, &temp, &engineclock, &memclock, &vddc, &activity, &fanspeed, &fanpercent, &powertune))
-	printf("Temp: %.1f C\n", temp);
+  LOG_F(INFO, "Temp: %.1f C\n", temp);
 	if (fanpercent >= 0 || fanspeed >= 0) {
-		printf("Fan Speed: ");
+    LOG_F(INFO, "Fan Speed: ");
 		if (fanpercent >= 0)
-			printf("%d%% ", fanpercent);
+      LOG_F(INFO, "%d%% ", fanpercent);
 		if (fanspeed >= 0)
-			printf("(%d RPM)", fanspeed);
-		printf("\n");
+      LOG_F(INFO, "(%d RPM)", fanspeed);
+    LOG_F(INFO, "\n");
 	}
-	printf("Engine Clock: %d MHz\nMemory Clock: %d Mhz\nVddc: %.3f V\nActivity: %d%%\nPowertune: %d%%\n",
+  LOG_F(INFO, "Engine Clock: %d MHz\nMemory Clock: %d Mhz\nVddc: %.3f V\nActivity: %d%%\nPowertune: %d%%\n",
 		engineclock, memclock, vddc, activity, powertune);
-	printf("Fan autotune is %s (%d-%d)\n", ga->autofan ? "enabled" : "disabled",
+  LOG_F(INFO, "Fan autotune is %s (%d-%d)\n", ga->autofan ? "enabled" : "disabled",
 		  gpus[gpu].min_fan, gpus[gpu].gpu_fan);
-	printf("GPU engine clock autotune is %s (%d-%d)\n", ga->autoengine ? "enabled" : "disabled",
+  LOG_F(INFO, "GPU engine clock autotune is %s (%d-%d)\n", ga->autoengine ? "enabled" : "disabled",
 		ga->minspeed / 100, ga->maxspeed / 100);
-	printf("Change [A]utomatic [E]ngine [F]an [M]emory [V]oltage [P]owertune\n");
-	printf("Or press any other key to continue\n");
+  LOG_F(INFO, "Change [A]utomatic [E]ngine [F]an [M]emory [V]oltage [P]owertune\n");
+  LOG_F(INFO, "Or press any other key to continue\n");
 	input = getch();
 
 	if (!strncasecmp(&input, "a", 1)) {
 		change_autosettings(gpu);
 	} else if (!strncasecmp(&input, "e", 1)) {
 		get_enginerange(gpu, &imin, &imax);
-		printf("Enter GPU engine clock speed (%d - %d Mhz)", imin, imax);
+    LOG_F(INFO, "Enter GPU engine clock speed (%d - %d Mhz)", imin, imax);
 		val = curses_int("");
 		if (val < imin || val > imax) {
-			printf("Value is outside safe range, are you sure?\n");
+      LOG_F(INFO, "Value is outside safe range, are you sure?\n");
 			input = getch();
 			if (strncasecmp(&input, "y", 1))
 				return;
 		}
 		if (!set_engineclock(gpu, val))
-			printf("Driver reports success but check values below\n");
+      LOG_F(INFO, "Driver reports success but check values below\n");
 		else
-			printf("Failed to modify engine clock speed\n");
+      LOG_F(INFO, "Failed to modify engine clock speed\n");
 	} else if (!strncasecmp(&input, "f", 1)) {
 		get_fanrange(gpu, &imin, &imax);
-		printf("Enter fan percentage (%d - %d %%)", imin, imax);
+    LOG_F(INFO, "Enter fan percentage (%d - %d %%)", imin, imax);
 		val = curses_int("");
 		if (val < imin || val > imax) {
-			printf("Value is outside safe range, are you sure?\n");
+      LOG_F(INFO, "Value is outside safe range, are you sure?\n");
 			input = getch();
 			if (strncasecmp(&input, "y", 1))
 				return;
 		}
 		if (!set_fanspeed(gpu, val))
-			printf("Driver reports success but check values below\n");
+      LOG_F(INFO, "Driver reports success but check values below\n");
 		else
-			printf("Failed to modify fan speed\n");
+      LOG_F(INFO, "Failed to modify fan speed\n");
 	} else if (!strncasecmp(&input, "m", 1)) {
 		get_memoryrange(gpu, &imin, &imax);
-		printf("Enter GPU memory clock speed (%d - %d Mhz)", imin, imax);
+    LOG_F(INFO, "Enter GPU memory clock speed (%d - %d Mhz)", imin, imax);
 		val = curses_int("");
 		if (val < imin || val > imax) {
-			printf("Value is outside safe range, are you sure?\n");
+      LOG_F(INFO, "Value is outside safe range, are you sure?\n");
 			input = getch();
 			if (strncasecmp(&input, "y", 1))
 				return;
 		}
 		if (!set_memoryclock(gpu, val))
-			printf("Driver reports success but check values below\n");
+      LOG_F(INFO, "Driver reports success but check values below\n");
 		else
-			printf("Failed to modify memory clock speed\n");
+      LOG_F(INFO, "Failed to modify memory clock speed\n");
 	} else if (!strncasecmp(&input, "v", 1)) {
 		get_vddcrange(gpu, &fmin, &fmax);
-		printf("Enter GPU voltage (%.3f - %.3f V)", fmin, fmax);
+    LOG_F(INFO, "Enter GPU voltage (%.3f - %.3f V)", fmin, fmax);
 		fval = curses_float("");
 		if (fval < fmin || fval > fmax) {
-			printf("Value is outside safe range, are you sure?\n");
+      LOG_F(INFO, "Value is outside safe range, are you sure?\n");
 			input = getch();
 			if (strncasecmp(&input, "y", 1))
 				return;
 		}
 		if (!set_vddc(gpu, fval))
-			printf("Driver reports success but check values below\n");
+      LOG_F(INFO, "Driver reports success but check values below\n");
 		else
-			printf("Failed to modify voltage\n");
+      LOG_F(INFO, "Failed to modify voltage\n");
 	} else if (!strncasecmp(&input, "p", 1)) {
 		val = curses_int("Enter powertune value (-20 - 20)");
 		if (val < -20 || val > 20) {
-			printf("Value is outside safe range, are you sure?\n");
+      LOG_F(INFO, "Value is outside safe range, are you sure?\n");
 			input = getch();
 			if (strncasecmp(&input, "y", 1))
 				return;
 		}
 		if (!set_powertune(gpu, val))
-			printf("Driver reports success but check values below\n");
+      LOG_F(INFO, "Driver reports success but check values below\n");
 		else
-			printf("Failed to modify powertune value\n");
+      LOG_F(INFO, "Failed to modify powertune value\n");
 	} else {
 		clear_logwin();
 		return;
@@ -1499,10 +1497,10 @@ void clear_adl(int nDevs)
 		ga = &gpus[i].adl;
 		/*  Only reset the values if we've changed them at any time */
 		if (!gpus[i].has_adl || !ga->managed){
-			//printf("!gpus[i].has_adl || !ga->managed\n");
+      //LOG_F(INFO, "!gpus[i].has_adl || !ga->managed\n");
 			continue;
 		}
-		//printf("clear_adl GPU %d\n", i);
+    //LOG_F(INFO, "clear_adl GPU %d\n", i);
 		ADL_Overdrive5_ODPerformanceLevels_Set(ga->iAdapterIndex, ga->DefPerfLev);
 		free(ga->DefPerfLev);
 		ADL_Overdrive5_FanSpeed_Set(ga->iAdapterIndex, 0, &ga->DefFanSpeedValue);

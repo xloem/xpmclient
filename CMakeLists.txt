@@ -1,6 +1,25 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
+project(xpmclient)
 
+set (CMAKE_CXX_STANDARD 11)
 option(STATIC_BUILD "Build with static libraries on Linux")
+option(SANITIZER_ENABLED "Build with address sanitizer" OFF)
+option(GPROF_ENABLED "Build with GNU profiler (use gprof ./exename -p > out.txt)" OFF)
+
+if (SANITIZER_ENABLED)
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
+endif()
+
+if (GPROF_ENABLED)
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pg")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+endif()
+
+set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake
+)
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   ${CMAKE_SOURCE_DIR}/cmake
@@ -63,6 +82,7 @@ endif()
 add_executable(xpmclient
   adl.cpp
   baseclient.cpp
+  loguru.cpp
   opencl.cpp
   prime.cpp
   primes.cpp
@@ -98,6 +118,7 @@ if (CUDA_FOUND)
     adl.cpp
     baseclient.cpp
     cudautil.cpp
+    loguru.cpp
     prime.cpp
     primes.cpp
     sha256.cpp
@@ -111,10 +132,6 @@ if (CUDA_FOUND)
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/xpm/cuda
     ${CUDA_INCLUDE_DIRS}
-  )
-
-  SET_TARGET_PROPERTIES(xpmclientnv PROPERTIES
-    COMPILE_FLAGS "-std=c++0x"
   )
 
   target_link_libraries(xpmclientnv ${LIBRARIES} ${CUDA_driver_LIBRARY} ${CUDA_nvrtc_LIBRARY})
@@ -131,16 +148,13 @@ add_executable(zcashgpuclient
   adl.cpp
   base58.cpp
   baseclient.cpp
+  loguru.cpp
   opencl.cpp
   sha256.cpp
   zmqextras.cpp
   zcash/zcashgpuclient.cpp
   zcash/equihash_original.cpp
   ${ProtoSources}
-)
-
-SET_TARGET_PROPERTIES(zcashgpuclient PROPERTIES
-  COMPILE_FLAGS "-std=c++0x -msse -msse2 -msse3" 
 )
 
 target_link_libraries(zcashgpuclient ${LIBRARIES} ${OPENCL_LIBRARY})

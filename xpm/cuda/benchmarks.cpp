@@ -2,6 +2,7 @@
 
 #include "gmpxx.h"
 
+#include "loguru.hpp"
 #include <time.h>
 #include <chrono>
 #include <memory>
@@ -73,7 +74,7 @@ bool trialDivisionChainTest(uint32_t *primes,
     for (unsigned divIdx = 0; divIdx < depth; divIdx += 16) { 
       if (mpz_tdiv_ui(N.get_mpz_t(), primes[divIdx]) == 0) {
         if (print)
-          fprintf(stderr, "Invalid number found; chain position is %u, divisor is %u type is %u\n", i+1, primes[divIdx], fSophieGermain ? 1 : 2);
+          LOG_F(ERROR, "Invalid number found; chain position is %u, divisor is %u type is %u", i+1, primes[divIdx], fSophieGermain ? 1 : 2);
         return false;
       }
     }
@@ -120,7 +121,7 @@ bool sieveResultsTest(uint32_t *primes,
             mpz_class chainOrigin = fixedMultiplier*candidateMultiplier;
             if (!trialDivisionChainTest(primes, chainOrigin, true, chainLength, depth, *invalidCount < 20)) {
               if (*invalidCount < 20)
-                fprintf(stderr, " * type 1 firstLayer = %u\n", firstLayer);
+                LOG_F(ERROR, " * type 1 firstLayer = %u", firstLayer);
               ++*invalidCount;
             }
             
@@ -145,7 +146,7 @@ bool sieveResultsTest(uint32_t *primes,
             mpz_class chainOrigin = fixedMultiplier*candidateMultiplier;
             if (!trialDivisionChainTest(primes, chainOrigin, false, chainLength, depth, *invalidCount < 20)) {
               if (*invalidCount < 20)
-                fprintf(stderr, " * type 2 firstLayer = %u\n", firstLayer);              
+                LOG_F(ERROR, " * type 2 firstLayer = %u", firstLayer);
               ++*invalidCount;
             }
             
@@ -172,7 +173,7 @@ bool sieveResultsTest(uint32_t *primes,
             if (!trialDivisionChainTest(primes, chainOrigin, true, (chainLength+1)/2, depth, *invalidCount < 20) ||
                 !trialDivisionChainTest(primes, chainOriginExtra, false, chainLength/2, depth, *invalidCount < 20)) {
               if (*invalidCount < 20)
-                fprintf(stderr, " * type bitwin firstLayer = %u\n", firstLayer);   
+                LOG_F(ERROR, " * type bitwin firstLayer = %u", firstLayer);
               ++*invalidCount;
             }
             candidates.insert(candidateMultiplier);            
@@ -199,10 +200,10 @@ void cudaMultiplyBenchmark(CUfunction *kernels,
   cudaBuffer<uint32_t> mR;
   cudaBuffer<uint32_t> cpuR;
   
-  m1.init(limbsNum, false);
-  m2.init(limbsNum, false);
-  mR.init(limbsNum*2, false);
-  cpuR.init(limbsNum*2, false);
+  CUDA_SAFE_CALL(m1.init(limbsNum, false));
+  CUDA_SAFE_CALL(m2.init(limbsNum, false));
+  CUDA_SAFE_CALL(mR.init(limbsNum*2, false));
+  CUDA_SAFE_CALL(cpuR.init(limbsNum*2, false));
 
   memset(m1._hostData, 0, limbsNum*sizeof(uint32_t));
   memset(m2._hostData, 0, limbsNum*sizeof(uint32_t));
@@ -215,8 +216,8 @@ void cudaMultiplyBenchmark(CUfunction *kernels,
     }
   }
 
-  m1.copyToDevice();
-  m2.copyToDevice();
+  CUDA_SAFE_CALL(m1.copyToDevice());
+  CUDA_SAFE_CALL(m2.copyToDevice());
 
   CUfunction kernel;
   if (isSquaring) {
@@ -225,7 +226,7 @@ void cudaMultiplyBenchmark(CUfunction *kernels,
     } else if (mulOperandSize == 352/32) {
       kernel = kernels[CUDAKernelSquareBenchmark352];
     } else {
-      fprintf(stderr, "Can't multiply %u-size operands on OpenCL device\n", mulOperandSize*32);
+      LOG_F(ERROR, "Can't multiply %u-size operands on OpenCL device", mulOperandSize*32);
       return;
     }
   } else {
@@ -234,7 +235,7 @@ void cudaMultiplyBenchmark(CUfunction *kernels,
     } else if (mulOperandSize == 352/32) {
       kernel = kernels[CUDAKernelMultiplyBenchmark352];
     } else {
-      fprintf(stderr, "Can't multiply %u-size operands on OpenCL device\n", mulOperandSize*32);
+      LOG_F(ERROR, "Can't multiply %u-size operands on OpenCL device", mulOperandSize*32);
       return;
     }
   }
@@ -286,19 +287,19 @@ void cudaMultiplyBenchmark(CUfunction *kernels,
     }
   }
 
-  mR.copyToHost();
+  CUDA_SAFE_CALL(mR.copyToHost());
 
   for (unsigned i = 0; i < elementsNum; i++) {
     if (memcmp(&mR[i*mulOperandSize*2], &cpuR[i*mulOperandSize*2], 4*mulOperandSize*2) != 0) {
-      fprintf(stderr, "element index: %u\n", i);
-      fprintf(stderr, "gmp: ");
+      LOG_F(ERROR, "element index: %u", i);
+      LOG_F(ERROR, "gmp: ");
       for (unsigned j = 0; j < mulOperandSize*2; j++)
-        fprintf(stderr, "%08X ", cpuR[i*mulOperandSize*2 + j]);
-      fprintf(stderr, "\ngpu: ");
+        LOG_F(ERROR, "%08X ", cpuR[i*mulOperandSize*2 + j]);
+      LOG_F(ERROR, "gpu: ");
       for (unsigned j = 0; j < mulOperandSize*2; j++)
-        fprintf(stderr, "%08X ", mR[i*mulOperandSize*2 + j]);
-      fprintf(stderr, "\n");
-      fprintf(stderr, "results differ!\n");
+        LOG_F(ERROR, "%08X ", mR[i*mulOperandSize*2 + j]);
+      LOG_F(ERROR, "");
+      LOG_F(ERROR, "results differ!");
       break;
     }
   }
@@ -306,7 +307,7 @@ void cudaMultiplyBenchmark(CUfunction *kernels,
   double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;  
   double opsNum = ((elementsNum*MulOpsNum) / 1000000.0) / gpuTime * 1000.0;
   
-  printf("%s %u bits: %.3lfms (%.3lfM ops/sec)\n", (isSquaring ? "square" : "multiply"), mulOperandSize*32, gpuTime, opsNum);
+  LOG_F(1, "%s %u bits: %.3lfms (%.3lfM ops/sec)", (isSquaring ? "square" : "multiply"), mulOperandSize*32, gpuTime, opsNum);
 }
 
 void cudaFermatTestBenchmark(CUfunction *kernels,
@@ -320,9 +321,9 @@ void cudaFermatTestBenchmark(CUfunction *kernels,
   cudaBuffer<uint32_t> gpuResults;
   cudaBuffer<uint32_t> cpuResults;
   
-  numbers.init(numberLimbsNum, false);
-  gpuResults.init(numberLimbsNum, false);
-  cpuResults.init(numberLimbsNum, false);
+  CUDA_SAFE_CALL(numbers.init(numberLimbsNum, false));
+  CUDA_SAFE_CALL(gpuResults.init(numberLimbsNum, false));
+  CUDA_SAFE_CALL(cpuResults.init(numberLimbsNum, false));
   
   for (unsigned i = 0; i < elementsNum; i++) {
     for (unsigned j = 0; j < operandSize; j++)
@@ -334,8 +335,8 @@ void cudaFermatTestBenchmark(CUfunction *kernels,
     numbers[i*operandSize] |= 0x1; 
   }
 
-  numbers.copyToDevice();
-  gpuResults.copyToDevice();
+  CUDA_SAFE_CALL(numbers.copyToDevice());
+  CUDA_SAFE_CALL(gpuResults.copyToDevice());
 
   CUfunction kernel;
   if (operandSize == 320/32) {
@@ -343,7 +344,7 @@ void cudaFermatTestBenchmark(CUfunction *kernels,
   } else if (operandSize == 352/32) {
     kernel = kernels[CUDAKernelFermatTestBenchmark352];
   } else {
-    fprintf(stderr, "Can't do Fermat test on %ubit operand\n", operandSize*32);
+    LOG_F(ERROR, "Can't do Fermat test on %ubit operand", operandSize*32);
     return;
   }
   
@@ -379,25 +380,25 @@ void cudaFermatTestBenchmark(CUfunction *kernels,
   
   auto cpuEnd = std::chrono::steady_clock::now();    
 
-  gpuResults.copyToHost();
+  CUDA_SAFE_CALL(gpuResults.copyToHost());
 
   memset(&cpuResults[0], 0, 4*operandSize*elementsNum);
   for (unsigned i = 0; i < elementsNum; i++) {
     size_t exportedLimbs;
     mpz_export(&cpuResults[i*operandSize], &exportedLimbs, -1, 4, 0, 0, cpuResultsBuffer[i]);
     if (memcmp(&gpuResults[i*operandSize], &cpuResults[i*operandSize], 4*operandSize) != 0) {
-      fprintf(stderr, "element index: %u\n", i);
-      fprintf(stderr, "element data: \n");
+      LOG_F(ERROR, "element index: %u", i);
+      LOG_F(ERROR, "element data: ");
       for (unsigned j = 0; j < operandSize; j++)
-        fprintf(stderr, "%08X ", numbers[i*operandSize + j]);
-      fprintf(stderr, "\ngmp: ");
+        LOG_F(ERROR, "%08X ", numbers[i*operandSize + j]);
+      LOG_F(ERROR, "gmp: ");
       for (unsigned j = 0; j < operandSize; j++)
-        fprintf(stderr, "%08X ", cpuResults[i*operandSize + j]);
-      fprintf(stderr, "\ngpu: ");
+        LOG_F(ERROR, "%08X ", cpuResults[i*operandSize + j]);
+      LOG_F(ERROR, "gpu: ");
       for (unsigned j = 0; j < operandSize; j++)
-        fprintf(stderr, "%08X ", gpuResults[i*operandSize + j]);
-      fprintf(stderr, "\n");
-      fprintf(stderr, "results differ!\n");
+        LOG_F(ERROR, "%08X ", gpuResults[i*operandSize + j]);
+      LOG_F(ERROR, "");
+      LOG_F(ERROR, "results differ!");
       break;
     }
   }
@@ -407,7 +408,7 @@ void cudaFermatTestBenchmark(CUfunction *kernels,
   double opsNum = ((elementsNum) / 1000000.0) / gpuTime * 1000.0;
   double cpuOpsNum = ((elementsNum) / 1000000.0) / cpuTime * 1000.0;
   
-  printf("%s %u bits: %.3lfms (%.3lfM ops/sec, single thread cpu: %.3lfM ops/sec)\n", "Fermat tests", operandSize*32, gpuTime, opsNum, cpuOpsNum);
+  LOG_F(1, "%s %u bits: %.3lfms (%.3lfM ops/sec, single thread cpu: %.3lfM ops/sec)", "Fermat tests", operandSize*32, gpuTime, opsNum, cpuOpsNum);
 }
 
 void cudaHashmodBenchmark(CUfunction *kernels,
@@ -416,7 +417,7 @@ void cudaHashmodBenchmark(CUfunction *kernels,
                           mpz_class *allPrimorials,
                           unsigned mPrimorial)
 {
-  printf("\n *** hashmod benchmark ***\n");  
+  LOG_F(1, " *** hashmod benchmark ***");
   
   const unsigned iterationsNum = 64;
   CUfunction mHashMod = kernels[CUDAKernelHashMod];
@@ -424,10 +425,10 @@ void cudaHashmodBenchmark(CUfunction *kernels,
   PrimeMiner::search_t hashmod;
   PrimeMiner::block_t blockheader;
   
-  hashmod.midstate.init(8*sizeof(uint32_t), false);
-  hashmod.found.init(32768, false);
-  hashmod.primorialBitField.init(2048, false);
-  hashmod.count.init(1, false);
+  CUDA_SAFE_CALL(hashmod.midstate.init(8*sizeof(uint32_t), false));
+  CUDA_SAFE_CALL(hashmod.found.init(32768, false));
+  CUDA_SAFE_CALL(hashmod.primorialBitField.init(2048, false));
+  CUDA_SAFE_CALL(hashmod.count.init(1, false));
 
   uint64_t totalTime = 0;
   unsigned totalHashes = 0;
@@ -452,8 +453,8 @@ void cudaHashmodBenchmark(CUfunction *kernels,
     }    
 
     hashmod.count[0] = 0;
-    hashmod.midstate.copyToDevice();
-    hashmod.count.copyToDevice();
+    CUDA_SAFE_CALL(hashmod.midstate.copyToDevice());
+    CUDA_SAFE_CALL(hashmod.count.copyToDevice());
     
     int nonceOffset = 0;
     void *arguments[] = {
@@ -486,9 +487,9 @@ void cudaHashmodBenchmark(CUfunction *kernels,
     
     auto gpuEnd = std::chrono::steady_clock::now();  
     
-    hashmod.found.copyToHost();
-    hashmod.primorialBitField.copyToHost();
-    hashmod.count.copyToHost();
+    CUDA_SAFE_CALL(hashmod.found.copyToHost());
+    CUDA_SAFE_CALL(hashmod.primorialBitField.copyToHost());
+    CUDA_SAFE_CALL(hashmod.count.copyToHost());
     
     totalTime += std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count();
     totalHashes += hashmod.count[0];
@@ -524,7 +525,7 @@ void cudaHashmodBenchmark(CUfunction *kernels,
       sha.final((unsigned char*)&hashValue);      
       
       if(hashValue < (uint256(1) << 255)){
-        printf(" * error: hash does not meet minimum.\n");
+        LOG_F(INFO, " * error: hash does not meet minimum.");
         continue;
       }
       
@@ -532,7 +533,7 @@ void cudaHashmodBenchmark(CUfunction *kernels,
       mpz_class mpzHash;
       mpz_set_uint256(mpzHash.get_mpz_t(), hashValue);
       if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
-        printf(" * error: mpz_divisible_ui_p failed.\n");
+        LOG_F(INFO, " * error: mpz_divisible_ui_p failed.");
         continue;
       }    
       
@@ -546,8 +547,8 @@ void cudaHashmodBenchmark(CUfunction *kernels,
   }
   
   double averageHashes = (double)totalHashes / iterationsNum;
-  printf(" MHash per second: %.3lf\n", iterationsNum*numhash / (double)totalTime);
-  printf(" Hash per iteration: %.3lf (%.6lf %%)\n", averageHashes, averageHashes*100/numhash);
+  LOG_F(1, " MHash per second: %.3lf", iterationsNum*numhash / (double)totalTime);
+  LOG_F(1, " Hash per iteration: %.3lf (%.6lf %%)", averageHashes, averageHashes*100/numhash);
  
   uint64_t totalSize = 0;
   unsigned hashes = 0;
@@ -557,11 +558,11 @@ void cudaHashmodBenchmark(CUfunction *kernels,
       totalSize += multiplierSizes[i] * i;
     }
   }
-  printf(" Average hash multiplier size: %.3lf\n", totalSize / (double)hashes);  
+  LOG_F(1, " Average hash multiplier size: %.3lf", totalSize / (double)hashes);
   
   for (unsigned i = 0; i < 20; i++) {
     if (phashCount[i]) {
-      printf("   Hashed with primorial %u is %.3lf%%\n", i, phashCount[i] / (double)hashes * 100.0);
+      LOG_F(1, "   Hashed with primorial %u is %.3lf%%", i, phashCount[i] / (double)hashes * 100.0);
     }
   }
 }
@@ -575,7 +576,7 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
                             unsigned mDepth,
                             bool checkCandidates)
 {
-  printf("\n *** sieve (%s) benchmark ***\n", checkCandidates ? "check" : "performance");  
+  LOG_F(1, " *** sieve (%s) benchmark ***", checkCandidates ? "check" : "performance");
   
   CUfunction mHashMod = kernels[CUDAKernelHashMod];
   CUfunction mSieveSetup = kernels[CUDAKernelSieveSetup];
@@ -595,17 +596,17 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
   cudaBuffer<uint32_t> primeBuf2[maxHashPrimorial];
   
   for (unsigned i = 0; i < maxHashPrimorial - mPrimorial; i++) {
-    primeBuf[i].init(mConfig.PCOUNT, true);
-    primeBuf[i].copyToDevice(&gPrimes[mPrimorial+i+1]);
-    primeBuf2[i].init(mConfig.PCOUNT*2, true);
-    primeBuf2[i].copyToDevice(&gPrimes2[2*(mPrimorial+i)+2]);
+    CUDA_SAFE_CALL(primeBuf[i].init(mConfig.PCOUNT, true));
+    CUDA_SAFE_CALL(primeBuf[i].copyToDevice(&gPrimes[mPrimorial+i+1]));
+    CUDA_SAFE_CALL(primeBuf2[i].init(mConfig.PCOUNT*2, true));
+    CUDA_SAFE_CALL(primeBuf2[i].copyToDevice(&gPrimes2[2*(mPrimorial+i)+2]));
   }
   
   cudaBuffer<uint32_t> modulosBuf[maxHashPrimorial];
   unsigned modulosBufferSize = mConfig.PCOUNT*(mConfig.N-1);   
   for (unsigned bufIdx = 0; bufIdx < maxHashPrimorial-mPrimorial; bufIdx++) {
     cudaBuffer<uint32_t> &current = modulosBuf[bufIdx];
-    current.init(modulosBufferSize, false);
+    CUDA_SAFE_CALL(current.init(modulosBufferSize, false));
     for (unsigned i = 0; i < mConfig.PCOUNT; i++) {
       mpz_class X = 1;
       for (unsigned j = 0; j < mConfig.N-1; j++) {
@@ -615,132 +616,136 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
       }
     }
     
-    current.copyToDevice();
+    CUDA_SAFE_CALL(current.copyToDevice());
   }  
   
-  hashmod.midstate.init(8, false);
-  hashmod.found.init(2048, false);
-  hashmod.primorialBitField.init(2048, false);
-  hashmod.count.init(1, false);
-  hashBuf.init(PW*mConfig.N, false);
+  CUDA_SAFE_CALL(hashmod.midstate.init(8, false));
+  CUDA_SAFE_CALL(hashmod.found.init(2048, false));
+  CUDA_SAFE_CALL(hashmod.primorialBitField.init(2048, false));
+  CUDA_SAFE_CALL(hashmod.count.init(1, false));
+  CUDA_SAFE_CALL(hashBuf.init(PW*mConfig.N, false));
 
-  unsigned numhash = 64*262144;
-
+  unsigned numhash = 1048576;
+  unsigned foundHashNum = 0;
   unsigned hashm[32];
   memset(hashm, 0, sizeof(hashm));
   sha256precalcData precalcData;
 
-  {
-    uint8_t *pHeader = (uint8_t*)&blockheader;
-    for (unsigned i = 0; i < sizeof(blockheader); i++)
-      pHeader[i] = rand();
-    blockheader.version = PrimeMiner::block_t::CURRENT_VERSION;
-    blockheader.nonce = 1;    
-    precalcSHA256(&blockheader, hashmod.midstate._hostData, &precalcData);
-  }    
- 
-  hashmod.count[0] = 0;
-  hashmod.midstate.copyToDevice();
-  hashmod.count.copyToDevice();
-
-  int nonceOffset = 0;
-  void *arguments[] = {
-    &nonceOffset,
-    &hashmod.found._deviceData,
-    &hashmod.count._deviceData,
-    &hashmod.primorialBitField._deviceData,
-    &hashmod.midstate._deviceData,
-    &precalcData.merkle,
-    &precalcData.time,
-    &precalcData.nbits,
-    &precalcData.W0,
-    &precalcData.W1,
-    &precalcData.new1_0,
-    &precalcData.new1_1,
-    &precalcData.new1_2,
-    &precalcData.new2_0,
-    &precalcData.new2_1,
-    &precalcData.new2_2,
-    &precalcData.temp2_3
-  };  
-  
-  CUDA_SAFE_CALL(cuLaunchKernel(mHashMod,
-                                numhash/defaultGroupSize, 1, 1,                                
-                                defaultGroupSize, 1, 1,
-                                0, NULL, arguments, 0));
-    
-  hashmod.found.copyToHost();
-  hashmod.primorialBitField.copyToHost();
-  hashmod.count.copyToHost();
-  CUDA_SAFE_CALL(cuCtxSynchronize());  
-
-  for(unsigned i = 0; i < hashmod.count[0]; ++i) {
-    PrimeMiner::hash_t hash;
-    hash.time = blockheader.time;
-    hash.nonce = hashmod.found[i];
-    uint32_t primorialBitField = hashmod.primorialBitField[i];
-    uint32_t primorialIdx = primorialBitField >> 16;
-    uint64_t realPrimorial = 1;
-    for (unsigned j = 0; j < primorialIdx+1; j++) {
-      if (primorialBitField & (1 << j))
-        realPrimorial *= gPrimes[j];
-    }      
-    
-    mpz_class mpzRealPrimorial;        
-    mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);            
-    primorialIdx = std::max(mPrimorial, primorialIdx) - mPrimorial;
-    mpz_class mpzHashMultiplier = allPrimorial[primorialIdx] / mpzRealPrimorial;
-    unsigned hashMultiplierSize = mpz_sizeinbase(mpzHashMultiplier.get_mpz_t(), 2);      
-    mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);        
-    
-    PrimeMiner::block_t b = blockheader;
-    b.nonce = hash.nonce;
-    
-    SHA_256 sha;
-    sha.init();
-    sha.update((const unsigned char*)&b, sizeof(b));
-    sha.final((unsigned char*)&hash.hash);
-    sha.init();
-    sha.update((const unsigned char*)&hash.hash, sizeof(uint256));
-    sha.final((unsigned char*)&hash.hash);
-
-    if(hash.hash < (uint256(1) << 255)){
-      printf(" * error: hash does not meet minimum.\n");
-      continue;
+  while (foundHashNum < 64) {
+    {
+      uint8_t *pHeader = (uint8_t*)&blockheader;
+      for (unsigned i = 0; i < sizeof(blockheader); i++)
+        pHeader[i] = rand();
+      blockheader.version = PrimeMiner::block_t::CURRENT_VERSION;
+      blockheader.nonce = 1;
+      precalcSHA256(&blockheader, hashmod.midstate._hostData, &precalcData);
     }
-    
-    mpz_class mpzHash;
-    mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
-    if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
-      printf(" * error: mpz_divisible_ui_p failed.\n");
-      continue;
-    }    
 
-    mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
-    hash.primorialIdx = primorialIdx;
-    hash.primorial = mpzHashMultiplier;
-    hash.shash = mpzHash * hash.primorial;      
-    
-    unsigned hid = hashes.push(hash);
-    memset(&hashBuf[hid*mConfig.N], 0, sizeof(uint32_t)*mConfig.N);
-    mpz_export(&hashBuf[hid*mConfig.N], 0, -1, 4, 0, 0, hashes.get(hid).shash.get_mpz_t());        
+    hashmod.count[0] = 0;
+    CUDA_SAFE_CALL(hashmod.midstate.copyToDevice());
+    CUDA_SAFE_CALL(hashmod.count.copyToDevice());
+
+    int nonceOffset = 0;
+    void *arguments[] = {
+      &nonceOffset,
+      &hashmod.found._deviceData,
+      &hashmod.count._deviceData,
+      &hashmod.primorialBitField._deviceData,
+      &hashmod.midstate._deviceData,
+      &precalcData.merkle,
+      &precalcData.time,
+      &precalcData.nbits,
+      &precalcData.W0,
+      &precalcData.W1,
+      &precalcData.new1_0,
+      &precalcData.new1_1,
+      &precalcData.new1_2,
+      &precalcData.new2_0,
+      &precalcData.new2_1,
+      &precalcData.new2_2,
+      &precalcData.temp2_3
+    };
+
+    CUDA_SAFE_CALL(cuLaunchKernel(mHashMod,
+                                  numhash/defaultGroupSize, 1, 1,
+                                  defaultGroupSize, 1, 1,
+                                  0, NULL, arguments, 0));
+
+    CUDA_SAFE_CALL(hashmod.found.copyToHost());
+    CUDA_SAFE_CALL(hashmod.primorialBitField.copyToHost());
+    CUDA_SAFE_CALL(hashmod.count.copyToHost());
+    CUDA_SAFE_CALL(cuCtxSynchronize());
+
+    for(unsigned i = 0; i < hashmod.count[0]; ++i) {
+      PrimeMiner::hash_t hash;
+      hash.time = blockheader.time;
+      hash.nonce = hashmod.found[i];
+      uint32_t primorialBitField = hashmod.primorialBitField[i];
+      uint32_t primorialIdx = primorialBitField >> 16;
+      uint64_t realPrimorial = 1;
+      for (unsigned j = 0; j < primorialIdx+1; j++) {
+        if (primorialBitField & (1 << j))
+          realPrimorial *= gPrimes[j];
+      }
+
+      mpz_class mpzRealPrimorial;
+      mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);
+      primorialIdx = std::max(mPrimorial, primorialIdx) - mPrimorial;
+      mpz_class mpzHashMultiplier = allPrimorial[primorialIdx] / mpzRealPrimorial;
+      unsigned hashMultiplierSize = mpz_sizeinbase(mpzHashMultiplier.get_mpz_t(), 2);
+      mpz_import(mpzRealPrimorial.get_mpz_t(), 2, -1, 4, 0, 0, &realPrimorial);
+
+      PrimeMiner::block_t b = blockheader;
+      b.nonce = hash.nonce;
+
+      SHA_256 sha;
+      sha.init();
+      sha.update((const unsigned char*)&b, sizeof(b));
+      sha.final((unsigned char*)&hash.hash);
+      sha.init();
+      sha.update((const unsigned char*)&hash.hash, sizeof(uint256));
+      sha.final((unsigned char*)&hash.hash);
+
+      if(hash.hash < (uint256(1) << 255)){
+        LOG_F(INFO, " * error: hash does not meet minimum.");
+        continue;
+      }
+
+      mpz_class mpzHash;
+      mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
+      if(!mpz_divisible_p(mpzHash.get_mpz_t(), mpzRealPrimorial.get_mpz_t())){
+        LOG_F(INFO, " * error: mpz_divisible_ui_p failed.");
+        continue;
+      }
+
+      mpz_set_uint256(mpzHash.get_mpz_t(), hash.hash);
+      hash.primorialIdx = primorialIdx;
+      hash.primorial = mpzHashMultiplier;
+      hash.shash = mpzHash * hash.primorial;
+      unsigned hid = hashes.push(hash);
+      if (hid >= 64)
+        break;
+      memset(&hashBuf[hid*mConfig.N], 0, sizeof(uint32_t)*mConfig.N);
+      mpz_export(&hashBuf[hid*mConfig.N], 0, -1, 4, 0, 0, hashes.get(hid).shash.get_mpz_t());
+      foundHashNum = hid+1;
+    }
   }
 
-  hashBuf.copyToDevice();
+  CUDA_SAFE_CALL(hashBuf.copyToDevice());
 
   for(int sieveIdx = 0; sieveIdx < 64; ++sieveIdx) {
     for (int pipelineIdx = 0; pipelineIdx < FERMAT_PIPELINES; pipelineIdx++)
-      sieveBuffers[sieveIdx][pipelineIdx].init(MSO, false);
+      CUDA_SAFE_CALL(sieveBuffers[sieveIdx][pipelineIdx].init(MSO, false));
       
-    candidatesCountBuffers[sieveIdx].init(FERMAT_PIPELINES, false);
+    CUDA_SAFE_CALL(candidatesCountBuffers[sieveIdx].init(FERMAT_PIPELINES, false));
   }  
   
   for(int k = 0; k < 2; ++k){
-    sieveBuf[k].init(mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, false);
-    sieveOff[k].init(mConfig.PCOUNT*mConfig.WIDTH, false);
+    CUDA_SAFE_CALL(sieveBuf[k].init(mConfig.SIZE*mConfig.STRIPES/2*mConfig.WIDTH, false));
+    CUDA_SAFE_CALL(sieveOff[k].init(mConfig.PCOUNT*mConfig.WIDTH, false));
   }  
 
-  unsigned count = checkCandidates ? 1 : std::min(64u, hashmod.count[0]);
+  unsigned count = checkCandidates ? 1 : foundHashNum;
   unsigned candidates320[64];
   unsigned candidates352[64];
 
@@ -774,7 +779,7 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
       };
       
       CUDA_SAFE_CALL(cuLaunchKernel(mSieve,
-                                    mConfig.STRIPES/2, mConfig.WIDTH, 1,                                
+                                    mConfig.STRIPES/2, mConfig.WIDTH, 1,
                                     defaultGroupSize, 1, 1,
                                     0, NULL, arguments, 0));
     }
@@ -787,14 +792,14 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
       };
       
       CUDA_SAFE_CALL(cuLaunchKernel(mSieve,
-                                    mConfig.STRIPES/2, mConfig.WIDTH, 1,                                
+                                    mConfig.STRIPES/2, mConfig.WIDTH, 1,
                                     defaultGroupSize, 1, 1,
                                     0, NULL, arguments, 0));
-    }    
+    }
 
     candidatesCountBuffers[i][0] = 0;
-    candidatesCountBuffers[i][1] = 0;    
-    candidatesCountBuffers[i].copyToDevice();
+    candidatesCountBuffers[i][1] = 0;
+    CUDA_SAFE_CALL(candidatesCountBuffers[i].copyToDevice());
         
     {
       uint32_t multiplierSize = mpz_sizeinbase(hashes.get(hid).shash.get_mpz_t(), 2);
@@ -810,18 +815,18 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
       };
   
       CUDA_SAFE_CALL(cuLaunchKernel(mSieveSearch,
-                                    (mConfig.SIZE*mConfig.STRIPES/2)/defaultGroupSize, 1, 1,
-                                    defaultGroupSize, 1, 1,
+                                    (mConfig.SIZE*mConfig.STRIPES/2)/128, 1, 1,
+                                    128, 1, 1,
                                     0, NULL, arguments, 0));
           
-      candidatesCountBuffers[i].copyToHost();   
+      CUDA_SAFE_CALL(candidatesCountBuffers[i].copyToHost());
     }
-  
+
     if (checkCandidates) {
-      sieveBuf[0].copyToHost();
-      sieveBuf[1].copyToHost();
-      sieveBuffers[i][0].copyToHost();
-      sieveBuffers[i][1].copyToHost();
+      CUDA_SAFE_CALL(sieveBuf[0].copyToHost());
+      CUDA_SAFE_CALL(sieveBuf[1].copyToHost());
+      CUDA_SAFE_CALL(sieveBuffers[i][0].copyToHost());
+      CUDA_SAFE_CALL(sieveBuffers[i][1].copyToHost());
       CUDA_SAFE_CALL(cuCtxSynchronize()); 
       
       std::set<mpz_class> multipliers;
@@ -854,12 +859,21 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
       
       double coeff = fabs(n320+n352 - multipliers.size()) / multipliers.size();
 
-      printf(" * [%s] found candidates by CPU: %u by GPU: %u\n",
-             coeff <= 0.01  ? "OK" : "FAILED",
-             (unsigned)multipliers.size(),
-             n320 + n352);
-      printf(" * [%s] invalid candidates: %u\n", !invalidCount ? "OK" : "FAILED", invalidCount);
-      printf(" * [%s] CPU/GPU candidates difference: %u\n", !diff ? "OK" : "FAILED", diff);
+      if (coeff <= 0.01) {
+        LOG_F(1, " * [%s] found candidates by CPU: %u by GPU: %u",
+               coeff <= 0.01  ? "OK" : "FAILED",
+               (unsigned)multipliers.size(),
+               n320 + n352);
+        LOG_F(1, " * [%s] invalid candidates: %u", !invalidCount ? "OK" : "FAILED", invalidCount);
+        LOG_F(1, " * [%s] CPU/GPU candidates difference: %u", !diff ? "OK" : "FAILED", diff);
+      } else {
+        LOG_F(ERROR, " * [%s] found candidates by CPU: %u by GPU: %u",
+               coeff <= 0.01  ? "OK" : "FAILED",
+               (unsigned)multipliers.size(),
+               n320 + n352);
+        LOG_F(ERROR, " * [%s] invalid candidates: %u", !invalidCount ? "OK" : "FAILED", invalidCount);
+        LOG_F(ERROR, " * [%s] CPU/GPU candidates difference: %u", !diff ? "OK" : "FAILED", diff);
+      }
     }
   }
 
@@ -877,15 +891,16 @@ void cudaSieveTestBenchmark(CUfunction *kernels,
       n352 += candidatesCountBuffers[i][1];
     }
 
-    printf(" * scan speed: %.3lf G\n", scanSpeed/1000.0);
-    printf(" * iteration time: %.3lfms\n", iterationTime/1000.0);  
-    printf(" * candidates per second: %.3lf\n", (n320+n352)/(totalTime/1000000.0));
-    printf(" * candidates per iteration: %.2lf (%.2lf 320bit, %.2lf 352bit)\n",
+    LOG_F(1, " * iterations: %u", count);
+    LOG_F(1, " * scan speed: %.3lf G", scanSpeed/1000.0);
+    LOG_F(1, " * iteration time: %.3lfms", iterationTime/1000.0);
+    LOG_F(1, " * candidates per second: %.3lf", (n320+n352)/(totalTime/1000000.0));
+    LOG_F(1, " * candidates per iteration: %.2lf (%.2lf 320bit, %.2lf 352bit)",
            (double)(n320+n352) / count,
            (double)n320 / count,
            (double)n352 / count);
-    printf(" * 320bit/352bit ratio: %.3lf/1\n", (double)n320/(double)n352);
-    printf("\n");
+    LOG_F(1, " * 320bit/352bit ratio: %.3lf/1", (double)n320/(double)n352);
+    LOG_F(1, "");
   }
 }
 
@@ -897,6 +912,7 @@ void cudaRunBenchmarks(CUcontext context,
 {
   cuCtxSetCurrent(context);
 
+  srand(12345);
   const unsigned mPrimorial = 13;
   char deviceName[128];
   int computeUnits;
@@ -904,7 +920,7 @@ void cudaRunBenchmarks(CUcontext context,
   mpz_class allPrimorials[maxHashPrimorial];
   CUDA_SAFE_CALL(cuDeviceGetName(deviceName, sizeof(deviceName), device));
   CUDA_SAFE_CALL(cuDeviceGetAttribute(&computeUnits, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, device));
-  printf("Benchmarking %s; %u compute units\n", deviceName, computeUnits);
+  LOG_F(INFO, "Benchmarking %s; %u compute units", deviceName, computeUnits);
 
   std::unique_ptr<CUfunction[]> kernels(new CUfunction[CUDAKernelsNum]);
   for (unsigned i = 0; i < CUDAKernelsNum; i++)
@@ -912,14 +928,14 @@ void cudaRunBenchmarks(CUcontext context,
 
   // Get miner config
   {
-    mConfig.init(1, false);
+    CUDA_SAFE_CALL(mConfig.init(1, false));
     void *args[] = { &mConfig._deviceData };
     CUDA_SAFE_CALL(cuLaunchKernel(kernels[CUDAKernelGenConfig],
                                   1, 1, 1,
                                   1, 1, 1,
                                   0, NULL, args, 0));
     CUDA_SAFE_CALL(cuCtxSynchronize());
-    mConfig.copyToHost();
+    CUDA_SAFE_CALL(mConfig.copyToHost());
   }
 
   {
@@ -934,7 +950,7 @@ void cudaRunBenchmarks(CUcontext context,
   
   cudaMultiplyBenchmark(kernels.get(), computeUnits*4, 320/32, 262144, true);
   cudaMultiplyBenchmark(kernels.get(), computeUnits*4, 320/32, 262144, false);
-  cudaMultiplyBenchmark(kernels.get(), computeUnits*4, 352/32, 262144, true);    
+  cudaMultiplyBenchmark(kernels.get(), computeUnits*4, 352/32, 262144, true);
   cudaMultiplyBenchmark(kernels.get(), computeUnits*4, 352/32, 262144, false);
   cudaFermatTestBenchmark(kernels.get(), computeUnits*4, 320/32, 262144);
   cudaFermatTestBenchmark(kernels.get(), computeUnits*4, 352/32, 262144);
