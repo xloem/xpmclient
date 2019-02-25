@@ -362,17 +362,8 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
     CUDA_SAFE_CALL(current.copyToDevice());
   }    
 
-	czmq_signal(pipe);
-	czmq_poll(pipe, -1);
-	
 	bool run = true;
 	while(run){
-		if(czmq_poll(pipe, 0)){
-			czmq_wait(pipe);
-			czmq_wait(pipe);
-		}
-		
-		//printf("\n--------- iteration %d -------\n", iteration);
 		{
 			time_t currtime = time(0);
 			time_t elapsed = currtime - time1;
@@ -398,15 +389,15 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 		{
 			bool getwork = true;
 			while(getwork && run){
-				if(czmq_poll(worksub, 0) || work.height() < block.height()){
+        if(czmq_poll(worksub, 0) || work.height() < block.height()){
 					run = ReceivePub(work, worksub);
 					reset = true;
 				}
 				
 				getwork = false;
-				if(czmq_poll(blocksub, 0) || work.height() > block.height()){
+        if(czmq_poll(blocksub, 0) || work.height() > block.height()){
 					run = ReceivePub(block, blocksub);
-					getwork = true;
+          getwork = true;
 				}
 			}
 		}
@@ -767,16 +758,13 @@ XPMClient::~XPMClient() {
 	for(unsigned i = 0; i < mWorkers.size(); ++i)
 		if(mWorkers[i].first){
 			mWorkers[i].first->MakeExit = true;
-			if(czmq_poll(mWorkers[i].second, 1000))
+      if(czmq_poll(mWorkers[i].second, 8000))
 				delete mWorkers[i].first;
 		}
 
 	zmq_close(mBlockPub);
 	zmq_close(mWorkPub);
 	zmq_close(mStatsPull);
-  if (platformType == ptAMD)
-  	clear_adl(mNumDevices);
-	
 }
 
 void XPMClient::dumpSieveConstants(unsigned weaveDepth,
@@ -953,11 +941,13 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 		sprintf(ccoption, "--gpu-architecture=compute_%i%i", gpus[i].majorComputeCapability, gpus[i].minorComputeCapability);
 		const char *options[] = { ccoption };
 		CUDA_SAFE_CALL(cuCtxSetCurrent(gpus[i].context));
-		if (!cudaCompileKernel(kernelname,
+    if (!cudaCompileKernel(kernelname,
 				{ "xpm/cuda/config.cu", "xpm/cuda/procs.cu", "xpm/cuda/fermat.cu", "xpm/cuda/sieve.cu", "xpm/cuda/sha256.cu", "xpm/cuda/benchmarks.cu"},
 				options,
 				1,
 				&modules[i],
+        gpus[i].majorComputeCapability,
+        gpus[i].minorComputeCapability,
 				adjustedKernelTarget != 0)) {
 			return false;
 		}
@@ -989,8 +979,6 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
       }
 
       void *pipe = czmq_thread_fork(mCtx, &PrimeMiner::InvokeMining, miner);
-      czmq_wait(pipe);
-      czmq_signal(pipe);
       worker.first = miner;
       worker.second = pipe;    
       mWorkers.push_back(worker);
@@ -1044,8 +1032,10 @@ bool XPMClient::TakeWork(const proto::Work& work) {
       LOG_F(WARNING, "attempt to stop GPU %u ...", i);
 			if(mWorkers[i].first){
 				mWorkers[i].first->MakeExit = true;
-				if(czmq_poll(mWorkers[i].second, 8000))
+        if(czmq_poll(mWorkers[i].second, 8000)) {
 					delete mWorkers[i].first;
+          zmq_close(mWorkers[i].second);
+        }
 			}
 		}
 		
@@ -1054,7 +1044,6 @@ bool XPMClient::TakeWork(const proto::Work& work) {
 		// Build new kernels with adjusted target
 		mPaused = true;
 		Initialize(_cfg, false, newTarget);
-		Toggle();
 		return false;
 	} else {
 		return true;
@@ -1149,15 +1138,8 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 }
 
 
-void XPMClient::Toggle() {
-	
-	for(unsigned i = 0; i < mWorkers.size(); ++i) {
-		if(mWorkers[i].first)
-			czmq_signal(mWorkers[i].second);
-	}
-	
-	mPaused = !mPaused;
-	
+void XPMClient::Toggle()
+{
 }
 
 

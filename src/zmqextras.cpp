@@ -1,11 +1,8 @@
 #include "zmqextras.h"
 #include <zmq.h>
 #include <stdlib.h>
-#ifdef __WINDOWS__
-#include <process.h>
-#else
-#include <pthread.h>
-#endif
+#include <thread>
+#include "loguru.hpp"
 
 struct czmq_thread_ctx {
   czmq_thread_proc *proc;
@@ -14,53 +11,35 @@ struct czmq_thread_ctx {
   void *pipe;
 };
 
-#if defined (__WINDOWS__)
-static unsigned __stdcall czmq_thread_entry_point(void *arg)
-{
-  czmq_thread_ctx *thctx = (czmq_thread_ctx *) arg;
-  thctx->proc(thctx->arg, thctx->ctx, thctx->pipe);
-  zmq_close(thctx->pipe);
-  free(thctx);
-  _endthreadex(0);
-  return 0;
-}
-#else
 static void *czmq_thread_entry_point(void *arg)
 {
   czmq_thread_ctx *thctx = (czmq_thread_ctx *) arg;
   thctx->proc(thctx->arg, thctx->ctx, thctx->pipe);
   zmq_close(thctx->pipe);
   free(thctx);
-  return 0;
+  return nullptr;
 }
-#endif
 
 void *czmq_thread_fork(void *ctx, czmq_thread_proc *proc, void *arg)
 {
   char endpoint[256];
   void *pipe = zmq_socket(ctx, ZMQ_PAIR);
   snprintf(endpoint, sizeof(endpoint), "inproc://zctx-pipe-%p", pipe);
-  zmq_bind(pipe, endpoint);
+  if (zmq_bind(pipe, endpoint) == -1) {
+    LOG_F(ERROR, "czmq_thread_fork: can't create pipe");
+  }
   
   czmq_thread_ctx *thctx = (czmq_thread_ctx*)malloc(sizeof(czmq_thread_ctx));
   thctx->ctx = ctx;
   thctx->arg = arg;
   thctx->proc = proc;
   thctx->pipe = zmq_socket(ctx, ZMQ_PAIR);
-  zmq_connect(thctx->pipe, endpoint);
-  
-#if defined (__WINDOWS__)
-  HANDLE hThread = (HANDLE)_beginthreadex (NULL, 0, &czmq_thread_entry_point, thctx, CREATE_SUSPENDED, NULL);
-  int priority = GetThreadPriority(GetCurrentThread());
-  SetThreadPriority(hThread, priority);
-  ResumeThread (hThread);
-  CloseHandle (hThread);
-#else
-  pthread_t thread;
-  pthread_create(&thread, NULL, czmq_thread_entry_point, thctx);
-  pthread_detach(thread);    
-#endif
- 
+  if (zmq_connect(thctx->pipe, endpoint) == -1) {
+    LOG_F(ERROR, "czmq_thread_fork: can't connect to pipe");
+  }
+
+  std::thread thread(czmq_thread_entry_point, thctx);
+  thread.detach();
   return pipe;
 }
 
@@ -74,7 +53,9 @@ bool czmq_poll(void *self, int msecs)
 
 void czmq_signal(void *self)
 {
-  zmq_send(self, "", 0, 0);
+  if (zmq_send(self, "", 0, 0) == -1) {
+    LOG_F(ERROR, "czmq_signal failed");
+  }
 }
 
 void czmq_wait(void *self)

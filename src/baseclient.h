@@ -22,6 +22,7 @@ using namespace pool;
 #include <locale.h>
 #include <config4cpp/Configuration.h>
 #include "zmqextras.h"
+#include "loguru.hpp"
 using namespace config4cpp;
 
 class BaseClient;
@@ -72,49 +73,68 @@ struct share_t {
 
 template<class C>
 static bool Receive(C& rep, void* socket) {
+  bool result = false;
   zmq_msg_t msg;
   zmq_msg_init(&msg);
-  zmq_recvmsg(socket, &msg, 0);
-  rep.ParseFromArray(zmq_msg_data(&msg), zmq_msg_size(&msg));
+  if (zmq_recvmsg(socket, &msg, 0) != -1) {
+    if (rep.ParseFromArray(zmq_msg_data(&msg), zmq_msg_size(&msg))) {
+      result = true;
+    } else {
+      LOG_F(ERROR, "Invalid data detected (Receive)");
+    }
+  } else {
+    LOG_F(ERROR, "Receive message failed (Receive)");
+  }
+
   zmq_msg_close(&msg);  
-  return true;
+  return result;
 }
 
 template<class C>
 static bool ReceivePub(C& sig, void* socket) {
+  bool result = false;
   zmq_msg_t msg;
   zmq_msg_init (&msg);
-  zmq_recvmsg (socket, &msg, 0);
-  size_t size = zmq_msg_size(&msg);
-  if (size) {
-    sig.ParseFromArray(((char*)zmq_msg_data(&msg))+1, zmq_msg_size(&msg)-1);
-    zmq_msg_close (&msg);  
-    return true;
+  if (zmq_recvmsg (socket, &msg, 0) != -1) {
+    size_t size = zmq_msg_size(&msg);
+    if (size && sig.ParseFromArray(((char*)zmq_msg_data(&msg))+1, zmq_msg_size(&msg)-1)) {
+      result = true;
+    } else {
+      LOG_F(ERROR, "Invalid data detected (ReceivePub)");
+    }
   } else {
-    zmq_msg_close (&msg);  
-    return false;
+    LOG_F(ERROR, "Receive message failed (ReceivePub)");
   }
+
+  zmq_msg_close (&msg);
+  return result;
 }
 
 
 template<class C>
 static void Send(const C& req, void* socket) {
+  uint8_t buffer[4096];
   size_t fsize = req.ByteSize();
-  void *data = malloc(fsize);
+  void *data = (fsize <= sizeof(buffer)) ? buffer : malloc(fsize);
   req.SerializeToArray(data, fsize);
-  zmq_send(socket, data, fsize, 0);
-  free(data);
+  if (zmq_send(socket, data, fsize, 0) == -1)
+    LOG_F(ERROR, "Send message failed (size=%u)", (unsigned)fsize);
+  if (data != buffer)
+    free(data);
 }
 
 
 template<class C>
 static void SendPub(const C& sig, void* socket) {
+  uint8_t buffer[4096];
   size_t fsize = sig.ByteSize();
-  unsigned char *data = (unsigned char*)malloc(fsize+1);
+  unsigned char *data = ( (fsize+1) <= sizeof(buffer)) ? buffer : static_cast<unsigned char*>(malloc(fsize+1));
   data[0] = 1;
   sig.SerializeToArray(data+1, fsize);
-  zmq_send(socket, data, fsize+1, 0);
-  free(data);
+  if (zmq_send(socket, data, fsize+1, 0) == -1)
+    LOG_F(ERROR, "SendPub message failed (size=%u)", (unsigned)fsize);
+  if (data != buffer)
+    free(data);
 }
 
 

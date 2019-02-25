@@ -1,14 +1,16 @@
 #include "cudautil.h"
+#include <string.h>
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include "loguru.hpp"
 
 bool cudaCompileKernel(const char *kernelName,
                        const std::vector<const char*> &sources,
                        const char **arguments,
                        int argumentsNum,
                        CUmodule *module,
+                       int majorComputeCapability,
+                       int,
                        bool needRebuild) 
 {
   std::ifstream testfile(kernelName);
@@ -57,6 +59,13 @@ bool cudaCompileKernel(const char *kernelName,
     
     // Destroy the program.
     NVRTC_SAFE_CALL(nvrtcDestroyProgram(&prog));
+
+    // Patch PTX (downgrade .version)
+    if (majorComputeCapability <= 6) {
+      char *pv = strstr(ptx, ".version 6.");
+      if (pv)
+        pv[11] = '0';
+    }
     
     {
       std::ofstream bin(kernelName, std::ofstream::binary | std::ofstream::trunc);

@@ -3,6 +3,7 @@
 
 #include <cuda.h>
 #include <nvrtc.h>
+#include "loguru.hpp"
 #include <string>
 #include <vector>
 
@@ -10,7 +11,7 @@
 do { \
   nvrtcResult result = x; \
   if (result != NVRTC_SUCCESS) { \
-    fprintf(stderr, "\nerror: %i\nfailed with error %s at %s:%d\n", static_cast<int>(result), nvrtcGetErrorString(result), __FILE__, __LINE__); \
+    LOG_F(ERROR, "\nerror: %i\nfailed with error %s at %s:%d", static_cast<int>(result), nvrtcGetErrorString(result), __FILE__, __LINE__); \
     exit(1); \
   } \
 } while(0)
@@ -21,7 +22,7 @@ do { \
   if (result != CUDA_SUCCESS) { \
     const char *msg; \
     cuGetErrorName(result, &msg); \
-    fprintf(stderr, "\nerror: %i\nfailed with error %s at %s:%d\n", static_cast<int>(result), msg, __FILE__, __LINE__); \
+    LOG_F(ERROR, "\nerror: %i\nfailed with error %s at %s:%d\n", static_cast<int>(result), msg, __FILE__, __LINE__); \
     exit(1); \
   } \
 } while(0)
@@ -38,8 +39,14 @@ public:
   cudaBuffer() : _size(0), _hostData(0), _deviceData(0) {}
   ~cudaBuffer() {
     delete[] _hostData;
-    if (!_deviceData)
-      CUDA_SAFE_CALL(cuMemFree(_deviceData)); 
+    if (_deviceData) {
+      CUresult result = cuMemFree(_deviceData);
+      if (result != CUDA_SUCCESS) {
+        const char *msg;
+        cuGetErrorName(result, &msg);
+        LOG_F(ERROR, "CUDA memory free failed with error %s code: %i\n", msg, static_cast<int>(result));
+      }
+    }
   }
   
   CUresult init(size_t size, bool hostNoAccess) {
@@ -88,6 +95,8 @@ bool cudaCompileKernel(const char *kernelName,
                        const char **arguments,
                        int argumentsNum,
                        CUmodule *module,
+                       int majorComputeCapability,
+                       int minorComputeCapability,
                        bool needRebuild);
 
 #endif //__CUDALIB_H_

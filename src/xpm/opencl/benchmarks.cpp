@@ -332,7 +332,7 @@ void multiplyBenchmark(cl_context context,
   double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;
   double opsNum = ((elementsNum*MulOpsNum) / 1000000.0) / gpuTime * 1000.0;
   
-  LOG_F(1, "%s %u bits: %.3lfms (%.3lfM ops/sec)", (isSquaring ? "square" : "multiply"), mulOperandSize*32, gpuTime, opsNum);
+  LOG_F(INFO, "%s %u bits: %.3lfms (%.3lfM ops/sec)", (isSquaring ? "square" : "multiply"), mulOperandSize*32, gpuTime, opsNum);
 }
 
 
@@ -458,7 +458,7 @@ void fermatTestBenchmark(cl_context context,
   double opsNum = ((elementsNum) / 1000000.0) / gpuTime * 1000.0;
   double cpuOpsNum = ((elementsNum) / 1000000.0) / cpuTime * 1000.0;
   
-  LOG_F(1, "%s %u bits: %.3lfms (%.3lfM ops/sec, single thread cpu: %.3lfM ops/sec)", "Fermat tests", operandSize*32, gpuTime, opsNum, cpuOpsNum);
+  LOG_F(INFO, "%s %u bits: %.3lfms (%.3lfM ops/sec, single thread cpu: %.3lfM ops/sec)", "Fermat tests", operandSize*32, gpuTime, opsNum, cpuOpsNum);
 }
 
 
@@ -470,7 +470,7 @@ void hashmodBenchmark(cl_context context,
                       mpz_class *allPrimorials,
                       unsigned mPrimorial)
 {
-  LOG_F(1, "*** hashmod benchmark ***");
+  LOG_F(INFO, "*** hashmod benchmark ***");
   
   const unsigned iterationsNum = 64;
   cl_kernel mHashMod = kernels[CLKernelHashMod];
@@ -620,8 +620,8 @@ void hashmodBenchmark(cl_context context,
   }
   
   double averageHashes = (double)totalHashes / iterationsNum;
-  LOG_F(1, " MHash per second: %.3lf", iterationsNum*numhash / (double)totalTime);
-  LOG_F(1, " Hash per iteration: %.3lf (%.6lf %%)", averageHashes, averageHashes*100/numhash);
+  LOG_F(INFO, " MHash per second: %.3lf", iterationsNum*numhash / (double)totalTime);
+  LOG_F(INFO, " Hash per iteration: %.3lf (%.6lf %%)", averageHashes, averageHashes*100/numhash);
  
   uint64_t totalSize = 0;
   unsigned hashes = 0;
@@ -631,11 +631,11 @@ void hashmodBenchmark(cl_context context,
       totalSize += multiplierSizes[i] * i;
     }
   }
-  LOG_F(1, " Average hash multiplier size: %.3lf", totalSize / (double)hashes);
+  LOG_F(INFO, " Average hash multiplier size: %.3lf", totalSize / (double)hashes);
   
   for (unsigned i = 0; i < 20; i++) {
     if (phashCount[i]) {
-      LOG_F(1, "   Hashed with primorial %u is %.3lf%%", i, phashCount[i] / (double)hashes * 100.0);
+      LOG_F(INFO, "   Hashed with primorial %u is %.3lf%%", i, phashCount[i] / (double)hashes * 100.0);
     }
   }
 }
@@ -651,7 +651,7 @@ void sieveTestBenchmark(cl_context context,
                         unsigned mDepth,
                         bool checkCandidates)
 {
-  LOG_F(1, "*** sieve (%s) benchmark ***", checkCandidates ? "check" : "performance");
+  LOG_F(INFO, "*** sieve (%s) benchmark ***", checkCandidates ? "check" : "performance");
   
   cl_kernel mHashMod = kernels[CLKernelHashMod];
   cl_kernel mSieveSetup = kernels[CLKernelSieveSetup];
@@ -943,12 +943,12 @@ void sieveTestBenchmark(cl_context context,
       
       double coeff = fabs(n320+n352 - multipliers.size()) / multipliers.size();
       if (coeff <= 0.01) {
-        LOG_F(1, " * [%s] found candidates by CPU: %u by GPU: %u",
+        LOG_F(INFO, " * [%s] found candidates by CPU: %u by GPU: %u",
               coeff <= 0.01  ? "OK" : "FAILED",
               (unsigned)multipliers.size(),
               n320 + n352);
-        LOG_F(1, " * [%s] invalid candidates: %u", !invalidCount ? "OK" : "FAILED", invalidCount);
-        LOG_F(1, " * [%s] CPU/GPU candidates difference: %u", !diff ? "OK" : "FAILED", diff);
+        LOG_F(INFO, " * [%s] invalid candidates: %u", !invalidCount ? "OK" : "FAILED", invalidCount);
+        LOG_F(INFO, " * [%s] CPU/GPU candidates difference: %u", !diff ? "OK" : "FAILED", diff);
       } else {
         LOG_F(ERROR, " * [%s] found candidates by CPU: %u by GPU: %u",
               coeff <= 0.01  ? "OK" : "FAILED",
@@ -974,14 +974,14 @@ void sieveTestBenchmark(cl_context context,
       n352 += candidatesCountBuffers[i][1];
     }
 
-    LOG_F(1, " * scan speed: %.3lf G", scanSpeed/1000.0);
-    LOG_F(1, " * iteration time: %.3lfms", iterationTime/1000.0);
-    LOG_F(1, " * candidates per second: %.3lf", (n320+n352)/(totalTime/1000000.0));
-    LOG_F(1, " * candidates per iteration: %.2lf (%.2lf 320bit, %.2lf 352bit)",
+    LOG_F(INFO, " * scan speed: %.3lf G", scanSpeed/1000.0);
+    LOG_F(INFO, " * iteration time: %.3lfms", iterationTime/1000.0);
+    LOG_F(INFO, " * candidates per second: %.3lf", (n320+n352)/(totalTime/1000000.0));
+    LOG_F(INFO, " * candidates per iteration: %.2lf (%.2lf 320bit, %.2lf 352bit)",
            (double)(n320+n352) / count,
            (double)n320 / count,
            (double)n352 / count);
-    LOG_F(1, " * 320bit/352bit ratio: %.3lf/1", (double)n320/(double)n352);
+    LOG_F(INFO, " * 320bit/352bit ratio: %.3lf/1", (double)n320/(double)n352);
   }
 }
 

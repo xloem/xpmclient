@@ -64,7 +64,7 @@ static unsigned GetClientID() {
 	id = serialNum;
 #else
 	unsigned int cpuinfo[4] = { 0, 0, 0, 0 };          
-	getCpuid(cpuinfo, 0);
+  getCpuid(cpuinfo, 0);
 	id = cpuinfo[0] * cpuinfo[1] * cpuinfo[2] * cpuinfo[3];
 #endif
 	

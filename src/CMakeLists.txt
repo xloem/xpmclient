@@ -27,7 +27,22 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
 
 include(FindDependencies)
 find_package(Protobuf REQUIRED)
-find_package(CUDA)
+
+if (NOT CMAKE_CROSSCOMPILING)
+  find_package(CUDA)
+else()
+  find_path(CUDA_TOOLKIT_INCLUDE
+    device_functions.h
+    PATHS ${CUDA_TOOLKIT_ROOT_DIR}
+    PATH_SUFFIXES include
+    NO_DEFAULT_PATH
+  )
+  if (NOT CUDA_TOOLKIT_INCLUDE STREQUAL "CUDA_TOOLKIT_INCLUDE-NOTFOUND")
+    set(CUDA_FOUND 1)
+  else()
+    message("CUDA package not found")
+  endif()
+endif()
 
 include_directories(
   ${GMP_INCLUDE_DIRECTORY}
@@ -74,7 +89,11 @@ set(LIBRARIES
 if (WIN32)
   set(LIBRARIES ${LIBRARIES} ws2_32 advapi32)
 else()
-  set(LIBRARIES ${LIBRARIES} dl rt pthread)
+  set(LIBRARIES ${LIBRARIES} dl)
+endif()
+
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 endif()
 
 # XPM GPU Client
@@ -111,8 +130,14 @@ endif()
 # XPM CUDA GPU Client
 
 if (CUDA_FOUND)
-  find_library(CUDA_driver_LIBRARY cuda ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
-  find_library(CUDA_nvrtc_LIBRARY nvrtc ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+  find_library(CUDA_driver_LIBRARY cuda
+    ${CUDA_TOOLKIT_ROOT_DIR}/lib64
+    ${CUDA_TOOLKIT_ROOT_DIR}/lib/x64
+  )
+  find_library(CUDA_nvrtc_LIBRARY nvrtc
+    ${CUDA_TOOLKIT_ROOT_DIR}/lib64
+    ${CUDA_TOOLKIT_ROOT_DIR}/lib/x64
+  )
 
   add_executable(xpmclientnv
     adl.cpp

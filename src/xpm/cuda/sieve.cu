@@ -3,7 +3,7 @@
 
 // for 1024 threads in group
 #if (LSIZELOG2 == 10)
-__constant__ uint32_t nps_all[] = { 4, 4, 5, 6, 7, 7, 7, 8, 8 }; // 1024 threads per block (default)
+__constant__ uint32_t nps_all[] = { 4, 4, 5, 6, 7, 7, 7, 9 }; // 1024 threads per block (default)
 #elif (LSIZELOG2 == 9)
 __constant__ uint32_t nps_all[] = { 3, 3, 4, 5, 6, 6, 6, 7, 7 }; // 512 threads
 #elif (LSIZELOG2 == 8)

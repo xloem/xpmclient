@@ -11,8 +11,8 @@
 #include "sysinfo.h"
 #include "prime.h"
 
-#include "loguru.hpp"
 #include <iostream>
+#include <thread>
 
 std::string gClientName;
 unsigned gClientID;
@@ -27,7 +27,6 @@ static void* gSignals = 0;
 static void* gWorkers = 0;
 
 static unsigned gStaleShareChain = 0;
-//static std::map<unsigned, time_t> timeMap;
 
 std::string gAddr = "";
 proto::Block gBlock;
@@ -53,16 +52,14 @@ static bool ConnectBitcoin() {
 	
 	const proto::ServerInfo& sinfo = gServerInfo;
   LOG_F(INFO, "Connecting to bitcoin: %s:%d ...", sinfo.host().c_str(), sinfo.router());
-
 	int linger = 0;
 	char endpoint[256];
 	snprintf(endpoint, sizeof(endpoint), "tcp://%s:%d", sinfo.host().c_str(), sinfo.router());	
-	zmq_close(gServer);
 	gServer = zmq_socket(gCtx, ZMQ_DEALER);
 	zmq_setsockopt(gSignals, ZMQ_LINGER, &linger, sizeof(int));
 	int err = zmq_connect(gServer, endpoint);
 	if(err) {
-		printf("ERROR: invalid hostname and/or port.\n");
+    LOG_F(ERROR, "Can't connect to %s:%d (%s code: %d)", sinfo.host().c_str(), sinfo.router(), strerror(errno), errno);
 		return false;
 	}
 	
@@ -73,16 +70,14 @@ static bool ConnectSignals() {
 	
 	const proto::ServerInfo& sinfo = gServerInfo;
   LOG_F(INFO, "Connecting to signals: %s:%d ...", sinfo.host().c_str(), sinfo.pub());
-	
 	int linger = 0;
 	char endpoint[256];
 	snprintf(endpoint, sizeof(endpoint), "tcp://%s:%d", sinfo.host().c_str(), sinfo.pub());
-	zmq_close(gSignals);
 	gSignals = zmq_socket(gCtx, ZMQ_SUB);
 	zmq_setsockopt (gSignals, ZMQ_LINGER, &linger, sizeof(int));
 	int err = zmq_connect(gSignals, endpoint);
 	if(err){
-		printf("ERROR: invalid hostname and/or port.\n");
+    LOG_F(ERROR, "Can't connect to %s:%d (%s code: %d)", sinfo.host().c_str(), sinfo.pub(), strerror(errno), errno);
 		return false;
 	}
 	
@@ -114,9 +109,7 @@ static void RequestWork() {
 	
 	if(!gServer)
 		return;
-	
-	//printf("Requesting new work...\n");
-	
+
 	proto::Request req;
 	req.set_type(proto::Request::GETWORK);
 	req.set_reqid(++gNextReqID);
@@ -134,14 +127,9 @@ static void RequestWork() {
 static void HandleNewBlock(const proto::Block& block) {
 	
 	if(block.height() > gBlock.height()){
-		
-		//printf("New Block: height=%d\n", block.height());
-		
 		gBlock = block;
 		gClient->NotifyBlock(block);
-		
 		RequestWork();
-		
 	}
 	
 }
@@ -183,7 +171,6 @@ static void SubmitShare(const proto::Share& share) {
 
 static void PrintStats() {
   char buffer[512] = "(ST/INV/DUP):";
-//	printf("(ST/INV/DUP):");
 	for(std::map<unsigned, share_t>::const_iterator iter = gShares.begin(); iter != gShares.end(); ++iter){
     char lbuffer[128];
 		const share_t& share = iter->second;
@@ -194,9 +181,6 @@ static void PrintStats() {
 	
 	if(!gShares.size())
     strcat(buffer, " none");
-//		printf(" none");
-		
-//	printf("\n");
   LOG_F(INFO, "%s", buffer);
 }
 
@@ -261,15 +245,12 @@ static int HandleReply(void *socket) {
 		
 	}else if(rep.type() == proto::Request::STATS){
 		
-		if(rep.error() == proto::Reply::NONE)
-			{}//printf("Statistics accepted.\n");
-		else
+    if(rep.error() == proto::Reply::NONE) {
+    } else {
       LOG_F(WARNING, "Statistics rejected");
+    }
 		
 	}else if(rep.type() == proto::Request::PING){
-		
-		//printf("Received heartbeat.\n");
-		
 	}
 	
 	gHeartBeat = true;
@@ -359,7 +340,6 @@ static int HandleTimer() {
 
 
 static int TimeoutCheckProc() {  
-//  time_t currentTime = time(0);
   auto currentTime = std::chrono::steady_clock::now();
   for (auto &t: gSharesSent) {
     if (std::chrono::duration_cast<std::chrono::seconds>(currentTime-t.second.time).count() >= 5) {
@@ -381,14 +361,14 @@ int main(int argc, char **argv)
   {
     auto t = std::time(nullptr);
     auto now = std::localtime(&t);
-    snprintf(logFileName, sizeof(logFileName), "miner-%04u-%02u-%02u.log", now->tm_year + 1900, now->tm_mon, now->tm_mday);
+    snprintf(logFileName, sizeof(logFileName), "miner-%04u-%02u-%02u.log", now->tm_year + 1900, now->tm_mon + 1, now->tm_mday);
   }
   loguru::g_stderr_verbosity = loguru::Verbosity_OFF;
   loguru::g_preamble_thread = false;
   loguru::g_preamble_file = false;
   loguru::g_flush_interval_ms = 100;
   loguru::init(argc, argv);
-  loguru::add_file(logFileName, loguru::Append, 1);
+  loguru::add_file(logFileName, loguru::Append, loguru::Verbosity_INFO);
   loguru::g_stderr_verbosity = 1;
 
   gBlock.set_height(0);
@@ -435,77 +415,73 @@ int main(int argc, char **argv)
     benchmarkOnly = true;
 	gExit = !gClient->Initialize(cfg, benchmarkOnly);
 	
-	while(!gExit){
-    LOG_F(INFO, "Connecting to frontend: %s:%d ...", frontHost.c_str(), frontPort);
-		
+  while(!gExit){
 		gBlock.Clear();
 		proto::Reply rep;
-		gExit = true;
-		
-		while(gExit){
+
+    bool frontendConnected = false;
+    LOG_F(INFO, "Connecting to frontend: %s:%d ...", frontHost.c_str(), frontPort);
+
+    {
+      int result;
 			int linger = 0;
 			char endpoint[256];
 			snprintf(endpoint, sizeof(endpoint), "tcp://%s:%d", frontHost.c_str(), frontPort);
-			zmq_close(gFrontend);
 			gFrontend = zmq_socket(gCtx, ZMQ_DEALER);
-			zmq_setsockopt (gFrontend, ZMQ_LINGER, &linger, sizeof(int));                        
-			int err = zmq_connect(gFrontend, endpoint);
-			if(err){
-        LOG_F(ERROR, "invalid hostname and/or port");
-				exit(EXIT_FAILURE);
-			}
-			
-			proto::Request req;
-			req.set_type(proto::Request::CONNECT);
-			req.set_reqid(++gNextReqID);
-			req.set_version(gClientVersion);
-			req.set_height(0);
-			
-			GetNewReqNonce(req);
-			Send(req, gFrontend);
-			
-			bool ready = czmq_poll(gFrontend, 3*1000);                        
-			if(!ready)
-				continue;
-			
-			Receive(rep, gFrontend);
-			
-			if(rep.error() != proto::Reply::NONE){
-        LOG_F(ERROR, "%s", proto::Reply::ErrType_Name(rep.error()).c_str());
-				if(rep.has_errstr())
-          LOG_F(ERROR, "Message from server: %s", rep.errstr().c_str());
-			}
-			
-			if(!rep.has_sinfo())
-				break;
-			
-			gServerInfo = rep.sinfo();
-			
-			bool ret = false;
-			ret |= !ConnectBitcoin();
-			ret |= !ConnectSignals();
-			if(ret)
-				break;
-			
-			gExit = false;
-			
+      zmq_setsockopt (gFrontend, ZMQ_LINGER, &linger, sizeof(int));
+      if ( (result = zmq_connect(gFrontend, endpoint)) == 0 ) {
+        proto::Request req;
+        req.set_type(proto::Request::CONNECT);
+        req.set_reqid(++gNextReqID);
+        req.set_version(gClientVersion);
+        req.set_height(0);
+        GetNewReqNonce(req);
+        Send(req, gFrontend);
+
+        bool ready = czmq_poll(gFrontend, 3*1000);
+        if (ready) {
+          Receive(rep, gFrontend);
+          if (rep.error() == proto::Reply::NONE) {
+            if (rep.has_sinfo()) {
+              gServerInfo = rep.sinfo();
+              if (ConnectBitcoin() && ConnectSignals()) {
+                frontendConnected = true;
+              }
+            } else {
+              gExit = true;
+              LOG_F(ERROR, "Pool protocol mismatch (!has_sinfo)");
+            }
+          } else {
+            LOG_F(ERROR, "%s", proto::Reply::ErrType_Name(rep.error()).c_str());
+            if(rep.has_errstr())
+              LOG_F(ERROR, "Message from server: %s", rep.errstr().c_str());
+          }
+        } else {
+          LOG_F(ERROR, "Frontend connection timeout");
+        }
+
+        zmq_disconnect(gFrontend, endpoint);
+      } else {
+        LOG_F(ERROR, "Can't connect to %s:%d (%s code: %d)", frontHost.c_str(), frontPort, strerror(errno), errno);
+      }
+
+      zmq_close(gFrontend);
 		}
 
-		char endpoint[256];
-		snprintf(endpoint, sizeof(endpoint), "tcp://%s:%d", frontHost.c_str(), frontPort);
-		zmq_disconnect(gFrontend, endpoint);
-		
-		if(gExit)
-			break;
+    if (!frontendConnected) {
+      if (!gExit)
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      continue;
+    }
 
-       bool loopActive = true;
-       time_t timer1sec = time(0);
-       time_t timer1min = time(0);                
-       zmq_pollitem_t items[] = {
-         {gServer, 0, ZMQ_POLLIN, 0},
-         {gSignals, 0, ZMQ_POLLIN, 0},
-         {gWorkers, 0, ZMQ_POLLIN, 0}
-       };
+    bool loopActive = true;
+    time_t timer1sec = time(nullptr);
+    time_t timer1min = time(nullptr);
+    zmq_pollitem_t items[] = {
+      {gServer, 0, ZMQ_POLLIN, 0},
+      {gSignals, 0, ZMQ_POLLIN, 0},
+      {gWorkers, 0, ZMQ_POLLIN, 0}
+    };
 		
 		gHeartBeat = true;
 		gExit = true;
@@ -514,8 +490,6 @@ int main(int argc, char **argv)
 			HandleNewBlock(rep.block());
 		else
 			RequestWork();
-		
-		gClient->Toggle();
 
 		while (loopActive) {
 			int result = zmq_poll(items, sizeof(items)/sizeof(zmq_pollitem_t), 1000);
@@ -543,8 +517,7 @@ int main(int argc, char **argv)
 				loopActive &= (HandleTimer() == 0);
 			}
 		}                
-		
-		gClient->Toggle();
+
 		zmq_close(gServer);
 		zmq_close(gSignals);
 		gServer = 0;

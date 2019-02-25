@@ -50,7 +50,7 @@ __kernel void sieve(  __global uint* gsieve_all,
 
     poff += 1u << nps;
     pos = mad24((uint)(fentry * fiprime), prime, pos) - entry;
-    pos += select(0, (int)prime, (int)pos < 0);
+    pos += ((int)pos < 0 ? prime : 0);
     pos = mad24(lpoff, prime, pos);
 
     uint4 vpos = {pos,
@@ -134,8 +134,7 @@ __kernel void sieve(  __global uint* gsieve_all,
     uint pos = olifo[lpos];
 
     pos = mad24((uint)(fentry * fiprime), prime, pos) - entry;
-//    pos = mad24((uint)((int)pos < (int)0), prime, pos);
-    pos += select(0, (int)prime, (int)pos < 0);
+    pos += ((int)pos < 0 ? prime : 0);
 
     uint index = pos >> 5;
 
@@ -204,8 +203,7 @@ __kernel void sieve(  __global uint* gsieve_all,
     uint32_t pos = olifo[lpos];
 
     pos = mad24((uint)(fentry * fiprime), prime, pos) - entry;
-//    pos = mad24((uint)((int)pos < (int)0), prime, pos);
-    pos += select(0, (int)prime, (int)pos < 0);
+    pos += ((int)pos < 0 ? prime : 0);
 
     uint32_t index = pos >> 5;
     if(index < SIZE){
@@ -292,8 +290,7 @@ __kernel void sieve(  __global uint* gsieve_all,
       uint pos = lpos[b%2];
 
       pos = mad24((uint)(fentry * fiprime), prime, pos) - entry;
-//      pos = mad24((uint)((int)pos < (int)0), prime, pos);
-      pos += select(0, prime, (int)pos < 0)
+      pos += ((int)pos < 0 ? prime : 0);
       pos = mad24(lpoff, prime, pos);
 
       uint32_t sieve32 = (uint32_t)sieve + pos;
@@ -366,7 +363,7 @@ __kernel void sieve(  __global uint* gsieve_all,
     uint pos = olifo[lpos];
 
     pos = mad24((uint)(fentry * fiprime), prime, pos) - entry;
-    pos += select(0, prime, (int)pos < 0)
+    pos += ((int)pos < 0 ? prime : 0);
 
     if (ip < SIEVERANGE1) {
       while (pos < SIZE*32) {
@@ -411,7 +408,7 @@ __kernel void sieve(  __global uint* gsieve_all,
     uint pos = olifo[lpos];
 
     pos = mad24((uint)(fentry * fiprime), prime, pos) - entry;
-    pos += select(0, prime, (int)pos < 0)
+    pos += ((int)pos < 0 ? prime : 0);
 
     atomic_or((__local uint32_t*)&sieve8[pos >> 3], 1u << pos);
 

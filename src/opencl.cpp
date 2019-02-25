@@ -2,10 +2,8 @@
 #include <fstream>
 #include <vector>
 #include <memory>
-#include "loguru.hpp"
 
 extern cl_platform_id gPlatform;
-// extern cl_program gProgram;
 
 bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
 {

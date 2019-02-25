@@ -10,19 +10,20 @@
 
 
 #include <CL/cl.h>
+#include "loguru.hpp"
 #include <stdio.h>
 #include <string.h>
 #include <vector>
 
 #define OCL(error) \
   if(cl_int err = error){ \
-    printf("OpenCL error: %d at %s:%d\n", err, __FILE__, __LINE__); \
+    LOG_F(ERROR, "OpenCL error: %d at %s:%d\n", err, __FILE__, __LINE__); \
     exit(err); \
   }
 
 #define OCLR(error, ret) \
   if(cl_int err = error){ \
-    printf("OpenCL error: %d at %s:%d\n", err, __FILE__, __LINE__); \
+    LOG_F(ERROR, "OpenCL error: %d at %s:%d\n", err, __FILE__, __LINE__); \
     return ret; \
   }
 
