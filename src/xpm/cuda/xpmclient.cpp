@@ -362,8 +362,16 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
     CUDA_SAFE_CALL(current.copyToDevice());
   }    
 
+  czmq_signal(pipe);
+  czmq_poll(pipe, -1);
+
 	bool run = true;
 	while(run){
+    if(czmq_poll(pipe, 0)) {
+      czmq_wait(pipe);
+      czmq_wait(pipe);
+    }
+
 		{
 			time_t currtime = time(0);
 			time_t elapsed = currtime - time1;
@@ -819,7 +827,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 	depth = std::max(depth, 2);
 	depth = std::min(depth, 5);
 	
-  exitType = cfg->lookupInt("", "onCrash", 0);
+  onCrash = cfg->lookupString("", "onCrash", "");
 
 	unsigned clKernelTarget = adjustedKernelTarget ? adjustedKernelTarget : 10;
 	const char *targetValue = cfg->lookupString("", "target", "auto");
@@ -979,6 +987,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
       }
 
       void *pipe = czmq_thread_fork(mCtx, &PrimeMiner::InvokeMining, miner);
+      czmq_wait(pipe);
+      czmq_signal(pipe);
       worker.first = miner;
       worker.second = pipe;    
       mWorkers.push_back(worker);
@@ -1044,6 +1054,7 @@ bool XPMClient::TakeWork(const proto::Work& work) {
 		// Build new kernels with adjusted target
 		mPaused = true;
 		Initialize(_cfg, false, newTarget);
+    Toggle();
 		return false;
 	} else {
 		return true;
@@ -1107,16 +1118,10 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 		
 	}
 	
-  if (crashed) {
-    if (exitType == 1) {
-      exit(1);
-    } else if (exitType == 2) {
-#ifdef WIN32
-      ExitWindowsEx(EWX_REBOOT, 0);
-#else
-      system("/sbin/reboot");
-#endif
-    }
+  if (crashed && onCrash[0] != '\0') {
+    LOG_F(INFO, "Run command %s", onCrash);
+    loguru::flush();
+    system(onCrash);
   }
 	
 	if(mStatCounter % 10 == 0)
@@ -1140,6 +1145,12 @@ int XPMClient::GetStats(proto::ClientStats& stats) {
 
 void XPMClient::Toggle()
 {
+  for(unsigned i = 0; i < mWorkers.size(); ++i) {
+    if(mWorkers[i].first)
+      czmq_signal(mWorkers[i].second);
+  }
+
+  mPaused = !mPaused;
 }
 
 

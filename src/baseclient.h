@@ -80,7 +80,7 @@ static bool Receive(C& rep, void* socket) {
     if (rep.ParseFromArray(zmq_msg_data(&msg), zmq_msg_size(&msg))) {
       result = true;
     } else {
-      LOG_F(ERROR, "Invalid data detected (Receive)");
+      LOG_F(ERROR, "Invalid %u bytes data detected (Receive)", static_cast<unsigned>(zmq_msg_size(&msg)));
     }
   } else {
     LOG_F(ERROR, "Receive message failed (Receive)");
@@ -178,7 +178,7 @@ protected:
   std::vector<int> mPowertune;
   std::vector<int> mFanSpeed;
    
-  int exitType; 
+  const char *onCrash;
 };
 
 

@@ -14,11 +14,13 @@
 #include <iostream>
 #include <thread>
 
+constexpr unsigned int poolMajorVersionRequired = 10;
+constexpr unsigned int poolMinorVersionRequired = 3;
+
 std::string gClientName;
 unsigned gClientID;
 unsigned gInstanceID;
 const unsigned gClientVersion = 11;
-const unsigned gClientTarget = 10;
 
 void* gCtx = 0;
 static void* gFrontend = 0;
@@ -56,7 +58,7 @@ static bool ConnectBitcoin() {
 	char endpoint[256];
 	snprintf(endpoint, sizeof(endpoint), "tcp://%s:%d", sinfo.host().c_str(), sinfo.router());	
 	gServer = zmq_socket(gCtx, ZMQ_DEALER);
-	zmq_setsockopt(gSignals, ZMQ_LINGER, &linger, sizeof(int));
+  zmq_setsockopt(gServer, ZMQ_LINGER, &linger, sizeof(int));
 	int err = zmq_connect(gServer, endpoint);
 	if(err) {
     LOG_F(ERROR, "Can't connect to %s:%d (%s code: %d)", sinfo.host().c_str(), sinfo.router(), strerror(errno), errno);
@@ -124,24 +126,21 @@ static void RequestWork() {
 }
 
 
-static void HandleNewBlock(const proto::Block& block) {
+static void HandleNewBlock(const proto::Block& block, bool requestWork=true) {
 	
 	if(block.height() > gBlock.height()){
 		gBlock = block;
 		gClient->NotifyBlock(block);
-		RequestWork();
+    if (requestWork)
+      RequestWork();
 	}
 	
 }
 
 
 static bool HandleNewWork(const proto::Work& work) {
-	
-	float diff = gRequestTimer.diff();
-	gLatency = diff * 1000.;
-	
-  LOG_F(INFO, "Work received: height=%d diff=%.8g latency=%dms",
-			work.height(), GetPrimeDifficulty(work.bits()), gLatency);
+  LOG_F(INFO, "Work received: height=%d diff=%.8g",
+      work.height(), GetPrimeDifficulty(work.bits()));
 	
 	return gClient->TakeWork(work);
 	
@@ -190,8 +189,11 @@ static int HandleReply(void *socket) {
 	proto::Reply rep;
 	Receive(rep, socket);
 	
-	if(rep.has_errstr())
+  if(rep.has_errstr()) {
     LOG_F(ERROR, "Message from server: %s", rep.errstr().c_str());
+    gExit = false;
+    return -1;
+  }
 	
 	if(rep.has_block()){
 		
@@ -242,7 +244,8 @@ static int HandleReply(void *socket) {
 			break;
 		default: break;
 		}
-		
+
+    gLatency = ms;
 	}else if(rep.type() == proto::Request::STATS){
 		
     if(rep.error() == proto::Reply::NONE) {
@@ -266,8 +269,14 @@ static int HandleSignal(void *socket) {
 	ReceivePub(sig, socket);
 	
 	if(sig.type() == proto::Signal::NEWBLOCK){
-		
-		HandleNewBlock(sig.block());
+    HandleNewBlock(sig.block(), false);
+    if (sig.has_work()) {
+      HandleNewWork(sig.work());
+    } else {
+      LOG_F(ERROR, "Too old server protocol");
+      gExit = true;
+      return -1;
+    }
 		
 	}else if(sig.type() == proto::Signal::SHUTDOWN){
 		
@@ -422,7 +431,7 @@ int main(int argc, char **argv)
     bool frontendConnected = false;
     LOG_F(INFO, "Connecting to frontend: %s:%d ...", frontHost.c_str(), frontPort);
 
-    {
+    while (!frontendConnected) {
       int result;
 			int linger = 0;
 			char endpoint[256];
@@ -438,14 +447,22 @@ int main(int argc, char **argv)
         GetNewReqNonce(req);
         Send(req, gFrontend);
 
-        bool ready = czmq_poll(gFrontend, 3*1000);
+        bool ready = czmq_poll(gFrontend, 3000);
         if (ready) {
           Receive(rep, gFrontend);
           if (rep.error() == proto::Reply::NONE) {
             if (rep.has_sinfo()) {
               gServerInfo = rep.sinfo();
-              if (ConnectBitcoin() && ConnectSignals()) {
-                frontendConnected = true;
+              if (gServerInfo.has_versionmajor() &&
+                  gServerInfo.has_versionminor() &&
+                    (gServerInfo.versionmajor() > poolMajorVersionRequired ||
+                    (gServerInfo.versionmajor() == poolMajorVersionRequired && gServerInfo.versionminor() >= poolMinorVersionRequired))) {
+                if (ConnectBitcoin() && ConnectSignals()) {
+                  frontendConnected = true;
+                }
+              } else {
+                LOG_F(ERROR, "Pool uses too old protocol version (%u.%u or higher required)", poolMajorVersionRequired, poolMinorVersionRequired);
+                exit(EXIT_FAILURE);
               }
             } else {
               gExit = true;
@@ -456,8 +473,6 @@ int main(int argc, char **argv)
             if(rep.has_errstr())
               LOG_F(ERROR, "Message from server: %s", rep.errstr().c_str());
           }
-        } else {
-          LOG_F(ERROR, "Frontend connection timeout");
         }
 
         zmq_disconnect(gFrontend, endpoint);
@@ -466,13 +481,8 @@ int main(int argc, char **argv)
       }
 
       zmq_close(gFrontend);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
-
-    if (!frontendConnected) {
-      if (!gExit)
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-      continue;
-    }
 
     bool loopActive = true;
     time_t timer1sec = time(nullptr);
@@ -491,6 +501,8 @@ int main(int argc, char **argv)
 		else
 			RequestWork();
 
+
+    gClient->Toggle();
 		while (loopActive) {
 			int result = zmq_poll(items, sizeof(items)/sizeof(zmq_pollitem_t), 1000);
 			if (result == -1)
@@ -518,10 +530,12 @@ int main(int argc, char **argv)
 			}
 		}                
 
+    gClient->Toggle();
 		zmq_close(gServer);
 		zmq_close(gSignals);
 		gServer = 0;
 		gSignals = 0;
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 	}
 	
 	delete gClient;
