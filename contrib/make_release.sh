@@ -10,7 +10,7 @@ else
   echo "ENV DEBIAN_FRONTEND=noninteractive" >> xpmclient.Dockerfile
 
   # For debugging purposes, use apt-cacher-ng at localhost
-  echo "RUN echo \"Acquire::http::Proxy \\\"http://172.17.0.1:3142\\\";\" > /etc/apt/apt.conf.d/00aptproxy"  >> xpmclient.Dockerfile
+  # echo "RUN echo \"Acquire::http::Proxy \\\"http://172.17.0.1:3142\\\";\" > /etc/apt/apt.conf.d/00aptproxy"  >> xpmclient.Dockerfile
 
   echo "RUN apt-get update && apt-get --no-install-recommends -y install g++-mingw-w64-x86-64 cmake p7zip-full lzip automake autoconf libtool nano zip" >> xpmclient.Dockerfile
   echo "RUN update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix" >> xpmclient.Dockerfile

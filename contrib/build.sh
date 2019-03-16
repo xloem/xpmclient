@@ -24,6 +24,8 @@ make install
 cd /home/user/build/deps-linux
 tar -xzf ../zeromq-4.3.1.tar.gz
 cd zeromq-4.3.1
+# disable glibc 2.25 'getrandom' usage for compatibility
+sed -i 's/libzmq_cv_getrandom=\"yes\"/libzmq_cv_getrandom=\"no\"/' configure
 ./configure --prefix=/home/user/install/x86_64-Linux --enable-static --disable-shared 
 make -j4
 make install

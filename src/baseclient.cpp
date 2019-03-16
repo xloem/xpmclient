@@ -39,6 +39,7 @@ static Timer gRequestTimer;
 static unsigned gLatency = 0;
 static bool gHeartBeat = true;
 static bool gExit = false;
+static bool gCompatible = false;
 
 struct shareData {
   int length;
@@ -273,9 +274,14 @@ static int HandleSignal(void *socket) {
     if (sig.has_work()) {
       HandleNewWork(sig.work());
     } else {
-      LOG_F(ERROR, "Too old server protocol");
-      gExit = true;
-      return -1;
+      if (gCompatible) {
+        LOG_F(ERROR, "Pool uses too old protocol version");
+        RequestWork();
+      } else {
+        LOG_F(ERROR, "Pool uses too old protocol version, try run in compatible mode (xpmclient -c)");
+        gExit = true;
+        return -1;
+      }
     }
 		
 	}else if(sig.type() == proto::Signal::SHUTDOWN){
@@ -420,8 +426,12 @@ int main(int argc, char **argv)
   gClient = createClient(gCtx);
   
   bool benchmarkOnly = false;
-  if (argc >= 2 && (strcmp(argv[1], "-b") == 0 || strcmp(argv[1], "--benchmark") == 0))
-    benchmarkOnly = true;
+  if (argc >= 2) {
+    if (strcmp(argv[1], "-b") == 0 || strcmp(argv[1], "--benchmark") == 0)
+      benchmarkOnly = true;
+    else if (strcmp(argv[1], "-c") == 0)
+      gCompatible = true;
+  }
 	gExit = !gClient->Initialize(cfg, benchmarkOnly);
 	
   while(!gExit){
@@ -453,15 +463,19 @@ int main(int argc, char **argv)
           if (rep.error() == proto::Reply::NONE) {
             if (rep.has_sinfo()) {
               gServerInfo = rep.sinfo();
-              if (gServerInfo.has_versionmajor() &&
-                  gServerInfo.has_versionminor() &&
-                    (gServerInfo.versionmajor() > poolMajorVersionRequired ||
-                    (gServerInfo.versionmajor() == poolMajorVersionRequired && gServerInfo.versionminor() >= poolMinorVersionRequired))) {
+              bool versionCompatible =
+                gServerInfo.has_versionmajor() &&
+                gServerInfo.has_versionminor() &&
+                  (gServerInfo.versionmajor() > poolMajorVersionRequired ||
+                  (gServerInfo.versionmajor() == poolMajorVersionRequired && gServerInfo.versionminor() >= poolMinorVersionRequired));
+              if (versionCompatible || gCompatible) {
+                if (!versionCompatible)
+                  LOG_F(ERROR, "Pool uses too old protocol version (%u.%u or higher required)", poolMajorVersionRequired, poolMinorVersionRequired);
                 if (ConnectBitcoin() && ConnectSignals()) {
                   frontendConnected = true;
                 }
               } else {
-                LOG_F(ERROR, "Pool uses too old protocol version (%u.%u or higher required)", poolMajorVersionRequired, poolMinorVersionRequired);
+                LOG_F(ERROR, "Pool uses too old protocol version (%u.%u or higher required), try run in compatible mode (xpmclient -c)", poolMajorVersionRequired, poolMinorVersionRequired);
                 exit(EXIT_FAILURE);
               }
             } else {
