@@ -974,13 +974,12 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     }
   }
 
-  if (platformType == ptAMD)
-    setup_adl();
+  setup_adl();
   
   if (benchmarkOnly) {
     for (unsigned i = 0; i < gpus.size(); i++) {
       if (binstatus[i] == CL_SUCCESS) {
-        runBenchmarks(gContext[0], gProgram[0], gpus[i], depth, clKernelLSize);
+        runBenchmarks(gContext[i], gProgram[i], gpus[i], depth, clKernelLSize);
       }
     }
     

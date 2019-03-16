@@ -62,7 +62,7 @@ cd xpmclient-cuda-10.3-linux
 cp ../xpmclientnv ./miner
 echo "#/bin/bash" > xpmclientnv
 echo "DIR=\$(dirname \"\$0\")" >> xpmclientnv
-echo "LD_LIBRARY_PATH=\$DIR/. ./miner" >> xpmclientnv
+echo "LD_LIBRARY_PATH=\$DIR/. ./miner \$@" >> xpmclientnv
 chmod +x xpmclientnv
 cp ../../src/xpm/cuda/config.txt .
 mkdir -p xpm/cuda

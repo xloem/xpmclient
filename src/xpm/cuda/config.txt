@@ -12,10 +12,10 @@ address = "AMgtSW8ge2mvqxaiWo11GqTKx6rQ2J57yA";
 # Computer name is used as default
 #name = "custom_name";
 
-# GPU crash handling (properly untested feature):
-# 0 - do nothing
-# 1 - close miner application
-# 2 - reboot system (need superuser rights)
+# GPU crash handling
+# Enter OS terminal command here
+# for example:
+#   onCrash = "shutdown -r 1"
 onCrash = "0";
 
 # - Valid cpuload range: 0 to 4
@@ -26,11 +26,11 @@ cpuload = "1";
 # Target Cunningham chain length, default = auto (adjust to difficulty)
 target = "auto";
 
-# Sieve size in stripes (1 stripe = 16384 bits), recommended 420 for AMD, 210 for NVidia
+# Sieve size in stripes (1 stripe = 16384 bits)
 # Big sieve size gives more candidates with less prime probability
 sieveSize = "210";
 
-# Weave depth (primes number count using by sieve), recommended 40960 for AMD, 65536 for NVidia
+# Weave depth (primes number count using by sieve)
 # Big weave depth increases prime probability, but sieve generate less candidates
 weaveDepth = "65536";
 
@@ -41,7 +41,7 @@ width = "auto";
 windowSize = "12288";
 
 # Maximal bit size of multipliers using with primorials 13, 14 and 15;
-# Default values are 26, 33, 36
+# Default values are 24, 31, 35
 # Less values increases prime probability, but sieve generate less candidates
 multiplierLimits = ["24", "31", "35"];
 

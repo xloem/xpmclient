@@ -1055,4 +1055,6 @@ void runBenchmarks(cl_context context,
   hashmodBenchmark(context, queue, kernels.get(), defaultGroupSize, 0, allPrimorials, mPrimorial);
   sieveTestBenchmark(context, queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
   sieveTestBenchmark(context, queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);
+
+  clReleaseCommandQueue(queue);
 }
