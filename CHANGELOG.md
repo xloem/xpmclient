@@ -16,3 +16,4 @@ xpmclient-10.3
   - xpmclient -c
   
 5. Some minor bug fixed
+6. Logging added (see file miner-YYYY-MM-DD.log in miner directory)
