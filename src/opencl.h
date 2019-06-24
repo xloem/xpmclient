@@ -8,8 +8,11 @@
 #ifndef OPENCL_H_
 #define OPENCL_H_
 
-
+#ifndef __APPLE__
 #include <CL/cl.h>
+#else
+#include <OpenCL/opencl.h>
+#endif
 #include "loguru.hpp"
 #include <stdio.h>
 #include <string.h>

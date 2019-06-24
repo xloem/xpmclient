@@ -17,10 +17,6 @@
 #if defined(HAVE_ADL)
 
 extern "C" {
-
-//#include <pthread.h>
-#include <malloc.h>
-
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -29,11 +25,9 @@ extern "C" {
 #include <curses.h>
 #endif
 
-//#include "miner.h"
 #include "adl_sdk.h"
-//#include "compat.h"
 
-#if defined (__linux)
+#if defined (__linux) || defined(__APPLE__)
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -45,8 +39,6 @@ extern "C" {
 #include "adl_functions.h"
 #include "adl.h"
 } // extern "C"
-
-//#include "main.h"
 
 extern "C" {
 

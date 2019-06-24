@@ -92,7 +92,7 @@ bool clCompileKernel(cl_context gContext,
       
       std::unique_ptr<char[]> log(new char[logSize]);
       clGetProgramBuildInfo(*gProgram, gpu, CL_PROGRAM_BUILD_LOG, logSize, log.get(), 0);
-      LOG_F(INFO, "%s\n", log.get());
+      LOG_F(INFO, "Error: %s\n", log.get());
 
       return false;
     }

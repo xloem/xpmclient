@@ -26,7 +26,9 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
 )
 
 include(FindDependencies)
+find_package(OpenSSL REQUIRED)
 find_package(Protobuf REQUIRED)
+find_package(OpenCL)
 
 if (NOT CMAKE_CROSSCOMPILING)
   find_package(CUDA)
@@ -48,7 +50,8 @@ include_directories(
   ${GMP_INCLUDE_DIRECTORY}
   ${ZMQ_INCLUDE_DIRECTORY}
   ${PROTOBUF_INCLUDE_DIRECTORY}
-  ${OPENCL_INCLUDE_DIRECTORY}
+  ${OpenCL_INCLUDE_DIRS}
+  ${OPENSSL_INCLUDE_DIR}
   ${CMAKE_SOURCE_DIR}/config4cpp/include
   ${CMAKE_BINARY_DIR}
 )
@@ -57,6 +60,10 @@ if (CMAKE_COMPILER_IS_GNUCC)
   if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6.0)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated -Wno-ignored-attributes")
   endif()
+endif()
+
+if (APPLE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCL_SILENCE_DEPRECATION")
 endif()
 
 if (WIN32)
@@ -121,7 +128,7 @@ target_include_directories(xpmclient PUBLIC
   ${CMAKE_SOURCE_DIR}/xpm/opencl
 )
 
-target_link_libraries(xpmclient ${LIBRARIES} ${OPENCL_LIBRARY})
+target_link_libraries(xpmclient ${LIBRARIES} ${OpenCL_LIBRARIES})
 
 if (STATIC_BUILD)
   set_target_properties(xpmclient PROPERTIES LINK_SEARCH_END_STATIC 1)
@@ -182,7 +189,7 @@ add_executable(zcashgpuclient
   ${ProtoSources}
 )
 
-target_link_libraries(zcashgpuclient ${LIBRARIES} ${OPENCL_LIBRARY})
+target_link_libraries(zcashgpuclient ${LIBRARIES} ${OpenCL_LIBRARIES})
 
 if (STATIC_BUILD)
   set_target_properties(zcashgpuclient PROPERTIES LINK_SEARCH_END_STATIC 1)

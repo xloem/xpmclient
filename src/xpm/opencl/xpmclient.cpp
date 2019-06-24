@@ -793,11 +793,15 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 	DeviceTypeTy deviceType = dtUnknown;
   
   if (strcmp(platformId, "amd") == 0) {
+#ifndef __APPLE__
     platformName = "AMD Accelerated Parallel Processing";
+#else
+    platformName = "Apple";
+#endif
     platformType = ptAMD;
     clKernelLSize = 256;
     clKernelLSizeLog2 = 8;
-		deviceType = dtAMDGCN;
+    deviceType = dtAMDGCN;
   } else if (strcmp(platformId, "amd legacy") == 0) {
     platformName = "AMD Accelerated Parallel Processing";
     platformType = ptAMD;
@@ -945,15 +949,16 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config);
   }
 
-  const char *arguments = "";
+  std::string arguments;
+#ifndef __APPLE__
+  arguments += "-DBITALIGN ";
+#endif
   if (platformType == ptAMD) {
-		if (deviceType == dtAMDLegacy)
-      arguments = "-D__AMDLEGACY";
-		else if (deviceType == dtAMDVega)
-      arguments = "-D__AMDVEGA";
-	} else if (platformType == ptNVidia) {
-    arguments = "-D__NVIDIA -cl-nv-verbose";
-	}
+    if (deviceType == dtAMDLegacy)
+      arguments += "-D__AMDLEGACY ";
+    else if (deviceType == dtAMDVega)
+      arguments = "-D__AMDVEGA ";
+  }
   
   std::vector<cl_int> binstatus;
   binstatus.resize(gpus.size());	
@@ -966,7 +971,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
                          gpus[i],
                          kernelName,
                          { "xpm/opencl/config.cl", "xpm/opencl/procs.cl", "xpm/opencl/fermat.cl", "xpm/opencl/sieve.cl", "xpm/opencl/sha256.cl", "xpm/opencl/benchmarks.cl"},
-                         arguments,
+                         arguments.c_str(),
                          &binstatus[i],
                          &gProgram[i],
                          adjustedKernelTarget != 0)) {
