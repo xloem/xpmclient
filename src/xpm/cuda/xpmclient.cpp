@@ -940,6 +940,8 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config);
   }
   
+  std::string arguments = cfg->lookupString("", "compilerFlags", "");
+
   std::vector<CUmodule> modules;
 	modules.resize(gpus.size());
   for (unsigned i = 0; i < gpus.size(); i++) {
@@ -947,12 +949,12 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 		char ccoption[64];
 		sprintf(kernelname, "kernelxpm_gpu%u.ptx", gpus[i].index);
 		sprintf(ccoption, "--gpu-architecture=compute_%i%i", gpus[i].majorComputeCapability, gpus[i].minorComputeCapability);
-		const char *options[] = { ccoption };
+    const char *options[] = { ccoption, arguments.c_str() };
 		CUDA_SAFE_CALL(cuCtxSetCurrent(gpus[i].context));
     if (!cudaCompileKernel(kernelname,
 				{ "xpm/cuda/config.cu", "xpm/cuda/procs.cu", "xpm/cuda/fermat.cu", "xpm/cuda/sieve.cu", "xpm/cuda/sha256.cu", "xpm/cuda/benchmarks.cu"},
 				options,
-				1,
+        sizeof(options)/sizeof(const char*),
 				&modules[i],
         gpus[i].majorComputeCapability,
         gpus[i].minorComputeCapability,

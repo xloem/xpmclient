@@ -949,17 +949,19 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config);
   }
 
-  std::string arguments;
-#ifndef __APPLE__
-  arguments += "-DBITALIGN ";
-#endif
+  std::string arguments = cfg->lookupString("", "compilerFlags", "");
+
   if (platformType == ptAMD) {
     if (deviceType == dtAMDLegacy)
-      arguments += "-D__AMDLEGACY ";
+      arguments += " -D__AMDLEGACY";
     else if (deviceType == dtAMDVega)
-      arguments = "-D__AMDVEGA ";
+      arguments += " -D__AMDVEGA";
   }
-  
+
+#ifndef __APPLE__
+    arguments += " -DBITALIGN";
+#endif
+
   std::vector<cl_int> binstatus;
   binstatus.resize(gpus.size());	
   for (size_t i = 0; i < gpus.size(); i++) {
