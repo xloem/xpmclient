@@ -1,12 +1,11 @@
 #!/bin/bash
 
-CUDA10_INSTALLER="cuda_10.0.130_411.31_win10.exe"
-# AMDAPPSDK_INSTALLER="AMD-APP-SDKInstaller-v3.0.130.136-GA-linux64.tar.bz2"
+CUDA10_INSTALLER="cuda_10.1.168_425.25_win10.exe"
 
 if docker inspect --type=image xpmclient-10.3 > /dev/null 2> /dev/null; then
   echo "xpmclient-10.3 image already exists"
 else
-  echo "FROM nvidia/cuda:10.0-devel-ubuntu18.04" > xpmclient.Dockerfile
+  echo "FROM nvidia/cuda:10.1-devel-ubuntu18.04" > xpmclient.Dockerfile
   echo "ENV DEBIAN_FRONTEND=noninteractive" >> xpmclient.Dockerfile
 
   # For debugging purposes, use apt-cacher-ng at localhost
@@ -15,29 +14,19 @@ else
   echo "RUN apt-get update && apt-get --no-install-recommends -y install g++-mingw-w64-x86-64 cmake p7zip-full lzip automake autoconf libtool nano zip" >> xpmclient.Dockerfile
   echo "RUN update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix" >> xpmclient.Dockerfile
 
-  # Extract nvrtc to /usr/local/cuda-10.0-win32
+  # Extract nvrtc to /usr/local/cuda-win32
   echo "COPY $CUDA10_INSTALLER /tmp" >> xpmclient.Dockerfile
-  echo "RUN mkdir /usr/local/cuda-10.0-win32" >> xpmclient.Dockerfile
+  echo "RUN mkdir /usr/local/cuda-win32" >> xpmclient.Dockerfile
   echo "RUN 7z -o/tmp x '-i!nvrtc*' '-i!nvcc*' /tmp/$CUDA10_INSTALLER"  >> xpmclient.Dockerfile
-  echo "RUN cp -r /tmp/nvrtc/bin /usr/local/cuda-10.0-win32/bin" >> xpmclient.Dockerfile
-  echo "RUN cp -r /tmp/nvrtc_dev/include /usr/local/cuda-10.0-win32/include" >> xpmclient.Dockerfile
-  echo "RUN cp -r /tmp/nvrtc_dev/lib /usr/local/cuda-10.0-win32/lib" >> xpmclient.Dockerfile
-  echo "RUN cp -r /tmp/nvcc/include/* /usr/local/cuda-10.0-win32/include/" >> xpmclient.Dockerfile
-  echo "RUN cp -r /tmp/nvcc/lib/* /usr/local/cuda-10.0-win32/lib/" >> xpmclient.Dockerfile
+  echo "RUN cp -r /tmp/nvrtc/bin /usr/local/cuda-win32/bin" >> xpmclient.Dockerfile
+  echo "RUN cp -r /tmp/nvrtc_dev/include /usr/local/cuda-win32/include" >> xpmclient.Dockerfile
+  echo "RUN cp -r /tmp/nvrtc_dev/lib /usr/local/cuda-win32/lib" >> xpmclient.Dockerfile
+  echo "RUN cp -r /tmp/nvcc/include/* /usr/local/cuda-win32/include/" >> xpmclient.Dockerfile
+  echo "RUN cp -r /tmp/nvcc/lib/* /usr/local/cuda-win32/lib/" >> xpmclient.Dockerfile
   echo "RUN rm -rf /tmp/$CUDA10_INSTALLER /tmp/nvrtc /tmp/nvrtc_dev" >> xpmclient.Dockerfile
 
-#   # Extract AMD APP SDK
-#   echo "COPY $AMDAPPSDK_INSTALLER /tmp" >> xpmclient.Dockerfile
-#   echo "RUN mkdir /usr/local/amdappsdk" >> xpmclient.Dockerfile
-#   echo "RUN mkdir /tmp/amdappsdk" >> xpmclient.Dockerfile
-#   echo "RUN cd /tmp && tar -xjf $AMDAPPSDK_INSTALLER -C /tmp/amdappsdk" >> xpmclient.Dockerfile
-#   echo "RUN cd /tmp/amdappsdk && ./AMD-APP-SDK-v3.0.130.136-GA-linux64.sh --tar x ./include ./lib 2> /dev/null || true" >> xpmclient.Dockerfile
-#   echo "RUN cp -r /tmp/amdappsdk/include /usr/local/amdappsdk/include" >> xpmclient.Dockerfile
-#   echo "RUN cp -r /tmp/amdappsdk/lib /usr/local/amdappsdk/lib" >> xpmclient.Dockerfile
-#   echo "RUN rm -rf /tmp/amdappsdk /tmp/$AMDAPPSDK_INSTALLER" >> xpmclient.Dockerfile
-
   echo "RUN useradd -ms /bin/bash -U user" >> xpmclient.Dockerfile
-  echo "RUN chown -R user /usr/local/cuda-10.0-win32" >> xpmclient.Dockerfile
+  echo "RUN chown -R user /usr/local/cuda-win32" >> xpmclient.Dockerfile
   echo "USER user:user" >> xpmclient.Dockerfile
   echo "WORKDIR /home/user" >> xpmclient.Dockerfile  
 

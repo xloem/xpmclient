@@ -41,7 +41,7 @@ make install
 # xpmclient
 mkdir /home/user/build/xpmclient/x86_64-Linux
 cd /home/user/build/xpmclient/x86_64-Linux
-cmake ../src -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/home/user/install/x86_64-Linux -DSTATIC_BUILD=ON -DOPENCL_INCLUDE_DIRECTORY=/usr/local/cuda-10.0/include -DOPENCL_LIBRARY=/usr/local/cuda-10.0/lib64/libOpenCL.so -DCUDA_driver_LIBRARY=/usr/local/cuda-10.0/compat/libcuda.so
+cmake ../src -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/home/user/install/x86_64-Linux -DSTATIC_BUILD=ON -DOpenCL_INCLUDE_DIR=/usr/local/cuda-10.1/include -DOpenCL_LIBRARY=/usr/local/cuda-10.1/lib64/libOpenCL.so -DCUDA_driver_LIBRARY=/usr/local/cuda-10.1/compat/libcuda.so
 make -j4 xpmclient xpmclientnv
 strip xpmclient
 strip xpmclientnv
@@ -67,8 +67,8 @@ chmod +x xpmclientnv
 cp ../../src/xpm/cuda/config.txt .
 mkdir -p xpm/cuda
 cp ../../src/xpm/cuda/*.cu xpm/cuda
-cp /usr/local/cuda-10.0/lib64/libnvrtc.so.10.0 .
-cp /usr/local/cuda-10.0/lib64/libnvrtc-builtins.so .
+cp /usr/local/cuda-10.1/lib64/libnvrtc.so.10.1 .
+cp /usr/local/cuda-10.1/lib64/libnvrtc-builtins.so .
 cd ..
 tar -czf xpmclient-cuda-10.3-linux.tar.gz xpmclient-cuda-10.3-linux
 
@@ -109,7 +109,7 @@ make install
 # xpmclient
 mkdir /home/user/build/xpmclient/x86_64-w64-mingw32
 cd /home/user/build/xpmclient/x86_64-w64-mingw32
-cmake ../src -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../src/cmake/Toolchain-x86_64-w64-mingw32.cmake -DCMAKE_INSTALL_PREFIX=/home/user/install/x86_64-w64-mingw32 -DSTATIC_BUILD=ON -DProtobuf_PROTOC_EXECUTABLE=/home/user/install/x86_64-Linux/bin/protoc -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-10.0-win32 -DOPENCL_INCLUDE_DIRECTORY=/usr/local/cuda-10.0-win32/include -DOPENCL_LIBRARY=/usr/local/cuda-10.0-win32/lib/x64/OpenCL.lib
+cmake ../src -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../src/cmake/Toolchain-x86_64-w64-mingw32.cmake -DCMAKE_INSTALL_PREFIX=/home/user/install/x86_64-w64-mingw32 -DSTATIC_BUILD=ON -DProtobuf_PROTOC_EXECUTABLE=/home/user/install/x86_64-Linux/bin/protoc -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-win32 -DOpenCL_INCLUDE_DIR=/usr/local/cuda-win32/include -DOpenCL_LIBRARY=/usr/local/cuda-win32/lib/x64/OpenCL.lib
 make -j4 xpmclient xpmclientnv
 x86_64-w64-mingw32-strip xpmclient.exe
 x86_64-w64-mingw32-strip xpmclientnv.exe
@@ -139,8 +139,8 @@ cp /usr/lib/gcc/x86_64-w64-mingw32/7.3-posix/libgcc_s_seh-1.dll .
 cp /usr/lib/gcc/x86_64-w64-mingw32/7.3-posix/libstdc++-6.dll .
 cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll .
 cp /home/user/install/x86_64-w64-mingw32/bin/libzmq.dll .
-cp /usr/local/cuda-10.0-win32/bin/nvrtc64_100_0.dll .
-cp /usr/local/cuda-10.0-win32/bin/nvrtc-builtins64_100.dll .
+cp /usr/local/cuda-win32/bin/nvrtc64_101_0.dll .
+cp /usr/local/cuda-win32/bin/nvrtc-builtins64_101.dll .
 cd ..
 zip -9 -r xpmclient-cuda-10.3-win64.zip xpmclient-cuda-10.3-win64
 

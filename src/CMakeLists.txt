@@ -5,6 +5,7 @@ set (CMAKE_CXX_STANDARD 11)
 option(STATIC_BUILD "Build with static libraries on Linux")
 option(SANITIZER_ENABLED "Build with address sanitizer" OFF)
 option(GPROF_ENABLED "Build with GNU profiler (use gprof ./exename -p > out.txt)" OFF)
+option(EQUIHASH_ENABLED "Build equihash OpenCL GPU client" OFF)
 
 if (SANITIZER_ENABLED)
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
@@ -26,7 +27,6 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
 )
 
 include(FindDependencies)
-find_package(OpenSSL REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(OpenCL)
 
@@ -174,23 +174,27 @@ if (CUDA_FOUND)
 endif()
   
 # ZCash GPU Client
-add_definitions(-DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4) 
+if (EQUIHASH_ENABLED)
+  find_package(OpenSSL REQUIRED)
+  
+  add_definitions(-DXINTREE -DWN=200 -DWK=9 -DRESTBITS=4) 
 
-add_executable(zcashgpuclient
-  adl.cpp
-  base58.cpp
-  baseclient.cpp
-  loguru.cpp
-  opencl.cpp
-  sha256.cpp
-  zmqextras.cpp
-  zcash/zcashgpuclient.cpp
-  zcash/equihash_original.cpp
-  ${ProtoSources}
-)
+  add_executable(zcashgpuclient
+    adl.cpp
+    base58.cpp
+    baseclient.cpp
+    loguru.cpp
+    opencl.cpp
+    sha256.cpp
+    zmqextras.cpp
+    zcash/zcashgpuclient.cpp
+    zcash/equihash_original.cpp
+    ${ProtoSources}
+  )
 
-target_link_libraries(zcashgpuclient ${LIBRARIES} ${OpenCL_LIBRARIES})
+  target_link_libraries(zcashgpuclient ${LIBRARIES} ${OpenCL_LIBRARIES})
 
-if (STATIC_BUILD)
-  set_target_properties(zcashgpuclient PROPERTIES LINK_SEARCH_END_STATIC 1)
+  if (STATIC_BUILD)
+    set_target_properties(zcashgpuclient PROPERTIES LINK_SEARCH_END_STATIC 1)
+  endif()
 endif()
