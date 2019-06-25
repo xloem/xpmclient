@@ -105,8 +105,14 @@ public:
 
 
 bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus);
+
+bool fetchOfflineDevicesAMD(cl_platform_id pid,
+                            const char *required,
+                            cl_context *offlineCtx,
+                            cl_device_id *offlineDevice);
+
 bool clCompileKernel(cl_context gContext,
-                     cl_device_id gpu,
+                     cl_device_id gpu, cl_context runningContext, cl_device_id runningDevice,
                      const char *binaryName,
                      const std::vector<const char*> &sources,
                      const char *arguments,

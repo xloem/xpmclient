@@ -827,6 +827,18 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     return false;
   mNumDevices = allgpus.size();
   
+  bool hasTargetDevice = false;
+  cl_context virtualOfflineContext;
+  cl_device_id targetDeviceId;
+  const char *targetDevice = cfg->lookupString("", "targetDevice", "");
+  if (targetDevice[0] != 0) {
+    hasTargetDevice = fetchOfflineDevicesAMD(gPlatform, targetDevice, &virtualOfflineContext, &targetDeviceId);
+    if (hasTargetDevice)
+      LOG_F(INFO, "Force compile for device '%s'", targetDevice);
+    else
+      LOG_F(INFO, "Can't compile for target device '%s'", targetDevice);
+  }
+
 	int cpuload = cfg->lookupInt("", "cpuload", 1);
 	int depth = 5 - cpuload;
 	depth = std::max(depth, 2);
@@ -969,7 +981,9 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     sprintf(kernelName, "kernelxpm_gpu%u.bin", (unsigned)i);
 
     // force rebuild kernel if adjusted target received
-    if (!clCompileKernel(gContext[i],
+    if (!clCompileKernel(hasTargetDevice ? virtualOfflineContext : gContext[i],
+                         hasTargetDevice ? targetDeviceId : gpus[i],
+                         gContext[i],
                          gpus[i],
                          kernelName,
                          { "xpm/opencl/config.cl", "xpm/opencl/procs.cl", "xpm/opencl/fermat.cl", "xpm/opencl/sieve.cl", "xpm/opencl/sha256.cl", "xpm/opencl/benchmarks.cl"},

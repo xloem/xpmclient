@@ -55,8 +55,52 @@ bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
   return true;
 }
 
-bool clCompileKernel(cl_context gContext,
-                     cl_device_id gpu,
+bool fetchOfflineDevicesAMD(cl_platform_id pid,
+                            const char *required,
+                            cl_context *offlineCtx,
+                            cl_device_id *offlineDevice)
+{
+#define CL_CONTEXT_OFFLINE_DEVICES_AMD 0x403F
+
+  cl_device_id *offlineDevices = nullptr;
+  cl_context ctx = nullptr;
+  cl_uint devicesNum = 0;
+
+  cl_context_properties ctxpft[] = {
+    CL_CONTEXT_PLATFORM, (cl_context_properties)pid,
+    CL_CONTEXT_OFFLINE_DEVICES_AMD, (cl_context_properties)CL_TRUE,
+    0
+  };
+
+  bool result = false;
+  cl_int error;
+  if (ctx = clCreateContextFromType(ctxpft, CL_DEVICE_TYPE_ALL, NULL, NULL, &error)) {
+    OCL(clGetContextInfo(ctx, CL_CONTEXT_NUM_DEVICES, sizeof(devicesNum), &devicesNum, NULL));
+
+    std::unique_ptr<cl_device_id[]> offlineDevices(new cl_device_id[devicesNum]);
+    OCL(clGetContextInfo(ctx, CL_CONTEXT_DEVICES, devicesNum*sizeof(cl_device_id), offlineDevices.get(), NULL));
+    LOG_F(INFO, "List available virtual devices:");
+    for (cl_uint i = 0; i < devicesNum; i++) {
+      char deviceName[128] = {0};
+      clGetDeviceInfo(offlineDevices[i], CL_DEVICE_NAME, sizeof(deviceName), deviceName, 0);
+      LOG_F(INFO, " * %s", deviceName);
+      if (strcmp(deviceName, required) == 0) {
+        *offlineCtx = ctx;
+        *offlineDevice = offlineDevices[i];
+        result = true;
+      }
+    }
+  }
+
+  if (!result)
+    clReleaseContext(ctx);
+  return result;
+}
+
+bool clCompileKernel(cl_context buildContext,
+                     cl_device_id buildDevice,
+                     cl_context runningContext,
+                     cl_device_id runningDevice,
                      const char *binaryName,
                      const std::vector<const char*> &sources,
                      const char *arguments,
@@ -83,15 +127,15 @@ bool clCompileKernel(cl_context gContext,
     
     cl_int error;
     const char *sources[] = { sourceFile.c_str(), 0 };
-    *gProgram = clCreateProgramWithSource(gContext, 1, sources, 0, &error);
+    *gProgram = clCreateProgramWithSource(buildContext, 1, sources, 0, &error);
     OCLR(error, false);
     
-    if (clBuildProgram(*gProgram, 1, &gpu, arguments, 0, 0) != CL_SUCCESS) {
+    if (clBuildProgram(*gProgram, 1, &buildDevice, arguments, 0, 0) != CL_SUCCESS) {
       size_t logSize;
-      clGetProgramBuildInfo(*gProgram, gpu, CL_PROGRAM_BUILD_LOG, 0, 0, &logSize);
+      clGetProgramBuildInfo(*gProgram, buildDevice, CL_PROGRAM_BUILD_LOG, 0, 0, &logSize);
       
       std::unique_ptr<char[]> log(new char[logSize]);
-      clGetProgramBuildInfo(*gProgram, gpu, CL_PROGRAM_BUILD_LOG, logSize, log.get(), 0);
+      clGetProgramBuildInfo(*gProgram, buildDevice, CL_PROGRAM_BUILD_LOG, logSize, log.get(), 0);
       LOG_F(INFO, "Error: %s\n", log.get());
 
       return false;
@@ -138,8 +182,8 @@ bool clCompileKernel(cl_context gContext,
   cl_int error;
   const unsigned char *binaryPtr = (const unsigned char*)&binary[0];
   
-  *gProgram = clCreateProgramWithBinary(gContext, 1, &gpu, &binsize, &binaryPtr, binstatus, &error);
+  *gProgram = clCreateProgramWithBinary(runningContext, 1, &runningDevice, &binsize, &binaryPtr, binstatus, &error);
   OCLR(error, false);
-  OCLR(clBuildProgram(*gProgram, 1, &gpu, 0, 0, 0), false);  
+  OCLR(clBuildProgram(*gProgram, 1, &runningDevice, 0, 0, 0), false);
   return true;
 }
