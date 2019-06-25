@@ -742,8 +742,7 @@ XPMClient::~XPMClient() {
 	zmq_close(mBlockPub);
 	zmq_close(mWorkPub);
 	zmq_close(mStatsPull);
-  if (platformType == ptAMD)
-  	clear_adl(mNumDevices);
+  clear_adl(mNumDevices);
 	
 }
 
@@ -786,41 +785,14 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 		}
 	}
 	
-	const char *platformId = cfg->lookupString("", "platform");
-	const char *platformName = "";
-	unsigned clKernelLSize = 0;
-	unsigned clKernelLSizeLog2 = 0;
-	DeviceTypeTy deviceType = dtUnknown;
-  
-  if (strcmp(platformId, "amd") == 0) {
+  constexpr unsigned clKernelLSize = 256;
+  constexpr unsigned clKernelLSizeLog2 = 8;
+
 #ifndef __APPLE__
-    platformName = "AMD Accelerated Parallel Processing";
+   const char *platformName = "AMD Accelerated Parallel Processing";
 #else
-    platformName = "Apple";
+   const char *platformName = "Apple";
 #endif
-    platformType = ptAMD;
-    clKernelLSize = 256;
-    clKernelLSizeLog2 = 8;
-    deviceType = dtAMDGCN;
-  } else if (strcmp(platformId, "amd legacy") == 0) {
-    platformName = "AMD Accelerated Parallel Processing";
-    platformType = ptAMD;
-    deviceType = dtAMDLegacy;
-    clKernelLSize = 256;
-    clKernelLSizeLog2 = 8;
-  } else if (strcmp(platformId, "amd vega") == 0) {
-    platformName = "AMD Accelerated Parallel Processing";
-    platformType = ptAMD;
-    deviceType = dtAMDVega;
-    clKernelLSize = 256;
-    clKernelLSizeLog2 = 8;
-  }  else if (strcmp(platformId, "nvidia") == 0) {
-    platformName = "NVIDIA CUDA";
-    platformType = ptNVidia;    
-		deviceType = dtNVIDIA;
-    clKernelLSize = 1024;
-    clKernelLSizeLog2 = 10;
-  }
 
   std::vector<cl_device_id> allgpus;
   if (!clInitialize(platformName, allgpus))
@@ -935,7 +907,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 	
 	// generate kernel configuration file
   {
-    std::ofstream config("xpm/opencl/config.cl", std::fstream::trunc);
+    std::ofstream config("xpm/opencl/config.h", std::fstream::trunc);
     config << "#define STRIPES " << clKernelStripes << '\n';
     config << "#define WIDTH " << clKernelWidth << '\n';
     config << "#define PCOUNT " << clKernelPCount << '\n';
@@ -949,18 +921,16 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config);
   }
 
-  std::string arguments = cfg->lookupString("", "compilerFlags", "");
+  // Include directories search
+  std::string arguments = "-Ixpm/opencl ";
 
-  if (platformType == ptAMD) {
-    if (deviceType == dtAMDLegacy)
-      arguments += " -D__AMDLEGACY";
-    else if (deviceType == dtAMDVega)
-      arguments += " -D__AMDVEGA";
-  }
-
+  // Apple OpenCL implementation does not support amd_bitalign
 #ifndef __APPLE__
     arguments += " -DBITALIGN";
 #endif
+
+  // Extra compiler opts from configuration file
+  arguments += cfg->lookupString("", "compilerFlags", "");
 
   std::vector<cl_int> binstatus;
   binstatus.resize(gpus.size());	
@@ -969,10 +939,18 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     sprintf(kernelName, "kernelxpm_gpu%u.bin", (unsigned)i);
 
     // force rebuild kernel if adjusted target received
+    const char *sources[] = {
+      "xpm/opencl/sha256.cl",
+      "xpm/opencl/sieve.cl",
+      "xpm/opencl/fermat.cl",
+      "xpm/opencl/benchmarks.cl",
+    };
+
     if (!clCompileKernel(gContext[i],
                          gpus[i],
                          kernelName,
-                         { "xpm/opencl/config.cl", "xpm/opencl/procs.cl", "xpm/opencl/fermat.cl", "xpm/opencl/sieve.cl", "xpm/opencl/sha256.cl", "xpm/opencl/benchmarks.cl"},
+                         sources,
+                         sizeof(sources)/sizeof(char*),
                          arguments.c_str(),
                          &binstatus[i],
                          &gProgram[i],

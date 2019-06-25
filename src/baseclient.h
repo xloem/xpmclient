@@ -153,13 +153,6 @@ public:
   virtual void setup_adl() = 0;
   
 protected:
-  enum PlatformType {
-    ptAMD = 0,
-    ptNVidia
-  };
-  
-  PlatformType platformType;
-  
   void* mCtx;
   
   std::map<int,int> mDeviceMap;

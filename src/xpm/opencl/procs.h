@@ -1,7 +1,7 @@
-typedef unsigned char uint8_t;
-typedef unsigned int uint32_t;
-typedef unsigned long uint64_t;
+// Generated for AMD OpenCL compiler, do not edit!
  
+#include "clcommon.h"
+
 void sub(uint32_t *a, const uint32_t *b, int size)
 {
   uint32_t A[2];
@@ -14,8 +14,6 @@ void sub(uint32_t *a, const uint32_t *b, int size)
     A[0] = A[1];
   }
 }
-
-// Generated for AMD OpenCL compiler, do not edit!
 
 void monSqr320(uint32_t *op, uint32_t *mod, uint32_t invm)
 {
@@ -4326,7 +4324,7 @@ void mulProductScan352to192(uint32_t *out, uint32_t *op1, uint32_t *op2)
 //   }
 //   out[16] = accLow;
 }
-sqrProductScan320(uint32_t *out, uint32_t *op)
+void sqrProductScan320(uint32_t *out, uint32_t *op)
 {
   uint64_t accLow = 0, accHi = 0;
   union {

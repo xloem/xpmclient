@@ -58,7 +58,8 @@ bool clInitialize(const char *requiredPlatform, std::vector<cl_device_id> &gpus)
 bool clCompileKernel(cl_context gContext,
                      cl_device_id gpu,
                      const char *binaryName,
-                     const std::vector<const char*> &sources,
+                     const char **sources,
+                     unsigned sourcesNum,
                      const char *arguments,
                      cl_int *binstatus,
                      cl_program *gProgram,
@@ -67,23 +68,20 @@ bool clCompileKernel(cl_context gContext,
   std::ifstream testfile(binaryName);
   if(needRebuild || !testfile) {
     LOG_F(INFO, "compiling ...");
-    
-    std::string sourceFile;
-    for (auto &i: sources) {
-      std::ifstream stream(i);
-      std::string str((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
-      sourceFile.append(str);
+
+    std::unique_ptr<std::string[]> sourceData(new std::string[sourcesNum]);
+    std::unique_ptr<const char*[]> sourcesPtr(new const char*[sourcesNum+1]);
+    for (unsigned i = 0; i < sourcesNum; i++) {
+      std::ifstream stream(sources[i]);
+      std::string data((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+      sourceData[i] = data;
+      sourcesPtr[i] = sourceData[i].c_str();
     }
-    
-    LOG_F(INFO, "source: %u bytes", (unsigned)sourceFile.size());
-    if(sourceFile.size() < 1){
-      LOG_F(ERROR, "source files not found or empty");
-      return false;
-    }
-    
+
+    sourcesPtr[sourcesNum] = nullptr;
+
     cl_int error;
-    const char *sources[] = { sourceFile.c_str(), 0 };
-    *gProgram = clCreateProgramWithSource(gContext, 1, sources, 0, &error);
+    *gProgram = clCreateProgramWithSource(gContext, sourcesNum, sourcesPtr.get(), nullptr, &error);
     OCLR(error, false);
     
     if (clBuildProgram(*gProgram, 1, &gpu, arguments, 0, 0) != CL_SUCCESS) {

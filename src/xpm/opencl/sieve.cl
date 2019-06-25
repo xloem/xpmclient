@@ -5,10 +5,105 @@
  *      Author: mad
  */
 
+#include "config.h"
+#include "clcommon.h"
+
 #define S1RUNS (sizeof(nps_all)/sizeof(uint))
 #define NLIFO 6
+#define SCOUNT PCOUNT
 
 __constant uint nps_all[] = { 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 6 };
+
+uint32_t mod32(uint32_t *data, unsigned size, uint32_t *modulos, uint32_t divisor)
+{
+  uint64_t acc = data[0];
+  for (unsigned i = 1; i < size; i++)
+    acc += (uint64_t)modulos[i-1] * (uint64_t)data[i];
+  return acc % divisor;
+}
+
+uint int_invert(uint a, uint nPrime)
+{
+    // Extended Euclidean algorithm to calculate the inverse of a in finite field defined by nPrime
+    int rem0 = nPrime, rem1 = a % nPrime, rem2;
+    int aux0 = 0, aux1 = 1, aux2;
+    int quotient, inverse;
+
+    while (1)
+    {
+        if (rem1 <= 1)
+        {
+            inverse = aux1;
+            break;
+        }
+
+        rem2 = rem0 % rem1;
+        quotient = rem0 / rem1;
+        aux2 = -quotient * aux1 + aux0;
+
+        if (rem2 <= 1)
+        {
+            inverse = aux2;
+            break;
+        }
+
+        rem0 = rem1 % rem2;
+        quotient = rem1 / rem2;
+        aux0 = -quotient * aux2 + aux1;
+
+        if (rem0 <= 1)
+        {
+            inverse = aux0;
+            break;
+        }
+
+        rem1 = rem2 % rem0;
+        quotient = rem2 / rem0;
+        aux1 = -quotient * aux0 + aux2;
+    }
+
+    return (inverse + nPrime) % nPrime;
+}
+
+__kernel void setup_sieve(  __global uint* offset1,
+                            __global uint* offset2,
+                            __global const uint* vPrimes,
+                            __global uint* hash,
+                            uint hashid,
+                            __global uint *modulos)
+{
+
+  const uint id = get_global_id(0);
+  const uint nPrime = vPrimes[id];
+
+  uint tmp[N];
+#pragma unroll
+  for(int i = 0; i < N; ++i)
+    tmp[i] = hash[hashid*N + i];
+
+  uint localModulos[N-2];
+#pragma unroll
+  for (unsigned i = 0; i < N-2; i++)
+    localModulos[i] = modulos[PCOUNT*i + id];
+  const uint nFixedFactorMod = mod32(tmp, N-1, localModulos, nPrime);
+
+  if(nFixedFactorMod == 0){
+    for(uint line = 0; line < WIDTH; ++line){
+      offset1[PCOUNT*line + id] = 0; //1u << 31;
+      offset2[PCOUNT*line + id] = 0; //1u << 31;
+    }
+    return;
+
+  }
+
+  uint nFixedInverse = int_invert(nFixedFactorMod, nPrime);
+  for(uint layer = 0; layer < WIDTH; ++layer) {
+    offset1[PCOUNT*layer + id] = nFixedInverse;
+    offset2[PCOUNT*layer + id] = nPrime - nFixedInverse;
+    nFixedInverse = (nFixedInverse & 0x1) ?
+    (nFixedInverse + nPrime) / 2 : nFixedInverse / 2;
+  }
+}
 
 #if defined(__AMDVEGA)
 __attribute__((reqd_work_group_size(LSIZE, 1, 1)))
