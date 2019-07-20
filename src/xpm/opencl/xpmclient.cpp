@@ -10,6 +10,8 @@
 #include "xpmclient.h"
 #include "prime.h"
 #include "benchmarks.h"
+#include "codegen/generic.h"
+#include "codegen/gcn.h"
 
 extern "C" {
 	#include "adl.h"
@@ -21,9 +23,6 @@ extern "C" {
 #include <set>
 #include <memory>
 #include <chrono>
-#if defined(__GXX_EXPERIMENTAL_CXX0X__) && (__cplusplus < 201103L)
-#define steady_clock monotonic_clock
-#endif  
 
 #include <math.h>
 
@@ -907,6 +906,43 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 		OCLR(error, false);
 	}
 	
+  // generate procs file using codegen
+  FILE *hFile = fopen("xpm/opencl/procs.h", "w+");
+  if (!hFile) {
+    LOG_F(ERROR, "Can't write to %s", "xpm/opencl/procs.h");
+    return false;
+  }
+
+  {
+    time_t t = time(nullptr);
+    struct tm tm = *localtime(&t);
+    printf("now: %d-%d-%d %d:%d:%d\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    fprintf(hFile, "// Generated for AMD OpenCL compiler, do not edit!\n");
+    fprintf(hFile, "//  Date: %04d-%02d-%02d %02d:%02d:%02d\n\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    emitMontgomerySqrGeneric(hFile, gctOpenCL, 10);
+    emitMontgomeryMulGeneric(hFile, gctOpenCL, 10);
+    emitRedcHalfGeneric(hFile, gctOpenCL, 10);
+    emitMulProductScanGeneric(hFile, gctOpenCL, 10, 3);
+    emitMulProductScanGeneric(hFile, gctOpenCL, 10, 4);
+    emitMulProductScanGeneric(hFile, gctOpenCL, 10, 6);
+    emitMontgomerySqrGeneric(hFile, gctOpenCL, 11);
+    emitMontgomeryMulGeneric(hFile, gctOpenCL, 11);
+    emitRedcHalfGeneric(hFile, gctOpenCL, 11);
+    emitMulProductScanToSingleGeneric(hFile, gctOpenCL, 11);
+    emitMulProductScanGeneric(hFile, gctOpenCL, 11, 3);
+    emitMulProductScanGeneric(hFile, gctOpenCL, 11, 4);
+    emitMulProductScanGeneric(hFile, gctOpenCL, 11, 6);
+    emitSqrProductScanGeneric(hFile, gctOpenCL, 10);
+    emitSqrProductScanGeneric(hFile, gctOpenCL, 11);
+    emitSqrProductScanGeneric(hFile, gctOpenCL, 20);
+    emitMulProductScanGeneric(hFile, gctOpenCL, 10, 10);
+    emitMulProductScanGeneric(hFile, gctOpenCL, 11, 11);
+    emitMulProductScanGeneric(hFile, gctOpenCL, 20, 20);
+    emitGenerateDivRegCGeneric(hFile, gctOpenCL, 16, 11, 8);
+    emitGenerateDivRegCGeneric(hFile, gctOpenCL, 15, 10, 8);
+    fclose(hFile);
+  }
+
 	// generate kernel configuration file
   {
     std::ofstream config("xpm/opencl/config.h", std::fstream::trunc);

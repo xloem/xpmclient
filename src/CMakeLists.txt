@@ -116,6 +116,8 @@ add_executable(xpmclient
   zmqextras.cpp
   xpm/opencl/xpmclient.cpp
   xpm/opencl/benchmarks.cpp
+  codegen/generic.cpp
+  codegen/gcn.cpp
   ${ProtoSources}
 )
 
