@@ -13,5 +13,6 @@ __kernel void getconfig(__global config_t* conf)
         c.LIMIT13_ = LIMIT13;
         c.LIMIT14_ = LIMIT14;
         c.LIMIT15_ = LIMIT15;
+        c.GCN_ = 0;
         *conf = c;
 }

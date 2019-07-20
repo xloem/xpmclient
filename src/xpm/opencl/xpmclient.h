@@ -60,7 +60,6 @@ struct stats_t {
 
 
 struct config_t {
-	
 	cl_uint N;
 	cl_uint SIZE;
 	cl_uint STRIPES;
@@ -70,6 +69,7 @@ struct config_t {
 	cl_uint LIMIT13;
 	cl_uint LIMIT14;
 	cl_uint LIMIT15;
+  cl_uint GCN;
 };
 
 
@@ -203,7 +203,7 @@ public:
   PrimeMiner(unsigned id, unsigned threads, unsigned sievePerRound, unsigned depth, unsigned LSize);
 	~PrimeMiner();
 	
-  bool Initialize(cl_context context, openclPrograms programs, cl_device_id dev, config_t &kernelConfig);
+  bool Initialize(cl_context context, openclPrograms programs, cl_device_id dev);
 	
 	static void InvokeMining(void *args, void *ctx, void *pipe);
   config_t getConfig() { return mConfig; }
@@ -275,13 +275,20 @@ private:
   std::vector<std::pair<PrimeMiner*, void*> > mWorkers;
 
 
-  bool checkProgramKernelConfig(const char *kernelName, cl_context context, cl_device_id device, cl_program program, config_t expectedConfig, bool targetAutoAdjust);
+  bool checkProgramKernelConfig(const char *kernelName,
+                                cl_context context,
+                                cl_device_id device,
+                                cl_program program,
+                                config_t expectedConfig,
+                                bool targetAutoAdjust,
+                                bool checkGCN);
 
   void dumpSieveConstants(unsigned weaveDepth,
                           unsigned threadsNum,
                           unsigned windowSize,
                           unsigned *primes,
-                          std::ostream &file);
+                          std::ostream &file,
+                          bool isGCN);
 
 };
 

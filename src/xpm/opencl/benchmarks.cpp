@@ -1560,7 +1560,7 @@ void runBenchmarks(cl_context context,
     
     size_t globalSize = 1;
     size_t localSize = 1;
-    cl_kernel getconf = clCreateKernel(programs.Fermat, "getconfig", &error);
+    cl_kernel getconf = clCreateKernel(programs.sieve, "getconfig", &error);
     clSetKernelArg(getconf, 0, sizeof(cl_mem), &mConfig.DeviceData);
     clEnqueueNDRangeKernel(queue, getconf, 1, 0, &globalSize, &localSize, 0, 0, 0);
     OCL(mConfig.copyToHost(queue, true));

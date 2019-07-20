@@ -115,7 +115,15 @@ bool clCompileKernel(cl_context gContext,
                      cl_program *gProgram,
                      bool needRebuild);
 
-
+bool clCompileGCNKernel(cl_context gContext,
+                        cl_device_id gpu,
+                        const char *binaryName,
+                        const char **sources,
+                        unsigned sourcesNum,
+                        const char *arguments,
+                        cl_int *binstatus,
+                        cl_program *gProgram,
+                        bool needRebuild);
 
 
 

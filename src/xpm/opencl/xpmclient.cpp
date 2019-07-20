@@ -86,7 +86,7 @@ PrimeMiner::~PrimeMiner() {
 }
 
 
-bool PrimeMiner::Initialize(cl_context context, openclPrograms programs, cl_device_id dev, config_t &kernelConfig)
+bool PrimeMiner::Initialize(cl_context context, openclPrograms programs, cl_device_id dev)
 {
 	cl_int error;
   _context = context;
@@ -105,7 +105,19 @@ bool PrimeMiner::Initialize(cl_context context, openclPrograms programs, cl_devi
 	mSmall = clCreateCommandQueue(context, dev, 0, &error);
 	OCLR(error, false);
 	
-  mConfig = kernelConfig;
+  {
+    clBuffer<config_t> config;
+    OCL(config.init(context, 1));
+    cl_kernel getconf = clCreateKernel(programs.sieve, "getconfig", &error);
+    OCLR(error, false);
+    size_t globalSize = 1;
+    size_t localSize = 1;
+    OCLR(clSetKernelArg(getconf, 0, sizeof(cl_mem), &config.DeviceData), false);
+    OCLR(clEnqueueNDRangeKernel(mSmall, getconf, 1, 0, &globalSize, &localSize, 0, 0, 0), false);
+    OCL(config.copyToHost(mSmall, true));
+    mConfig = *config.HostData;
+    OCLR(clReleaseKernel(getconf), false);
+  }
 
   LOG_F(INFO, "N=%d SIZE=%d STRIPES=%d WIDTH=%d PCOUNT=%d TARGET=%d",
 			mConfig.N, mConfig.SIZE, mConfig.STRIPES, mConfig.WIDTH, mConfig.PCOUNT, mConfig.TARGET);
@@ -730,7 +742,13 @@ XPMClient::~XPMClient() {
 	
 }
 
-bool XPMClient::checkProgramKernelConfig(const char *kernelName, cl_context context, cl_device_id device, cl_program program, config_t expectedConfig, bool targetAutoAdjust)
+bool XPMClient::checkProgramKernelConfig(const char *kernelName,
+                                         cl_context context,
+                                         cl_device_id device,
+                                         cl_program program,
+                                         config_t expectedConfig,
+                                         bool targetAutoAdjust,
+                                         bool checkGCN)
 {
   cl_int error;
   clBuffer<config_t> config;
@@ -755,7 +773,8 @@ bool XPMClient::checkProgramKernelConfig(const char *kernelName, cl_context cont
       kernelConfig.SIZE != expectedConfig.SIZE ||
       kernelConfig.LIMIT13 != expectedConfig.LIMIT13 ||
       kernelConfig.LIMIT14 != expectedConfig.LIMIT14 ||
-      kernelConfig.LIMIT15 != expectedConfig.LIMIT15) {
+      kernelConfig.LIMIT15 != expectedConfig.LIMIT15 ||
+      (checkGCN && kernelConfig.GCN != expectedConfig.GCN)) {
     LOG_F(ERROR, "Existing OpenCL kernel (%s) incompatible with configuration", kernelName);
     LOG_F(ERROR, "Please remove all *.bin files and restart miner");
     return false;
@@ -771,7 +790,8 @@ void XPMClient::dumpSieveConstants(unsigned weaveDepth,
                                    unsigned threadsNum,
                                    unsigned windowSize,
                                    unsigned *primes,
-                                   std::ostream &file) 
+                                   std::ostream &file,
+                                   bool isGCN)
 {
   unsigned ranges[3] = {0, 0, 0};
   for (unsigned i = 0; i < weaveDepth/threadsNum; i++) {
@@ -784,9 +804,15 @@ void XPMClient::dumpSieveConstants(unsigned weaveDepth,
       ranges[2] = i;
   }
   
-  file << "#define SIEVERANGE1 " << ranges[0] << "\n";
-  file << "#define SIEVERANGE2 " << ranges[1] << "\n";
-  file << "#define SIEVERANGE3 " << ranges[2] << "\n";
+  if (!isGCN) {
+    file << "#define SIEVERANGE1 " << ranges[0] << "\n";
+    file << "#define SIEVERANGE2 " << ranges[1] << "\n";
+    file << "#define SIEVERANGE3 " << ranges[2] << "\n";
+  } else {
+    file << "SIEVERANGE1 = " << ranges[0] << "\n";
+    file << "SIEVERANGE2 = " << ranges[1] << "\n";
+    file << "SIEVERANGE3 = " << ranges[2] << "\n";
+  }
 }
 
 bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adjustedKernelTarget) {
@@ -815,6 +841,15 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
    const char *defaultPlatformName = "Apple";
 #endif
   const char *platformName = cfg->lookupString("", "platform", defaultPlatformName);
+
+  bool useGCN = false;
+  const char *kernelType = cfg->lookupString("", "kernelType");
+  if (strcmp(kernelType, "generic") == 0) {
+    // Nothing to do
+  } else if (strcmp(kernelType, "asm") == 0) {
+    LOG_F(INFO, "Experimental 'asm' kernel enabled");
+    useGCN = true;
+  }
 
   std::vector<cl_device_id> allgpus;
   if (!clInitialize(platformName, allgpus))
@@ -927,14 +962,14 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 		OCLR(error, false);
 	}
 	
-  // generate procs file using codegen
-  FILE *hFile = fopen("xpm/opencl/generic_procs.h", "w+");
-  if (!hFile) {
-    LOG_F(ERROR, "Can't write to %s", "xpm/opencl/generic_procs.h");
-    return false;
-  }
-
   {
+    // generate procs file using codegen
+    FILE *hFile = fopen("xpm/opencl/generic_procs.h", "w+");
+    if (!hFile) {
+      LOG_F(ERROR, "Can't write to %s", "xpm/opencl/generic_procs.h");
+      return false;
+    }
+
     time_t t = time(nullptr);
     struct tm tm = *localtime(&t);
     fprintf(hFile, "// Generated for AMD OpenCL compiler, do not edit!\n");
@@ -963,6 +998,106 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     fclose(hFile);
   }
 
+  GCNArchTy gcnVersions[] = {
+    gcn11,
+    gcn14
+  };
+
+  const char *procFileNames[] = {
+    "xpm/opencl/gcn11_procs.inc",
+    "xpm/opencl/gcn14_procs.inc"
+  };
+
+  for (size_t i = 0; i < sizeof(gcnVersions)/sizeof(*gcnVersions); i++) {
+    // generate GCN procs file using codegen
+    FILE *hFile = fopen(procFileNames[i], "w+");
+    if (!hFile) {
+      LOG_F(ERROR, "Can't write to %s", "xpm/opencl/generic_procs.h");
+      return false;
+    }
+
+    time_t t = time(nullptr);
+    struct tm tm = *localtime(&t);
+    fprintf(hFile, "# Generated for CLRadeonExtender, do not edit!\n");
+    fprintf(hFile, "#  Date: %04d-%02d-%02d %02d:%02d:%02d\n\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+    GCNArchTy arch = gcnVersions[i];
+
+    emitGCNLoad(hFile, arch, 3);
+    emitGCNLoad(hFile, arch, 4);
+    emitGCNLoad(hFile, arch, 6);
+    emitGCNLoad(hFile, arch, 8);
+    emitGCNLoad(hFile, arch, 10);
+    emitGCNLoad(hFile, arch, 11);
+    emitGCNLoad(hFile, arch, 20);
+
+    emitGCNStore(hFile, arch, 1);
+    emitGCNStore(hFile, arch, 8);
+    emitGCNStore(hFile, arch, 10);
+    emitGCNStore(hFile, arch, 11);
+    emitGCNStore(hFile, arch, 13);
+    emitGCNStore(hFile, arch, 14);
+    emitGCNStore(hFile, arch, 16);
+    emitGCNStore(hFile, arch, 15);
+    emitGCNStore(hFile, arch, 17);
+    emitGCNStore(hFile, arch, 20);
+    emitGCNStore(hFile, arch, 22);
+    emitGCNStore(hFile, arch, 40);
+
+    emitGCNLimbShl(hFile, 8);
+    emitGCNLimbShl(hFile, 10);
+    emitGCNLimbShl(hFile, 11);
+    emitGCNLimbShl(hFile, 15);
+    emitGCNLimbShl(hFile, 16);
+
+    emitGCNShl(hFile, arch, 10);
+    emitGCNShl(hFile, arch, 11);
+    emitGCNShl(hFile, arch, 15);
+    emitGCNShl(hFile, arch, 16);
+
+    emitGCNSubMul(hFile, arch, 10);
+    emitGCNSubMul(hFile, arch, 11);
+
+    emitGCNMul_prodscan(hFile, arch, 10, 3);
+    emitGCNMul_prodscan(hFile, arch, 10, 4);
+    emitGCNMul_prodscan(hFile, arch, 10, 6);
+    emitGCNMul_prodscan(hFile, arch, 10, 3, 10);
+    emitGCNMul_prodscan(hFile, arch, 10, 4, 10);
+    emitGCNMul_prodscan(hFile, arch, 10, 6, 10);
+
+    emitGCNMul_prodscan(hFile, arch, 11, 3);
+    emitGCNMul_prodscan(hFile, arch, 11, 4);
+    emitGCNMul_prodscan(hFile, arch, 11, 6);
+    emitGCNMul_prodscan(hFile, arch, 11, 3, 11);
+    emitGCNMul_prodscan(hFile, arch, 11, 4, 11);
+    emitGCNMul_prodscan(hFile, arch, 11, 6, 11);
+
+    emitGCNSqr_prodscan(hFile, arch, 10);
+    emitGCNSqr_prodscan(hFile, arch, 11);
+    emitGCNSqr_prodscan(hFile, arch, 20);
+
+    emitGCNMul_prodscan(hFile, arch, 10, 10);
+    emitGCNMul_prodscan(hFile, arch, 11, 11);
+    emitGCNMul_prodscan(hFile, arch, 20, 20);
+
+    emitGCNMonsqr_prodscan(hFile, arch, 10, true);
+    emitGCNMonmul_prodscan(hFile, arch, 10, true);
+    emitGCNRedchalf_prodscan(hFile, arch, 10, false, true);
+    emitGCNRedcify_prodscan(hFile, arch, 10, 7);
+    emitGCNMonsqr_prodscan(hFile, arch, 11, true);
+    emitGCNMonmul_prodscan(hFile, arch, 11, true);
+    emitGCNRedchalf_prodscan(hFile, arch, 11, false, true);
+    emitGCNRedcify_prodscan(hFile, arch, 11, 7);
+
+    emitGCNDiv(hFile, arch, 10+5, 10, 8);
+    emitGCNDiv(hFile, arch, 11+5, 11, 8);
+
+    emitGCNModPow2(hFile, arch, 10);
+    emitGCNModPow2(hFile, arch, 11);
+
+    fclose(hFile);
+  }
+
   config_t kernelConfig;
   kernelConfig.N = 12;
   kernelConfig.STRIPES = clKernelStripes;
@@ -973,6 +1108,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
   kernelConfig.LIMIT13 = multiplierSizeLimits[0];
   kernelConfig.LIMIT14 = multiplierSizeLimits[1];
   kernelConfig.LIMIT15 = multiplierSizeLimits[2];
+  kernelConfig.GCN = useGCN ? 1 : 0;
 
 	// generate kernel configuration file
   {
@@ -987,7 +1123,23 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
     config << "#define LIMIT13 " << kernelConfig.LIMIT13 << '\n';
     config << "#define LIMIT14 " << kernelConfig.LIMIT14 << '\n';
     config << "#define LIMIT15 " << kernelConfig.LIMIT15 << '\n';
-    dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config);
+    dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config, false);
+  }
+
+  // generate kernel configuration file for GCN kernels
+  {
+    std::ofstream config("xpm/opencl/gcn_config.inc", std::fstream::trunc);
+    config << "STRIPES = " << kernelConfig.STRIPES << '\n';
+    config << "WIDTH = " << kernelConfig.WIDTH << '\n';
+    config << "PCOUNT = " << kernelConfig.PCOUNT << '\n';
+    config << "TARGET = " << kernelConfig.TARGET << '\n';
+    config << "SIZE = " << kernelConfig.SIZE << '\n';
+    config << "LSIZE = " << clKernelLSize << '\n';
+    config << "LSIZELOG2 = " << clKernelLSizeLog2 << '\n';
+    config << "LIMIT13 = " << kernelConfig.LIMIT13 << '\n';
+    config << "LIMIT14 = " << kernelConfig.LIMIT14 << '\n';
+    config << "LIMIT15 = " << kernelConfig.LIMIT15 << '\n';
+    dumpSieveConstants(clKernelPCount, clKernelLSize, clKernelWindowSize*32, gPrimes+13, config, true);
   }
 
   // Include directories search
@@ -1039,9 +1191,13 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
         return false;
     }
 
-    {
+    if (!useGCN) {
       const char *sources[] = {"xpm/opencl/generic_Fermat.cl"};
       if (!clCompileKernel(gContext[i], gpus[i], FermatKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.Fermat, adjustedKernelTarget != 0))
+        return false;
+    } else {
+      const char *sources[] = {"xpm/opencl/gcn_Fermat.asm"};
+      if (!clCompileGCNKernel(gContext[i], gpus[i], FermatKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.Fermat, adjustedKernelTarget != 0))
         return false;
     }
 
@@ -1051,11 +1207,11 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
         return false;
     }
 
-    if (!checkProgramKernelConfig(sha256KernelFile, gContext[i], gpus[i], programs.sha256, kernelConfig, clKernelWidthAutoAdjust) ||
-        !checkProgramKernelConfig(sieveKernelFile, gContext[i], gpus[i], programs.sieve, kernelConfig, clKernelWidthAutoAdjust) ||
-        !checkProgramKernelConfig(sieveUtilsKernelFile, gContext[i], gpus[i], programs.sieveUtils, kernelConfig, clKernelWidthAutoAdjust) ||
-        !checkProgramKernelConfig(FermatKernelFile, gContext[i], gpus[i], programs.Fermat, kernelConfig, clKernelWidthAutoAdjust) ||
-        !checkProgramKernelConfig(FermatUtilsKernelFile, gContext[i], gpus[i], programs.FermatUtils, kernelConfig, clKernelWidthAutoAdjust))
+    if (!checkProgramKernelConfig(sha256KernelFile, gContext[i], gpus[i], programs.sha256, kernelConfig, clKernelWidthAutoAdjust, false) ||
+        !checkProgramKernelConfig(sieveKernelFile, gContext[i], gpus[i], programs.sieve, kernelConfig, clKernelWidthAutoAdjust, false) ||
+        !checkProgramKernelConfig(sieveUtilsKernelFile, gContext[i], gpus[i], programs.sieveUtils, kernelConfig, clKernelWidthAutoAdjust, false) ||
+        !checkProgramKernelConfig(FermatKernelFile, gContext[i], gpus[i], programs.Fermat, kernelConfig, clKernelWidthAutoAdjust, true) ||
+        !checkProgramKernelConfig(FermatUtilsKernelFile, gContext[i], gpus[i], programs.FermatUtils, kernelConfig, clKernelWidthAutoAdjust, false))
       return false;
   }
 
@@ -1068,13 +1224,17 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
       openclPrograms &programs = gPrograms[i];
       char benchmarksKernelFile[128];
       snprintf(benchmarksKernelFile, sizeof(benchmarksKernelFile), "%s_benchmarks.bin", deviceName);
-      {
+      if (!useGCN) {
         const char *sources[] = {"xpm/opencl/generic_benchmarks.cl"};
         if (!clCompileKernel(gContext[i], gpus[i], benchmarksKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.benchmarks, adjustedKernelTarget != 0))
           return false;
+      } else {
+        const char *sources[] = {"xpm/opencl/gcn_benchmarks.asm"};
+        if (!clCompileGCNKernel(gContext[i], gpus[i], benchmarksKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.benchmarks, adjustedKernelTarget != 0))
+          return false;
       }
 
-      if (!checkProgramKernelConfig(benchmarksKernelFile, gContext[i], gpus[i], programs.benchmarks, kernelConfig, clKernelWidthAutoAdjust))
+      if (!checkProgramKernelConfig(benchmarksKernelFile, gContext[i], gpus[i], programs.benchmarks, kernelConfig, clKernelWidthAutoAdjust, true))
         return false;
 
       runBenchmarks(gContext[i], programs, gpus[i], depth, clKernelLSize);
@@ -1090,21 +1250,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
       if(binstatus[i] == CL_SUCCESS){
       
         PrimeMiner* miner = new PrimeMiner(i, gpus.size(), sievePerRound[i], depth, clKernelLSize);
-        miner->Initialize(gContext[i], programs, gpus[i], kernelConfig);
-//        config_t config = miner->getConfig();
-//				if ((!clKernelTargetAutoAdjust && config.TARGET != clKernelTarget) ||
-//						(!clKernelWidthAutoAdjust && config.WIDTH != clKernelWidth) ||
-//						config.PCOUNT != clKernelPCount ||
-//						config.STRIPES != clKernelStripes ||
-//						config.SIZE != clKernelWindowSize ||
-//						config.LIMIT13 != multiplierSizeLimits[0] ||
-//						config.LIMIT14 != multiplierSizeLimits[1] ||
-//						config.LIMIT15 != multiplierSizeLimits[2]) {
-//          LOG_F(ERROR, "Existing OpenCL kernel (kernel.bin) incompatible with configuration");
-//          LOG_F(ERROR, "Please remove kernel.bin file and restart miner");
-//          exit(1);
-//        }
-
+        miner->Initialize(gContext[i], programs, gpus[i]);
         void *pipe = czmq_thread_fork(mCtx, &PrimeMiner::InvokeMining, miner);
         czmq_wait(pipe);
         czmq_signal(pipe);

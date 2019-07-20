@@ -128,9 +128,14 @@ SET_TARGET_PROPERTIES(xpmclient PROPERTIES
 target_include_directories(xpmclient PUBLIC
   ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/xpm/opencl
+  ${CLRX_INCLUDE_DIRECTORIES}
 )
 
-target_link_libraries(xpmclient ${LIBRARIES} ${OpenCL_LIBRARIES})
+target_link_libraries(xpmclient
+  ${LIBRARIES}
+  ${OpenCL_LIBRARIES}
+  ${CLRX_LIBRARIES}
+)
 
 if (STATIC_BUILD)
   set_target_properties(xpmclient PROPERTIES LINK_SEARCH_END_STATIC 1)

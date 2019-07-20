@@ -25,6 +25,7 @@ typedef struct {
   uint LIMIT13_;
   uint LIMIT14_;
   uint LIMIT15_;
+  uint GCN_;
 } config_t;
 
 #define N 12

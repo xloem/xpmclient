@@ -1,4 +1,7 @@
 #include "opencl.h"
+#include <CLRX/amdbin/AmdBinaries.h>
+#include <CLRX/amdasm/Assembler.h>
+#include <CLRX/utils/Utilities.h>
 #include <fstream>
 #include <vector>
 #include <memory>
@@ -138,5 +141,74 @@ bool clCompileKernel(cl_context gContext,
   *gProgram = clCreateProgramWithBinary(gContext, 1, &gpu, &binsize, &binaryPtr, binstatus, &error);
   OCLR(error, false);
   OCLR(clBuildProgram(*gProgram, 1, &gpu, 0, 0, 0), false);  
+  return true;
+}
+
+bool clCompileGCNKernel(cl_context gContext,
+                        cl_device_id gpu,
+                        const char *binaryName,
+                        const char **sources,
+                        unsigned sourcesNum,
+                        const char *arguments,
+                        cl_int *binstatus,
+                        cl_program *gProgram,
+                        bool needRebuild)
+{
+  // get device name
+  std::ifstream testfile(binaryName);
+  if(needRebuild || !testfile) {
+    char deviceName[128];
+    clGetDeviceInfo(gpu, CL_DEVICE_NAME, sizeof(deviceName), deviceName, nullptr);
+    LOG_F(INFO, "assembling %s ...", binaryName);
+
+    try {
+      CLRX::Array<CLRX::CString> filenames(sourcesNum);
+      for (cxuint i = 0; i < sourcesNum; i++)
+        filenames[i] = sources[i];
+
+      CLRX::Flags flags = 0;
+      CLRX::BinaryFormat binFormat = CLRX::BinaryFormat::AMDCL2;
+      CLRX::GPUDeviceType deviceType = CLRX::getGPUDeviceTypeFromName(deviceName);
+      bool is64bit = true;
+
+      std::unique_ptr<CLRX::Assembler> assembler;
+      assembler.reset(new CLRX::Assembler(filenames, flags, binFormat, deviceType));
+      assembler->set64Bit(is64bit);
+
+      assembler->addIncludeDir("xpm/opencl");
+      if (!assembler->assemble())
+        return false;
+      assembler->writeBinary(binaryName);
+    } catch(const CLRX::Exception &ex) {
+      LOG_F(ERROR, "can't assembly %s", binaryName);
+      LOG_F(ERROR, "%s", ex.what());
+      return false;
+    }
+  }
+
+  std::ifstream bfile(binaryName, std::ifstream::binary);
+  if(!bfile) {
+    LOG_F(ERROR, "%s not found", binaryName);
+    return false;
+  }
+
+  bfile.seekg(0, bfile.end);
+  size_t binsize = bfile.tellg();
+  bfile.seekg(0, bfile.beg);
+  if(!binsize){
+    LOG_F(ERROR, "<error> %s empty", binaryName);
+    return false;
+  }
+
+  std::vector<char> binary(binsize+1);
+  bfile.read(&binary[0], binsize);
+  bfile.close();
+
+  cl_int error;
+  const unsigned char *binaryPtr = (const unsigned char*)&binary[0];
+
+  *gProgram = clCreateProgramWithBinary(gContext, 1, &gpu, &binsize, &binaryPtr, binstatus, &error);
+  OCLR(error, false);
+  OCLR(clBuildProgram(*gProgram, 1, &gpu, 0, 0, 0), false);
   return true;
 }
