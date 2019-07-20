@@ -502,7 +502,7 @@ __attribute__((reqd_work_group_size(LSIZE, 1, 1)))
 __kernel void bhashmodUsePrecalc(__global uint *found,
                                  __global uint *fcount,
                                  __global uint *resultPrimorial,
-                                 __constant* midstate,
+                                 __constant uint* midstate,
                                  uint merkle,
                                  uint time,
                                  uint nbits,

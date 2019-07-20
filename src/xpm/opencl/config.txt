@@ -12,12 +12,6 @@ address = "AMgtSW8ge2mvqxaiWo11GqTKx6rQ2J57yA";
 # Computer name is used as default
 #name = "custom_name";
 
-# Platform:
-#  "amd": AMD GCN cards
-#  "amd legacy": AMD HD5xxx & HD6xxx cards
-#  "amd vega": AMD Vega cards
-platform = "amd";
-
 # GPU crash handling
 # Enter OS terminal command here
 # for example:
@@ -57,6 +51,10 @@ windowSize = "4096";
 # Default values are 24, 31, 35
 # Less values increases prime probability, but sieve generate less candidates
 multiplierLimits = ["24", "31", "35"];
+
+# For debugging purposes
+# platform = "";
+# compilerFlags = "";
 
 # - The following settings have one entry per GPU
 # - If you have more than 4 just add more entries or leave it as is to use defaults

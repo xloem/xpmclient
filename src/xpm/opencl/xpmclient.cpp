@@ -259,6 +259,7 @@ void PrimeMiner::Mining(void *ctx, void *pipe) {
 	
 	time_t time1 = time(0);
 	time_t time2 = time(0);
+  time_t time3 = time(0);
 	uint64_t testCount = 0;
 
 	unsigned iteration = 0;
@@ -789,10 +790,11 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
   constexpr unsigned clKernelLSizeLog2 = 8;
 
 #ifndef __APPLE__
-   const char *platformName = "AMD Accelerated Parallel Processing";
+   const char *defaultPlatformName = "AMD Accelerated Parallel Processing";
 #else
-   const char *platformName = "Apple";
+   const char *defaultPlatformName = "Apple";
 #endif
+  const char *platformName = cfg->lookupString("", "platform", defaultPlatformName);
 
   std::vector<cl_device_id> allgpus;
   if (!clInitialize(platformName, allgpus))
@@ -926,7 +928,7 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 
   // Apple OpenCL implementation does not support amd_bitalign
 #ifndef __APPLE__
-    arguments += " -DBITALIGN";
+    arguments += " -DBITALIGN ";
 #endif
 
   // Extra compiler opts from configuration file

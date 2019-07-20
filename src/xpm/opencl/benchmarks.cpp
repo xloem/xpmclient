@@ -3,6 +3,7 @@
 #include "gmpxx.h"
 
 #include "loguru.hpp"
+#include <string.h>
 #include <time.h>
 #include <chrono>
 #include <memory>
@@ -13,38 +14,93 @@
 #include "prime.h"
 #include <math.h> 
 #include <set>
- 
-enum OpenCLKernels {
-  CLKernelGenConfig = 0,
-  CLKernelSquareBenchmark320,
-  CLKernelSquareBenchmark352,  
-  CLKernelMultiplyBenchmark320,
-  CLKernelMultiplyBenchmark352,
-  CLKernelFermatTestBenchmark320,
-  CLKernelFermatTestBenchmark352,
-  CLKernelHashMod,
-  CLKernelSieveSetup,
-  CLKernelSieve,
-  CLKernelSieveSearch,
-  CLKernelsNum
-};  
- 
-static const char *gOpenCLKernelNames[] = {
-  "getconfig",
-  "squareBenchmark320",
-  "squareBenchmark352",
-  "multiplyBenchmark320",
-  "multiplyBenchmark352",
-  "fermatTestBenchMark320",
-  "fermatTestBenchMark352",
-  "bhashmodUsePrecalc",
-  "setup_sieve",
-  "sieve",
-  "s_sieve"
-};
 
 const unsigned GroupSize = 256;
-const unsigned MulOpsNum = 512; 
+const unsigned MulOpsNum = 512;
+const unsigned WindowSize = 7;
+
+enum AlgorithmIdTy {
+  aidSquare = 0,
+  aidMultiply,
+  aidMontgomerySquare,
+  aidMontgomeryMultiply,
+  aidMontgomeryRedchalf,
+  aidRedcify
+};
+
+enum TestTypeTy {
+  ttUnitTest = 0,
+  ttPerformanceTest
+};
+
+const uint32_t binvert_limb_table[128] = {
+  0x01, 0xAB, 0xCD, 0xB7, 0x39, 0xA3, 0xC5, 0xEF,
+  0xF1, 0x1B, 0x3D, 0xA7, 0x29, 0x13, 0x35, 0xDF,
+  0xE1, 0x8B, 0xAD, 0x97, 0x19, 0x83, 0xA5, 0xCF,
+  0xD1, 0xFB, 0x1D, 0x87, 0x09, 0xF3, 0x15, 0xBF,
+  0xC1, 0x6B, 0x8D, 0x77, 0xF9, 0x63, 0x85, 0xAF,
+  0xB1, 0xDB, 0xFD, 0x67, 0xE9, 0xD3, 0xF5, 0x9F,
+  0xA1, 0x4B, 0x6D, 0x57, 0xD9, 0x43, 0x65, 0x8F,
+  0x91, 0xBB, 0xDD, 0x47, 0xC9, 0xB3, 0xD5, 0x7F,
+  0x81, 0x2B, 0x4D, 0x37, 0xB9, 0x23, 0x45, 0x6F,
+  0x71, 0x9B, 0xBD, 0x27, 0xA9, 0x93, 0xB5, 0x5F,
+  0x61, 0x0B, 0x2D, 0x17, 0x99, 0x03, 0x25, 0x4F,
+  0x51, 0x7B, 0x9D, 0x07, 0x89, 0x73, 0x95, 0x3F,
+  0x41, 0xEB, 0x0D, 0xF7, 0x79, 0xE3, 0x05, 0x2F,
+  0x31, 0x5B, 0x7D, 0xE7, 0x69, 0x53, 0x75, 0x1F,
+  0x21, 0xCB, 0xED, 0xD7, 0x59, 0xC3, 0xE5, 0x0F,
+  0x11, 0x3B, 0x5D, 0xC7, 0x49, 0x33, 0x55, 0xFF
+};
+
+void logPrint(const char *name, uint32_t *ptr, size_t size)
+{
+  char buffer[1024];
+  char N[16];
+  buffer[0] = 0;
+  for (size_t i = 0; i < size; i++) {
+    snprintf(N, sizeof(N), " %08X", ptr[i]);
+    strcat(buffer, N);
+  }
+  LOG_F(ERROR, "%s:%s", name, buffer);
+}
+
+uint32_t invert_limb(uint32_t limb)
+{
+  uint32_t inv = binvert_limb_table[(limb/2) & 0x7F];
+  inv = 2*inv - inv*inv*limb;
+  inv = 2*inv - inv*inv*limb;
+  return -inv;
+}
+
+uint64_t invert_limb(uint64_t limb)
+{
+  uint64_t inv = binvert_limb_table[(limb/2) & 0x7F];
+  inv = 2*inv - inv*inv*limb;
+  inv = 2*inv - inv*inv*limb;
+  inv = 2*inv - inv*inv*limb;
+  return -inv;
+}
+
+static inline const char *algorithmName(AlgorithmIdTy id)
+{
+  switch (id) {
+    case aidSquare : return "square";
+    case aidMultiply : return "multiply";
+    case aidMontgomerySquare : return "monsqr";
+    case aidMontgomeryMultiply : return "monmul";
+    case aidMontgomeryRedchalf : return "redchalf";
+    case aidRedcify : return "redcify";
+  }
+}
+
+static inline char kernelSuffix(TestTypeTy type)
+{
+  switch (type) {
+    case ttUnitTest : return 'u';
+    case ttPerformanceTest : return 'p';
+  }
+}
+
 
 uint32_t rand32()
 {
@@ -61,7 +117,8 @@ uint64_t rand64()
   result = (result << 16);
   return result;
 } 
- 
+
+
 bool trialDivisionChainTest(uint32_t *primes,
                             mpz_class &N,
                             bool fSophieGermain,
@@ -181,64 +238,102 @@ bool sieveResultsTest(uint32_t *primes,
   return true;
    
 } 
- 
+
+static inline cl_kernel findKernelOrDie(cl_program program, const char *name)
+{
+  cl_int result;
+  cl_kernel kernel = clCreateKernel(program, name, &result);
+  if (result != CL_SUCCESS) {
+    LOG_F(ERROR, " * Error: can't find kernel %s", name);
+    exit(1);
+  }
+
+  return kernel;
+}
+
+// make Montgomery reduce
+void reduce(mp_limb_t *target, mp_limb_t *mod, mp_limb_t *prod, mp_limb_t *add1, mp_limb_t *add2, mp_limb_t invm, unsigned operandSize, unsigned opLimbsNum)
+{
+  if (!(sizeof(mp_limb_t) == 8 && (operandSize % 2) == 1)) {
+    for (unsigned j = 0; j < opLimbsNum; j++)
+      prod[j] = mpn_addmul_1(&prod[j], mod, opLimbsNum, prod[j]*invm);
+    mp_limb_t highestLimb = mpn_add_n(target, prod, prod+opLimbsNum, opLimbsNum);
+    if (highestLimb)
+      mpn_sub_n(target, target, mod, opLimbsNum);
+  } else {
+    uint32_t *prod32 = reinterpret_cast<uint32_t*>(prod);
+    uint32_t *add1p32 = reinterpret_cast<uint32_t*>(add1);
+    uint32_t *target32 = reinterpret_cast<uint32_t*>(target);
+    for (unsigned j = 0; j < opLimbsNum-1; j++)
+      prod[j] = mpn_addmul_1(&prod[j], mod, opLimbsNum, prod[j]*invm);
+
+    // make a half mpn_addmul_1 (for highest 32-bit limb)
+    prod32[operandSize-1] = (uint32_t)mpn_addmul_1(&prod[opLimbsNum-1], mod, opLimbsNum, (prod[opLimbsNum-1]*invm) & 0xFFFFFFFF);
+
+    // make aligned addends
+    memcpy(add1p32 + 1, prod, 4*operandSize);
+    memcpy(add2, prod32+operandSize, 4*operandSize);
+
+    mpn_add_n(target, add1, add2, opLimbsNum);
+    if (target32[operandSize])
+      mpn_sub_n(target, target, mod, opLimbsNum);
+  }
+}
+
 void multiplyBenchmark(cl_context context,
                        cl_command_queue queue,
-                       cl_kernel *kernels,
+                       cl_program program,
                        unsigned groupsNum,                       
-                       unsigned mulOperandSize,
+                       unsigned operand1Size,
+                       unsigned operand2Size,
                        uint32_t elementsNum,
-                       bool isSquaring)
+                       AlgorithmIdTy algoId,
+                       TestTypeTy testType)
 {
-  unsigned gmpOpSize = mulOperandSize + (mulOperandSize%2);
-  unsigned limbsNum = elementsNum*gmpOpSize;
+  char kernelNameBuffer[256] = "unknown";
+  if (algoId == aidSquare)
+    snprintf(kernelNameBuffer, sizeof(kernelNameBuffer), "%sBenchmark%u%c", algorithmName(algoId), operand1Size*32, kernelSuffix(testType));
+  else if (algoId == aidMultiply)
+    snprintf(kernelNameBuffer, sizeof(kernelNameBuffer), "%sBenchmark%uto%u%c", algorithmName(algoId), operand1Size*32, operand2Size*32, kernelSuffix(testType));
+  cl_kernel kernel = findKernelOrDie(program, kernelNameBuffer);
+
+  unsigned resultSize = (algoId == aidSquare) ? 2*operand1Size : operand1Size+operand2Size;
+  unsigned op1MemSize = operand1Size + (operand1Size%2);
+  unsigned op2MemSize = operand2Size + (operand2Size%2);
+  unsigned resultMemSize = (algoId == aidSquare) ? 2*op1MemSize : op1MemSize+op2MemSize;
+
   clBuffer<uint32_t> m1;
   clBuffer<uint32_t> m2;
   clBuffer<uint32_t> mR;
   clBuffer<uint32_t> cpuR;
-  
-  OCL(m1.init(context, limbsNum, CL_MEM_READ_WRITE));
-  OCL(m2.init(context, limbsNum, CL_MEM_READ_WRITE));
-  OCL(mR.init(context, limbsNum*2, CL_MEM_READ_WRITE));
-  OCL(cpuR.init(context, limbsNum*2, CL_MEM_READ_WRITE));
 
-  memset(&m1.get(0), 0, limbsNum*sizeof(uint32_t));
-  memset(&m2.get(0), 0, limbsNum*sizeof(uint32_t));
-  memset(&mR.get(0), 0, 2*limbsNum*sizeof(uint32_t));
-  memset(&cpuR.get(0), 0, 2*limbsNum*sizeof(uint32_t));  
+  {
+    unsigned op1LimbsNum = elementsNum*op1MemSize;
+    unsigned op2LimbsNum = elementsNum*op2MemSize;
+    unsigned resultLimbsNum = elementsNum*resultMemSize;
+    OCL(m1.init(context, op1LimbsNum, CL_MEM_READ_WRITE));
+    if (operand2Size)
+      OCL(m2.init(context, op2LimbsNum, CL_MEM_READ_WRITE));
+    OCL(mR.init(context, resultLimbsNum, CL_MEM_READ_WRITE));
+    OCL(cpuR.init(context, resultLimbsNum, CL_MEM_READ_WRITE));
+    memset(&m1.get(0), 0, op1LimbsNum*sizeof(uint32_t));
+    memset(&m2.get(0), 0, op2LimbsNum*sizeof(uint32_t));
+    memset(&mR.get(0), 0, resultLimbsNum*sizeof(uint32_t));
+    memset(&cpuR.get(0), 0, resultLimbsNum*sizeof(uint32_t));
+  }
+
   for (unsigned i = 0; i < elementsNum; i++) {
-    for (unsigned j = 0; j < mulOperandSize; j++) {
-      m1[i*gmpOpSize + j] = rand32();
-      m2[i*gmpOpSize + j] = rand32();
-    }
+    for (unsigned j = 0; j < operand1Size; j++)
+      m1[i*op1MemSize + j] = rand32();
+    for (unsigned j = 0; j < operand2Size; j++)
+      m2[i*op2MemSize + j] = rand32();
   }
 
   OCL(m1.copyToDevice(queue));
-  OCL(m2.copyToDevice(queue));
+  if (operand2Size)
+    OCL(m2.copyToDevice(queue));
 
-  cl_kernel kernel;
-  if (isSquaring) {
-    if (mulOperandSize == 320/32) {
-      kernel = kernels[CLKernelSquareBenchmark320];
-    } else if (mulOperandSize == 352/32) {
-      kernel = kernels[CLKernelSquareBenchmark352];
-    } else {
-      LOG_F(ERROR, "Can't square %u-size operands on OpenCL device", mulOperandSize*32);
-      return;
-    }
-  } else {
-    if (mulOperandSize == 320/32) {
-      kernel = kernels[CLKernelMultiplyBenchmark320];
-    } else if (mulOperandSize == 352/32) {
-      kernel = kernels[CLKernelMultiplyBenchmark352];
-    } else {
-      LOG_F(ERROR, "Can't multiply %u-size operands on OpenCL device", mulOperandSize*32);
-      return;
-    }
-  }
-
-  
-  if (isSquaring) {
+  if (algoId == aidSquare) {
     clSetKernelArg(kernel, 0, sizeof(cl_mem), &m1.DeviceData);
     clSetKernelArg(kernel, 1, sizeof(cl_mem), &mR.DeviceData);
     clSetKernelArg(kernel, 2, sizeof(elementsNum), &elementsNum);
@@ -247,16 +342,6 @@ void multiplyBenchmark(cl_context context,
     clSetKernelArg(kernel, 1, sizeof(cl_mem), &m2.DeviceData);
     clSetKernelArg(kernel, 2, sizeof(cl_mem), &mR.DeviceData);
     clSetKernelArg(kernel, 3, sizeof(elementsNum), &elementsNum);
-  }
-  
-  std::unique_ptr<mpz_class[]> cpuM1(new mpz_class[elementsNum]);
-  std::unique_ptr<mpz_class[]> cpuM2(new mpz_class[elementsNum]);
-  std::unique_ptr<mpz_class[]> cpuResult(new mpz_class[elementsNum]);
-  
-  for (unsigned i = 0; i < elementsNum; i++) {
-    mpz_import(cpuM1[i].get_mpz_t(), mulOperandSize, -1, 4, 0, 0, &m1[i*gmpOpSize]);
-    mpz_import(cpuM2[i].get_mpz_t(), mulOperandSize, -1, 4, 0, 0, &m2[i*gmpOpSize]);
-    mpz_import(cpuResult[i].get_mpz_t(), mulOperandSize*2, -1, 4, 0, 0, &mR[i*mulOperandSize*2]);
   }
 
   clFinish(queue);
@@ -286,27 +371,29 @@ void multiplyBenchmark(cl_context context,
     clReleaseEvent(event);
   }
   
+  clFinish(queue);
   auto gpuEnd = std::chrono::steady_clock::now();  
-  
-  if (isSquaring) {
+  unsigned op1LimbsNum = op1MemSize*sizeof(uint32_t)/sizeof(mp_limb_t);
+  unsigned op2LimbsNum = op2MemSize*sizeof(uint32_t)/sizeof(mp_limb_t);
+  if (algoId == aidSquare) {
     for (unsigned i = 0; i < elementsNum; i++) {
-      unsigned gmpLimbsNum = cpuM1[i].get_mpz_t()->_mp_size;
-      mp_limb_t *Operand1 = cpuM1[i].get_mpz_t()->_mp_d;
-      uint32_t *target = &cpuR[i*mulOperandSize*2];
-      for (unsigned j = 0; j < MulOpsNum; j++) {
-        mpn_sqr((mp_limb_t*)target, Operand1, gmpLimbsNum);
-        memcpy(Operand1, target+mulOperandSize, mulOperandSize*sizeof(uint32_t));
+      mp_limb_t *Operand1 = (mp_limb_t*)&m1[i*op1MemSize]; //cpuM1[i].get_mpz_t()->_mp_d;
+      mp_limb_t *target = (mp_limb_t*)&cpuR[i*resultMemSize];
+      uint32_t *target32 = reinterpret_cast<uint32_t*>(target);
+      for (unsigned j = 0; j < (testType == ttPerformanceTest ? MulOpsNum : 1); j++) {
+        mpn_sqr(target, Operand1, op1LimbsNum);
+        memcpy(Operand1, target32+operand1Size, op1LimbsNum*sizeof(mp_limb_t));
       }
     }
   } else {
     for (unsigned i = 0; i < elementsNum; i++) {
-      unsigned gmpLimbsNum = cpuM1[i].get_mpz_t()->_mp_size;
-      mp_limb_t *Operand1 = cpuM1[i].get_mpz_t()->_mp_d;
-      mp_limb_t *Operand2 = cpuM2[i].get_mpz_t()->_mp_d;
-      uint32_t *target = &cpuR[i*mulOperandSize*2];
-      for (unsigned j = 0; j < MulOpsNum; j++) {
-        mpn_mul_n((mp_limb_t*)target, Operand1, Operand2, gmpLimbsNum);
-        memcpy(Operand1, target+mulOperandSize, mulOperandSize*sizeof(uint32_t));
+      mp_limb_t *Operand1 = (mp_limb_t*)&m1[i*op1MemSize];
+      mp_limb_t *Operand2 = (mp_limb_t*)&m2[i*op2MemSize];
+      mp_limb_t *target = (mp_limb_t*)&cpuR[i*resultMemSize];
+      uint32_t *target32 = reinterpret_cast<uint32_t*>(target);
+      for (unsigned j = 0; j < (testType == ttPerformanceTest ? MulOpsNum : 1); j++) {
+        mpn_mul(target, Operand1, op1LimbsNum, Operand2, op2LimbsNum);
+        memcpy(Operand1, target32+operand2Size, op1LimbsNum*sizeof(mp_limb_t));
       }
     }
   }
@@ -314,36 +401,504 @@ void multiplyBenchmark(cl_context context,
   OCL(mR.copyToHost(queue));
   clFinish(queue);
 
+  bool testIsOk = true;
   for (unsigned i = 0; i < elementsNum; i++) {
-    if (memcmp(&mR[i*mulOperandSize*2], &cpuR[i*mulOperandSize*2], 4*mulOperandSize*2) != 0) {
-      LOG_F(ERROR, "element index: %u", i);
-      LOG_F(ERROR, "gmp: ");
-      for (unsigned j = 0; j < mulOperandSize*2; j++)
-        LOG_F(ERROR, "%08X ", cpuR[i*mulOperandSize*2 + j]);
-      LOG_F(ERROR, "gpu: ");
-      for (unsigned j = 0; j < mulOperandSize*2; j++)
-        LOG_F(ERROR, "%08X ", mR[i*mulOperandSize*2 + j]);
-      LOG_F(ERROR, "");
-      LOG_F(ERROR, "results differ!");
+    if (memcmp(&mR[i*resultMemSize], &cpuR[i*resultMemSize], 4*resultSize) != 0) {
+      logPrint("operand1", &m1[i*op1MemSize], operand1Size);
+      if (algoId == aidMultiply)
+        logPrint("operand2", &m2[i*op2MemSize], operand2Size);
+      logPrint("cpu", &cpuR[i*resultMemSize], resultSize);
+      logPrint("gpu", &mR[i*resultMemSize], resultSize);
+      LOG_F(ERROR, "results differ at element %u!", i);
+      testIsOk = false;
       break;
     }
   }
 
-  double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;
-  double opsNum = ((elementsNum*MulOpsNum) / 1000000.0) / gpuTime * 1000.0;
-  
-  LOG_F(INFO, "%s %u bits: %.3lfms (%.3lfM ops/sec)", (isSquaring ? "square" : "multiply"), mulOperandSize*32, gpuTime, opsNum);
+  if (testType == ttPerformanceTest) {
+    double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;
+    double opsNum = ((elementsNum*MulOpsNum) / 1000000.0) / gpuTime * 1000.0;
+    LOG_F(INFO, "%s: %.3lfms (%.3lfM ops/sec)", kernelNameBuffer, gpuTime, opsNum);
+  } else {
+    LOG_F(INFO, "%s: %s", kernelNameBuffer, testIsOk ? "OK" : "FAIL");
+  }
 }
 
+void monMulBenchmark(cl_context context,
+                     cl_command_queue queue,
+                     cl_program program,
+                     unsigned groupsNum,
+                     unsigned operandSize,
+                     uint32_t elementsNum,
+                     AlgorithmIdTy algoId,
+                     TestTypeTy testType)
+{
+  char kernelNameBuffer[256] = "unknown";
+  snprintf(kernelNameBuffer, sizeof(kernelNameBuffer), "%sBenchmark%u%c", algorithmName(algoId), operandSize*32, kernelSuffix(testType));
+  cl_kernel kernel = findKernelOrDie(program, kernelNameBuffer);
+
+  unsigned resultSize = operandSize;
+  unsigned opMemSize = operandSize + (operandSize%2);
+  unsigned resultMemSize = opMemSize;
+
+  clBuffer<uint32_t> m1;
+  clBuffer<uint32_t> m2;
+  clBuffer<uint32_t> mmod;
+  clBuffer<uint32_t> mR;
+  clBuffer<uint32_t> cpuR;
+
+  {
+    unsigned opLimbsNum = elementsNum*opMemSize;
+    unsigned resultLimbsNum = opLimbsNum;
+    OCL(m1.init(context, opLimbsNum, CL_MEM_READ_WRITE));
+    if (algoId == aidMontgomeryMultiply)
+      OCL(m2.init(context, opLimbsNum, CL_MEM_READ_WRITE));
+    OCL(mmod.init(context, opLimbsNum, CL_MEM_READ_WRITE));
+    OCL(mR.init(context, resultLimbsNum, CL_MEM_READ_WRITE));
+    OCL(cpuR.init(context, resultLimbsNum, CL_MEM_READ_WRITE));
+    memset(&m1.get(0), 0, opLimbsNum*sizeof(uint32_t));
+    if (algoId == aidMontgomeryMultiply)
+      memset(&m2.get(0), 0, opLimbsNum*sizeof(uint32_t));
+    memset(&mmod.get(0), 0, opLimbsNum*sizeof(uint32_t));
+    memset(&mR.get(0), 0, resultLimbsNum*sizeof(uint32_t));
+    memset(&cpuR.get(0), 0, resultLimbsNum*sizeof(uint32_t));
+  }
+
+  for (unsigned i = 0; i < elementsNum; i++) {
+    for (unsigned j = 0; j < operandSize; j++)
+      m1[i*opMemSize + j] = rand32();
+    if (algoId == aidMontgomeryMultiply) {
+      for (unsigned j = 0; j < operandSize; j++)
+        m2[i*opMemSize + j] = rand32();
+    }
+    for (unsigned j = 0; j < operandSize; j++)
+      mmod[i*opMemSize + j] = rand32();
+    mmod[i*opMemSize + 0] |= 1;
+  }
+
+  OCL(m1.copyToDevice(queue));
+  if (algoId == aidMontgomeryMultiply)
+    OCL(m2.copyToDevice(queue));
+  OCL(mmod.copyToDevice(queue));
+
+  if (algoId == aidMontgomerySquare) {
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), &m1.DeviceData);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), &mmod.DeviceData);
+    clSetKernelArg(kernel, 2, sizeof(cl_mem), &mR.DeviceData);
+    clSetKernelArg(kernel, 3, sizeof(elementsNum), &elementsNum);
+  } else if (algoId == aidMontgomeryMultiply) {
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), &m1.DeviceData);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), &m2.DeviceData);
+    clSetKernelArg(kernel, 2, sizeof(cl_mem), &mmod.DeviceData);
+    clSetKernelArg(kernel, 3, sizeof(cl_mem), &mR.DeviceData);
+    clSetKernelArg(kernel, 4, sizeof(elementsNum), &elementsNum);
+  } else if (algoId == aidMontgomeryRedchalf) {
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), &m1.DeviceData);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), &mmod.DeviceData);
+    clSetKernelArg(kernel, 2, sizeof(cl_mem), &mR.DeviceData);
+    clSetKernelArg(kernel, 3, sizeof(elementsNum), &elementsNum);
+  }
+
+  clFinish(queue);
+  auto gpuBegin = std::chrono::steady_clock::now();
+
+  {
+    size_t globalThreads[1] = { groupsNum*GroupSize };
+    size_t localThreads[1] = { GroupSize };
+    cl_event event;
+    cl_int result;
+    if ((result = clEnqueueNDRangeKernel(queue,
+                                         kernel,
+                                         1,
+                                         0,
+                                         globalThreads,
+                                         localThreads,
+                                         0, 0, &event)) != CL_SUCCESS) {
+      LOG_F(ERROR, "clEnqueueNDRangeKernel error!");
+      return;
+    }
+
+    if (clWaitForEvents(1, &event) != CL_SUCCESS) {
+      LOG_F(ERROR, "clWaitForEvents error!");
+      return;
+    }
+
+    clReleaseEvent(event);
+  }
+
+  auto gpuEnd = std::chrono::steady_clock::now();
+
+  unsigned opLimbsNum = opMemSize*sizeof(uint32_t)/sizeof(mp_limb_t);
+  std::unique_ptr<mp_limb_t[]> prod(new mp_limb_t[2*opLimbsNum]);
+  std::unique_ptr<mp_limb_t[]> add1(new mp_limb_t[2*opLimbsNum]);
+  std::unique_ptr<mp_limb_t[]> add2(new mp_limb_t[2*opLimbsNum]);
+
+  if (algoId == aidMontgomerySquare) {
+    for (unsigned i = 0; i < elementsNum; i++) {
+      mp_limb_t *op = (mp_limb_t*)&m1[i*opMemSize];
+      mp_limb_t *mod = (mp_limb_t*)&mmod[i*opMemSize];
+      mp_limb_t *target = (mp_limb_t*)&cpuR[i*resultMemSize];
+
+      memset(prod.get(), 0, sizeof(mp_limb_t)*2*opLimbsNum);
+      memset(add1.get(), 0, sizeof(mp_limb_t)*2*opLimbsNum);
+      memset(add2.get(), 0, sizeof(mp_limb_t)*2*opLimbsNum);
+
+      // perform squaring
+      mpn_sqr(prod.get(), op, opLimbsNum);
+
+      // calculate inverted limb for mmod[0]
+      mp_limb_t invm = invert_limb(mod[0]);
+
+      // make Montgomery reduce
+      reduce(target, mod, prod.get(), add1.get(), add2.get(), invm, operandSize, opLimbsNum);
+    }
+  } else if (algoId == aidMontgomeryMultiply) {
+    for (unsigned i = 0; i < elementsNum; i++) {
+      mp_limb_t *op1 = (mp_limb_t*)&m1[i*opMemSize];
+      mp_limb_t *op2 = (mp_limb_t*)&m2[i*opMemSize];
+      mp_limb_t *mod = (mp_limb_t*)&mmod[i*opMemSize];
+      mp_limb_t *target = (mp_limb_t*)&cpuR[i*resultMemSize];
+
+      memset(prod.get(), 0, sizeof(mp_limb_t)*2*opLimbsNum);
+      memset(add1.get(), 0, sizeof(mp_limb_t)*2*opLimbsNum);
+      memset(add2.get(), 0, sizeof(mp_limb_t)*2*opLimbsNum);
+
+      // perform multiplication
+      mpn_mul_n(prod.get(), op1, op2, opLimbsNum);
+
+      // calculate inverted limb for mmod[0]
+      mp_limb_t invm = invert_limb(mod[0]);
+
+      // make Montgomery reduce
+      reduce(target, mod, prod.get(), add1.get(), add2.get(), invm, operandSize, opLimbsNum);
+    }
+  } else if (algoId == aidMontgomeryRedchalf) {
+    for (unsigned i = 0; i < elementsNum; i++) {
+      mp_limb_t *op = (mp_limb_t*)&m1[i*opMemSize];
+      mp_limb_t *mod = (mp_limb_t*)&mmod[i*opMemSize];
+      mp_limb_t *target = (mp_limb_t*)&cpuR[i*resultMemSize];
+
+      memset(prod.get(), 0, sizeof(mp_limb_t)*2*opLimbsNum);
+      memset(add1.get(), 0, sizeof(mp_limb_t)*2*opLimbsNum);
+      memset(add2.get(), 0, sizeof(mp_limb_t)*2*opLimbsNum);
+
+      memcpy(prod.get(), op, sizeof(mp_limb_t)*opLimbsNum);
+
+      // calculate inverted limb for mmod[0]
+      mp_limb_t invm = invert_limb(mod[0]);
+
+      // make Montgomery reduce
+      reduce(target, mod, prod.get(), add1.get(), add2.get(), invm, operandSize, opLimbsNum);
+    }
+  }
+
+  OCL(mR.copyToHost(queue));
+  clFinish(queue);
+
+  bool testIsOk = true;
+  for (unsigned i = 0; i < elementsNum; i++) {
+    if (memcmp(&mR[i*resultMemSize], &cpuR[i*resultMemSize], 4*resultSize) != 0) {
+      logPrint("operand1", &m1[i*opMemSize], operandSize);
+      if (algoId == aidMontgomeryMultiply)
+        logPrint("operand2", &m2[i*opMemSize], operandSize);
+      logPrint("modulo", &mmod[i*opMemSize], operandSize);
+      logPrint("cpu", &cpuR[i*resultMemSize], resultSize);
+      logPrint("gpu", &mR[i*resultMemSize], resultSize);
+      LOG_F(ERROR, "results differ at index %u!", i);
+      testIsOk = false;
+      break;
+    }
+  }
+
+  if (testType == ttPerformanceTest) {
+    double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;
+    double opsNum = ((elementsNum*MulOpsNum) / 1000000.0) / gpuTime * 1000.0;
+    LOG_F(INFO, "%s %u bits: %.3lfms (%.3lfM ops/sec)", kernelNameBuffer, gpuTime, opsNum);
+  } else {
+    LOG_F(INFO, "%s bits: %s", kernelNameBuffer, testIsOk ? "OK" : "FAIL");
+  }
+}
+
+void redcifyBenchmark(cl_context context,
+                      cl_command_queue queue,
+                      cl_program program,
+                      unsigned groupsNum,
+                      unsigned operandSize,
+                      uint32_t elementsNum,
+                      AlgorithmIdTy algoId,
+                      TestTypeTy testType)
+{
+  char kernelNameBuffer[256] = "unknown";
+  snprintf(kernelNameBuffer, sizeof(kernelNameBuffer), "%sBenchmark%u%c", algorithmName(algoId), operandSize*32, kernelSuffix(testType));
+  cl_kernel kernel = findKernelOrDie(program, kernelNameBuffer);
+
+  unsigned resultSize = operandSize;
+  unsigned opMemSize = operandSize + (operandSize%2);
+  unsigned resultMemSize = opMemSize;
+
+  clBuffer<uint32_t> mquotient;
+  clBuffer<uint32_t> mmod;
+  clBuffer<uint32_t> mR;
+  clBuffer<uint32_t> cpuR;
+
+  {
+    OCL(mquotient.init(context, elementsNum*256/32, CL_MEM_READ_WRITE));
+    OCL(mmod.init(context, elementsNum*opMemSize, CL_MEM_READ_WRITE));
+    OCL(mR.init(context, elementsNum*resultMemSize, CL_MEM_READ_WRITE));
+    OCL(cpuR.init(context, elementsNum*resultMemSize, CL_MEM_READ_WRITE));
+    memset(&mquotient.get(0), 0, sizeof(uint32_t)*mquotient.Size);
+    memset(&mmod.get(0), 0, sizeof(uint32_t)*mmod.Size);
+    memset(&mR.get(0), 0, sizeof(uint32_t)*mR.Size);
+    memset(&cpuR.get(0), 0, sizeof(uint32_t)*cpuR.Size);
+  }
+
+  for (unsigned i = 0; i < elementsNum; i++) {
+    for (unsigned j = 0; j < 8; j++)
+      mquotient[i*8 + j] = rand32();
+    for (unsigned j = 0; j < operandSize; j++)
+      mmod[i*opMemSize + j] = rand32();
+    mmod[i*opMemSize + 0] |= 1;
+  }
+
+  OCL(mquotient.copyToDevice(queue));
+  OCL(mmod.copyToDevice(queue));
+
+  clSetKernelArg(kernel, 0, sizeof(cl_mem), &mquotient.DeviceData);
+  clSetKernelArg(kernel, 1, sizeof(cl_mem), &mmod.DeviceData);
+  clSetKernelArg(kernel, 2, sizeof(cl_mem), &mR.DeviceData);
+  clSetKernelArg(kernel, 3, sizeof(elementsNum), &elementsNum);
+
+  clFinish(queue);
+  auto gpuBegin = std::chrono::steady_clock::now();
+
+  {
+    size_t globalThreads[1] = { groupsNum*GroupSize };
+    size_t localThreads[1] = { GroupSize };
+    cl_event event;
+    cl_int result;
+    if ((result = clEnqueueNDRangeKernel(queue,
+                                         kernel,
+                                         1,
+                                         0,
+                                         globalThreads,
+                                         localThreads,
+                                         0, 0, &event)) != CL_SUCCESS) {
+      LOG_F(ERROR, "clEnqueueNDRangeKernel error!");
+      return;
+    }
+
+    if (clWaitForEvents(1, &event) != CL_SUCCESS) {
+      LOG_F(ERROR, "clWaitForEvents error!");
+      return;
+    }
+
+    clReleaseEvent(event);
+  }
+
+  auto gpuEnd = std::chrono::steady_clock::now();
+
+  unsigned opLimbsNum = opMemSize*sizeof(uint32_t)/sizeof(mp_limb_t);
+  constexpr unsigned quotientLimbsNum = (256/8)/sizeof(mp_limb_t);
+  std::unique_ptr<mp_limb_t[]> product(new mp_limb_t[quotientLimbsNum + opLimbsNum]);
+  mp_limb_t newq[quotientLimbsNum];
+
+  for (unsigned i = 0; i < elementsNum; i++) {
+    mp_limb_t *quotient = (mp_limb_t*)&mquotient[i*8];
+    mp_limb_t *mod = (mp_limb_t*)&mmod[i*opMemSize];
+    mp_limb_t *target = (mp_limb_t*)&cpuR[i*resultMemSize];
+
+    memset(newq, 0, sizeof(newq));
+
+    unsigned N = i % (1 << WindowSize);
+    unsigned shiftCount = (1 << WindowSize) - N;
+    unsigned limbOffset = shiftCount / (8*sizeof(mp_limb_t));
+
+    memcpy(newq, quotient+limbOffset, sizeof(mp_limb_t)*(quotientLimbsNum - limbOffset));
+    if (shiftCount % (8*sizeof(mp_limb_t)))
+      mpn_rshift(newq, newq, quotientLimbsNum, shiftCount % (8*sizeof(mp_limb_t)));
+
+    unsigned multiplierSizeInBytes = (64 + (1 << WindowSize)) / 8;
+    memset(((uint8_t*)newq) + multiplierSizeInBytes, 0, 256/8 - multiplierSizeInBytes);
+
+
+    mpn_mul(product.get(), mod, opLimbsNum, newq, quotientLimbsNum);
+    for (unsigned i = 0; i < opLimbsNum; i++)
+      target[i] = ~product[i];
+    target[0]++;
+  }
+
+  OCL(mR.copyToHost(queue));
+  clFinish(queue);
+
+  bool testIsOk = true;
+  for (unsigned i = 0; i < elementsNum; i++) {
+    if (memcmp(&mR[i*resultMemSize], &cpuR[i*resultMemSize], 4*resultSize) != 0) {
+      LOG_F(ERROR, "element index: %u", i);
+      LOG_F(ERROR, "gmp: ");
+      for (unsigned j = 0; j < resultSize; j++)
+        LOG_F(ERROR, "%08X ", cpuR[i*resultMemSize + j]);
+      LOG_F(ERROR, "gpu: ");
+      for (unsigned j = 0; j < resultSize; j++)
+        LOG_F(ERROR, "%08X ", mR[i*resultMemSize + j]);
+      LOG_F(ERROR, "");
+      LOG_F(ERROR, "results differ!");
+      testIsOk = false;
+      break;
+    }
+  }
+
+  if (testType == ttPerformanceTest) {
+    double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;
+    double opsNum = ((elementsNum*MulOpsNum) / 1000000.0) / gpuTime * 1000.0;
+    LOG_F(INFO, "%s: %.3lfms (%.3lfM ops/sec)", kernelNameBuffer, gpuTime, opsNum);
+  } else {
+    LOG_F(INFO, "%s bits: %s", kernelNameBuffer, testIsOk ? "OK" : "FAIL");
+  }
+}
+
+void divideBenchmark(cl_context context,
+                     cl_command_queue queue,
+                     cl_program program,
+                     unsigned groupsNum,
+                     unsigned divisorSize,
+                     uint32_t elementsNum,
+                     TestTypeTy testType)
+{
+    char kernelNameBuffer[256] = "unknown";
+    snprintf(kernelNameBuffer, sizeof(kernelNameBuffer), "divideBenchmark%uto%u%c", divisorSize*32+160, divisorSize*32, kernelSuffix(testType));
+    cl_kernel kernel = findKernelOrDie(program, kernelNameBuffer);
+
+    unsigned opMemSize = divisorSize + (divisorSize%2);
+    unsigned quotientSize = 256/32;
+
+    clBuffer<uint32_t> mdivisor;
+    clBuffer<uint32_t> mquotient;
+    clBuffer<uint32_t> mdivisorBits;
+    std::unique_ptr<uint32_t[]> mcpuQuotient(new uint32_t[elementsNum*quotientSize]);
+    std::unique_ptr<uint32_t[]> mcpuDivisorBits(new uint32_t[elementsNum]);
+
+    OCL(mdivisor.init(context, elementsNum*opMemSize, CL_MEM_READ_WRITE));
+    OCL(mquotient.init(context, elementsNum*quotientSize, CL_MEM_READ_WRITE));
+    OCL(mdivisorBits.init(context, elementsNum*4, CL_MEM_READ_WRITE));
+
+    memset(&mdivisor.get(0), 0, sizeof(uint32_t)*elementsNum*opMemSize);
+    memset(&mquotient.get(0), 0, sizeof(uint32_t)*elementsNum*quotientSize);
+    memset(&mdivisorBits.get(0), 0, sizeof(uint32_t)*elementsNum);
+    memset(mcpuQuotient.get(), 0, sizeof(uint32_t)*elementsNum*quotientSize);
+    memset(mcpuDivisorBits.get(), 0, sizeof(uint32_t)*elementsNum);
+
+    for (unsigned i = 0; i < elementsNum; i++) {
+      for (unsigned j = 0; j < (divisorSize - rand()%4); j++)
+        mdivisor[i*opMemSize + j] = rand32();
+    }
+
+    OCL(mdivisor.copyToDevice(queue));
+
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), &mdivisor.DeviceData);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), &mquotient.DeviceData);
+    clSetKernelArg(kernel, 2, sizeof(cl_mem), &mdivisorBits.DeviceData);
+    clSetKernelArg(kernel, 3, sizeof(elementsNum), &elementsNum);
+
+    clFinish(queue);
+    auto gpuBegin = std::chrono::steady_clock::now();
+
+    {
+      size_t globalThreads[1] = { groupsNum*GroupSize };
+      size_t localThreads[1] = { GroupSize };
+      cl_event event;
+      cl_int result;
+      if ((result = clEnqueueNDRangeKernel(queue,
+                                           kernel,
+                                           1,
+                                           0,
+                                           globalThreads,
+                                           localThreads,
+                                           0, 0, &event)) != CL_SUCCESS) {
+        LOG_F(ERROR, "clEnqueueNDRangeKernel error!");
+        return;
+      }
+
+      if (clWaitForEvents(1, &event) != CL_SUCCESS) {
+        LOG_F(ERROR, "clWaitForEvents error!");
+        return;
+      }
+
+      clReleaseEvent(event);
+    }
+
+    auto gpuEnd = std::chrono::steady_clock::now();
+
+    unsigned dividendSize = divisorSize+5;
+    unsigned dividendLimbs = dividendSize + (dividendSize % 2);
+    unsigned maxDivisorLimbs = opMemSize*4/sizeof(mp_limb_t);
+    std::unique_ptr<mp_limb_t[]> quotientBuffer(new mp_limb_t[dividendLimbs]);
+    std::unique_ptr<mp_limb_t[]> dividend(new mp_limb_t[dividendLimbs]);
+    std::unique_ptr<mp_limb_t[]> remainder(new mp_limb_t[dividendLimbs]);
+    uint32_t *dividendp32 = reinterpret_cast<uint32_t*>(dividend.get());
+
+    // CPU check
+    for (unsigned i = 0; i < elementsNum; i++) {
+      mp_limb_t *divisor = (mp_limb_t*)&mdivisor[i*opMemSize];
+      mp_limb_t *target = (mp_limb_t*)&mcpuQuotient[i*quotientSize];
+      unsigned divisorLimbs = 0;
+      for (unsigned j = 0; j < maxDivisorLimbs; j++) {
+        if (divisor[j])
+          divisorLimbs++;
+        else
+          break;
+      }
+
+      memset(quotientBuffer.get(), 0, sizeof(mp_limb_t)*dividendLimbs);
+      memset(dividend.get(), 0, sizeof(mp_limb_t)*dividendLimbs);
+      dividendp32[dividendSize-1] = 0x1;
+      mpn_tdiv_qr(quotientBuffer.get(), remainder.get(), 0, dividend.get(), dividendLimbs, divisor, divisorLimbs);
+      memcpy(target, quotientBuffer.get(), quotientSize*4);
+
+      mcpuDivisorBits[i] = mpn_sizeinbase(divisor, divisorLimbs, 2);
+    }
+
+    OCL(mquotient.copyToHost(queue));
+    OCL(mdivisorBits.copyToHost(queue));
+    clFinish(queue);
+
+    bool testIsOk = true;
+    for (unsigned i = 0; i < elementsNum; i++) {
+      if (memcmp(&mquotient[i*quotientSize], &mcpuQuotient[i*quotientSize], 4*quotientSize) != 0 ||
+          mdivisorBits[i] != mcpuDivisorBits[i]) {
+        logPrint("divisor", &mdivisor[i*opMemSize], divisorSize);
+        logPrint("cpu", &mcpuQuotient[i*quotientSize], 8);
+        logPrint("gpu", &mquotient[i*quotientSize], 8);
+        LOG_F(ERROR, "cpu size: %u", mcpuDivisorBits[i]);
+        LOG_F(ERROR, "gpu size: %u", mdivisorBits[i]);
+        LOG_F(ERROR, "results differ at element %u!", i);
+        testIsOk = false;
+        break;
+      }
+    }
+
+    if (testType == ttPerformanceTest) {
+      double gpuTime = std::chrono::duration_cast<std::chrono::microseconds>(gpuEnd-gpuBegin).count() / 1000.0;
+      double opsNum = ((elementsNum*MulOpsNum) / 1000000.0) / gpuTime * 1000.0;
+      LOG_F(INFO, "%s %u bits: %.3lfms (%.3lfM ops/sec)", kernelNameBuffer, gpuTime, opsNum);
+    } else {
+      LOG_F(INFO, "%s bits: %s", kernelNameBuffer, testIsOk ? "OK" : "FAIL");
+    }
+}
 
 void fermatTestBenchmark(cl_context context,
                          cl_command_queue queue,
-                         cl_kernel *kernels,
+                         cl_program program,
                          unsigned groupsNum, 
                          unsigned operandSize,
                          unsigned elementsNum)
 { 
-  unsigned numberLimbsNum = elementsNum*operandSize;
+  char kernelNameBuffer[256];
+  snprintf(kernelNameBuffer, sizeof(kernelNameBuffer), "%sBenchmark%u", "fermatTest", operandSize*32);
+  cl_kernel kernel = findKernelOrDie(program, kernelNameBuffer);
+
+  unsigned opMemSize = operandSize + (operandSize%2);
+  unsigned numberLimbsNum = elementsNum*opMemSize;
+
   
   clBuffer<uint32_t> numbers;
   clBuffer<uint32_t> gpuResults;
@@ -355,27 +910,17 @@ void fermatTestBenchmark(cl_context context,
   
   for (unsigned i = 0; i < elementsNum; i++) {
     for (unsigned j = 0; j < operandSize; j++)
-      numbers[i*operandSize + j] = (j == operandSize-1) ? (1 << (i % 32)) : rand32();
+      numbers[i*opMemSize + j] = (j == operandSize-1) ? (1 << (i % 32)) : rand32();
     if (rand() % 16 == 0) {
-      numbers[i*operandSize + operandSize-2] = numbers[i*operandSize + operandSize-1];
-      numbers[i*operandSize + operandSize-1] = 0;
+      numbers[i*opMemSize + operandSize-2] = numbers[i*opMemSize + operandSize-1];
+      numbers[i*opMemSize + operandSize-1] = 0;
     }
-    numbers[i*operandSize] |= 0x1; 
+    numbers[i*opMemSize] |= 0x1;
   }
 
   OCL(numbers.copyToDevice(queue));
   OCL(gpuResults.copyToDevice(queue));
 
-  cl_kernel kernel;
-  if (operandSize == 320/32) {
-    kernel = kernels[CLKernelFermatTestBenchmark320];
-  } else if (operandSize == 352/32) {
-    kernel = kernels[CLKernelFermatTestBenchmark352];
-  } else {
-    LOG_F(ERROR, "Can't do Fermat test on %ubit operand", operandSize*32);
-    return;
-  }
-  
   clSetKernelArg(kernel, 0, sizeof(cl_mem), &numbers.DeviceData);
   clSetKernelArg(kernel, 1, sizeof(cl_mem), &gpuResults.DeviceData);
   clSetKernelArg(kernel, 2, sizeof(elementsNum), &elementsNum);
@@ -388,7 +933,7 @@ void fermatTestBenchmark(cl_context context,
   for (unsigned i = 0; i < elementsNum; i++) {
     mpz_init(cpuNumbersBuffer[i]);
     mpz_init(cpuResultsBuffer[i]);
-    mpz_import(cpuNumbersBuffer[i], operandSize, -1, 4, 0, 0, &numbers[i*operandSize]);
+    mpz_import(cpuNumbersBuffer[i], operandSize, -1, 4, 0, 0, &numbers[i*opMemSize]);
     mpz_import(cpuResultsBuffer[i], operandSize, -1, 4, 0, 0, &cpuResults[i*operandSize]);
   }
   
@@ -437,7 +982,7 @@ void fermatTestBenchmark(cl_context context,
   for (unsigned i = 0; i < elementsNum; i++) {
     size_t exportedLimbs;
     mpz_export(&cpuResults[i*operandSize], &exportedLimbs, -1, 4, 0, 0, cpuResultsBuffer[i]);
-    if (memcmp(&gpuResults[i*operandSize], &cpuResults[i*operandSize], 4*operandSize) != 0) {
+    if (memcmp(&gpuResults[i*opMemSize], &cpuResults[i*operandSize], 4*operandSize) != 0) {
       LOG_F(ERROR, "element index: %u", i);
       LOG_F(ERROR, "element data:");
       for (unsigned j = 0; j < operandSize; j++)
@@ -447,7 +992,7 @@ void fermatTestBenchmark(cl_context context,
         LOG_F(ERROR, "%08X ", cpuResults[i*operandSize + j]);
       LOG_F(ERROR, "gpu: ");
       for (unsigned j = 0; j < operandSize; j++)
-        LOG_F(ERROR, "%08X ", gpuResults[i*operandSize + j]);
+        LOG_F(ERROR, "%08X ", gpuResults[i*opMemSize + j]);
       LOG_F(ERROR, "results differ!");
       break;
     }
@@ -464,7 +1009,7 @@ void fermatTestBenchmark(cl_context context,
 
 void hashmodBenchmark(cl_context context,
                       cl_command_queue queue,
-                      cl_kernel *kernels,
+                      cl_program program,
                       unsigned defaultGroupSize,
                       unsigned groupsNum,
                       mpz_class *allPrimorials,
@@ -473,8 +1018,8 @@ void hashmodBenchmark(cl_context context,
   LOG_F(INFO, "*** hashmod benchmark ***");
   
   const unsigned iterationsNum = 64;
-  cl_kernel mHashMod = kernels[CLKernelHashMod];
-  
+  cl_kernel mHashMod = findKernelOrDie(program, "bhashmodUsePrecalc");
+
   PrimeMiner::search_t hashmod;
   PrimeMiner::block_t blockheader;
   
@@ -642,7 +1187,7 @@ void hashmodBenchmark(cl_context context,
 
 void sieveTestBenchmark(cl_context context,
                         cl_command_queue queue,
-                        cl_kernel *kernels,
+                        cl_program program,
                         unsigned defaultGroupSize,
                         unsigned groupsNum,
                         mpz_class *allPrimorial,
@@ -653,11 +1198,11 @@ void sieveTestBenchmark(cl_context context,
 {
   LOG_F(INFO, "*** sieve (%s) benchmark ***", checkCandidates ? "check" : "performance");
   
-  cl_kernel mHashMod = kernels[CLKernelHashMod];
-  cl_kernel mSieveSetup = kernels[CLKernelSieveSetup];
-  cl_kernel mSieve = kernels[CLKernelSieve];
-  cl_kernel mSieveSearch = kernels[CLKernelSieveSearch];
-  
+  cl_kernel mHashMod = findKernelOrDie(program, "bhashmodUsePrecalc");
+  cl_kernel mSieveSetup = findKernelOrDie(program, "setup_sieve");
+  cl_kernel mSieve = findKernelOrDie(program, "sieve");
+  cl_kernel mSieveSearch = findKernelOrDie(program, "s_sieve");
+
   PrimeMiner::search_t hashmod;
   PrimeMiner::block_t blockheader;
   lifoBuffer<PrimeMiner::hash_t> hashes(PW);
@@ -991,7 +1536,7 @@ void runBenchmarks(cl_context context,
                    unsigned depth,
                    unsigned defaultGroupSize)
 {
-  srand(12345);
+
   const unsigned mPrimorial = 13;
   char deviceName[128] = {0};
   cl_uint computeUnits;
@@ -1001,18 +1546,8 @@ void runBenchmarks(cl_context context,
   clGetDeviceInfo(deviceId, CL_DEVICE_NAME, sizeof(deviceName), deviceName, 0);
   clGetDeviceInfo(deviceId, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(computeUnits), &computeUnits, 0);
   LOG_F(INFO, "%s; %u compute units", deviceName, computeUnits);
-  
-  std::unique_ptr<cl_kernel[]> kernels(new cl_kernel[CLKernelsNum]);
-  for (unsigned i = 0; i < CLKernelsNum; i++) {
-    cl_int clResult;
-    kernels[i] = clCreateKernel(program, gOpenCLKernelNames[i], &clResult);
-    if (clResult != CL_SUCCESS) {
-      LOG_F(ERROR, " * Error: can't found kernel %s", gOpenCLKernelNames[i]);
-      return;
-    }
-  }
-  
-  cl_int error;  
+
+  cl_int error;
   cl_command_queue queue = clCreateCommandQueue(context, deviceId, 0, &error);
   if (!queue || error != CL_SUCCESS) {
     LOG_F(ERROR, " * Error: can't create command queue");
@@ -1042,19 +1577,41 @@ void runBenchmarks(cl_context context,
     }    
   }  
 
-  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, true);
+  srand(12345);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 96/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 128/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 192/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 96/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 128/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 192/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 0, 262144, aidSquare, ttUnitTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 640/32, 0, 262144, aidSquare, ttUnitTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 320/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 640/32, 640/32, 262144, aidMultiply, ttUnitTest);
+  monMulBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, aidMontgomerySquare, ttUnitTest);
+  monMulBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, aidMontgomeryMultiply, ttUnitTest);
+  monMulBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, aidMontgomeryRedchalf, ttUnitTest);
+  redcifyBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, aidRedcify, ttUnitTest);
+  monMulBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, aidMontgomerySquare, ttUnitTest);
+  monMulBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, aidMontgomeryMultiply, ttUnitTest);
+  monMulBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, aidMontgomeryRedchalf, ttUnitTest);
+  redcifyBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, aidRedcify, ttUnitTest);
+  divideBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, ttUnitTest);
+  divideBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, ttUnitTest);
 
-  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, true);
-  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 262144, false);
-  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 352/32, 262144, true);
-  multiplyBenchmark(context, queue, kernels.get(), computeUnits*4, 352/32, 262144, false);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 0, 262144, aidSquare, ttPerformanceTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 0, 262144, aidSquare, ttPerformanceTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 640/32, 0, 262144, aidSquare, ttPerformanceTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 320/32, 262144, aidMultiply, ttPerformanceTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 352/32, 262144, aidMultiply, ttPerformanceTest);
+  multiplyBenchmark(context, queue, program, computeUnits*4, 640/32, 640/32, 262144, aidMultiply, ttPerformanceTest);
 
-  fermatTestBenchmark(context, queue, kernels.get(), computeUnits*4, 320/32, 131072);
-  fermatTestBenchmark(context, queue, kernels.get(), computeUnits*4, 352/32, 131072);
+  fermatTestBenchmark(context, queue, program, computeUnits*4, 320/32, 131072);
+  fermatTestBenchmark(context, queue, program, computeUnits*4, 352/32, 131072);
 
-  hashmodBenchmark(context, queue, kernels.get(), defaultGroupSize, 0, allPrimorials, mPrimorial);
-  sieveTestBenchmark(context, queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
-  sieveTestBenchmark(context, queue, kernels.get(), defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);
+  hashmodBenchmark(context, queue, program, defaultGroupSize, 0, allPrimorials, mPrimorial);
+  sieveTestBenchmark(context, queue, program, defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
+  sieveTestBenchmark(context, queue, program, defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);
 
   clReleaseCommandQueue(queue);
 }

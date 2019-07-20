@@ -40,4 +40,19 @@ typedef struct {
 #define __AMDVEGA
 #endif
 
+#define MulOpsNum 512
+
+void sub(uint32_t *a, const uint32_t *b, int size)
+{
+  uint32_t A[2];
+  A[0] = a[0];
+  a[0] -= b[0];
+#pragma unroll
+  for (int i = 1; i < size; i++) {
+    A[1] = a[i];
+    a[i] -= b[i] + (a[i-1] > A[0]);
+    A[0] = A[1];
+  }
+}
+
 #endif //__CLCOMMON_H_

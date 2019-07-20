@@ -5,6 +5,7 @@
  *      Author: mad
  */
 
+#include "clcommon.h"
 #include "procs.h"
 #include "config.h"
 
@@ -147,7 +148,7 @@ void FermatTest352(const uint32_t *restrict e, uint32_t *restrict redcl)
     int size = min(remaining, windowSize);
     uint32_t index = getFromBitfield(e, remaining-size, size);
     
-    uint4 m[3];
+    uint32_t m[12];
     for (unsigned i = 0; i < size; i++)
       monSqr352(redcl, e, inverted);
     
@@ -203,7 +204,7 @@ void FermatTest320(const uint32_t *restrict e, uint32_t *restrict redcl)
                     e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9],
                     &q[0], &q[1], &q[2], &q[3], &q[4], &q[5], &q[6], &q[7]);
   remaining--;
-  
+
   // Retrieve of "2" in Montgomery representation
   redcify320(1, q, e, redcl, windowSize);
 
@@ -211,10 +212,9 @@ void FermatTest320(const uint32_t *restrict e, uint32_t *restrict redcl)
     int size = min(remaining, windowSize);
     uint32_t index = getFromBitfield(e, remaining-size, size);
     
-    uint4 m[3];
+    uint32_t m[12];
     for (unsigned i = 0; i < size; i++)
-      monSqr320(redcl, e, inverted);
-    
+      monSqr320(redcl, e, inverted); 
     redcify320(index, q, e, m, windowSize);
     monMul320(redcl, m, e, inverted);     
     remaining -= windowSize;
