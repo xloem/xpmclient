@@ -1,3 +1,6 @@
+#include "generic_config_kernel.h"
+#include "generic_Fermat_procs.h"
+
 __kernel void multiplyBenchmark320to96u(__global uint32_t *m1,
                                         __global uint32_t *m2,
                                         __global uint32_t *out,

@@ -2,7 +2,7 @@
 #include "xpmclient.h"
 
 void runBenchmarks(cl_context context,
-                   cl_program program,
+                   openclPrograms &programs,
                    cl_device_id deviceId,
                    unsigned depth,
                    unsigned defaultGroupSize);

@@ -67,7 +67,7 @@ bool clCompileKernel(cl_context gContext,
 {
   std::ifstream testfile(binaryName);
   if(needRebuild || !testfile) {
-    LOG_F(INFO, "compiling ...");
+    LOG_F(INFO, "compiling %s ...", binaryName);
 
     std::unique_ptr<std::string[]> sourceData(new std::string[sourcesNum]);
     std::unique_ptr<const char*[]> sourcesPtr(new const char*[sourcesNum+1]);
@@ -102,7 +102,6 @@ bool clCompileKernel(cl_context gContext,
         return false;
       }
     
-    LOG_F(INFO, "binsize = %u bytes", (unsigned)binsize);
     std::unique_ptr<unsigned char[]> binary(new unsigned char[binsize+1]);
     OCLR(clGetProgramInfo(*gProgram, CL_PROGRAM_BINARIES, sizeof(void*), &binary, 0), false);
     

@@ -73,6 +73,15 @@ struct config_t {
 };
 
 
+struct openclPrograms {
+  cl_program sha256;
+  cl_program sieveUtils;
+  cl_program sieve;
+  cl_program FermatUtils;
+  cl_program Fermat;
+  cl_program benchmarks;
+};
+
 template<typename T> class lifoBuffer {
 private:
   T *_data;
@@ -194,7 +203,7 @@ public:
   PrimeMiner(unsigned id, unsigned threads, unsigned sievePerRound, unsigned depth, unsigned LSize);
 	~PrimeMiner();
 	
-	bool Initialize(cl_context context, cl_program program, cl_device_id dev);
+  bool Initialize(cl_context context, openclPrograms programs, cl_device_id dev, config_t &kernelConfig);
 	
 	static void InvokeMining(void *args, void *ctx, void *pipe);
   config_t getConfig() { return mConfig; }
@@ -265,12 +274,15 @@ private:
 	
   std::vector<std::pair<PrimeMiner*, void*> > mWorkers;
 
+
+  bool checkProgramKernelConfig(const char *kernelName, cl_context context, cl_device_id device, cl_program program, config_t expectedConfig, bool targetAutoAdjust);
+
   void dumpSieveConstants(unsigned weaveDepth,
                           unsigned threadsNum,
                           unsigned windowSize,
                           unsigned *primes,
                           std::ostream &file);
-	
+
 };
 
 #endif /* XPMCLIENT_H_ */

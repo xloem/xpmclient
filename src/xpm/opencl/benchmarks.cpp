@@ -1187,7 +1187,7 @@ void hashmodBenchmark(cl_context context,
 
 void sieveTestBenchmark(cl_context context,
                         cl_command_queue queue,
-                        cl_program program,
+                        openclPrograms &programs,
                         unsigned defaultGroupSize,
                         unsigned groupsNum,
                         mpz_class *allPrimorial,
@@ -1198,10 +1198,10 @@ void sieveTestBenchmark(cl_context context,
 {
   LOG_F(INFO, "*** sieve (%s) benchmark ***", checkCandidates ? "check" : "performance");
   
-  cl_kernel mHashMod = findKernelOrDie(program, "bhashmodUsePrecalc");
-  cl_kernel mSieveSetup = findKernelOrDie(program, "setup_sieve");
-  cl_kernel mSieve = findKernelOrDie(program, "sieve");
-  cl_kernel mSieveSearch = findKernelOrDie(program, "s_sieve");
+  cl_kernel mHashMod = findKernelOrDie(programs.sha256, "bhashmodUsePrecalc");
+  cl_kernel mSieveSetup = findKernelOrDie(programs.sieveUtils, "setup_sieve");
+  cl_kernel mSieve = findKernelOrDie(programs.sieve, "sieve");
+  cl_kernel mSieveSearch = findKernelOrDie(programs.sieveUtils, "s_sieve");
 
   PrimeMiner::search_t hashmod;
   PrimeMiner::block_t blockheader;
@@ -1531,7 +1531,7 @@ void sieveTestBenchmark(cl_context context,
 }
 
 void runBenchmarks(cl_context context,
-                   cl_program program,
+                   openclPrograms &programs,
                    cl_device_id deviceId,
                    unsigned depth,
                    unsigned defaultGroupSize)
@@ -1560,7 +1560,7 @@ void runBenchmarks(cl_context context,
     
     size_t globalSize = 1;
     size_t localSize = 1;
-    cl_kernel getconf = clCreateKernel(program, "getconfig", &error);
+    cl_kernel getconf = clCreateKernel(programs.Fermat, "getconfig", &error);
     clSetKernelArg(getconf, 0, sizeof(cl_mem), &mConfig.DeviceData);
     clEnqueueNDRangeKernel(queue, getconf, 1, 0, &globalSize, &localSize, 0, 0, 0);
     OCL(mConfig.copyToHost(queue, true));
@@ -1578,40 +1578,40 @@ void runBenchmarks(cl_context context,
   }  
 
   srand(12345);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 96/32, 262144, aidMultiply, ttUnitTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 128/32, 262144, aidMultiply, ttUnitTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 192/32, 262144, aidMultiply, ttUnitTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 96/32, 262144, aidMultiply, ttUnitTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 128/32, 262144, aidMultiply, ttUnitTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 192/32, 262144, aidMultiply, ttUnitTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 0, 262144, aidSquare, ttUnitTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 640/32, 0, 262144, aidSquare, ttUnitTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 320/32, 262144, aidMultiply, ttUnitTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 640/32, 640/32, 262144, aidMultiply, ttUnitTest);
-  monMulBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, aidMontgomerySquare, ttUnitTest);
-  monMulBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, aidMontgomeryMultiply, ttUnitTest);
-  monMulBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, aidMontgomeryRedchalf, ttUnitTest);
-  redcifyBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, aidRedcify, ttUnitTest);
-  monMulBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, aidMontgomerySquare, ttUnitTest);
-  monMulBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, aidMontgomeryMultiply, ttUnitTest);
-  monMulBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, aidMontgomeryRedchalf, ttUnitTest);
-  redcifyBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, aidRedcify, ttUnitTest);
-  divideBenchmark(context, queue, program, computeUnits*4, 320/32, 262144, ttUnitTest);
-  divideBenchmark(context, queue, program, computeUnits*4, 352/32, 262144, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 96/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 128/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 192/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 96/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 128/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 192/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 0, 262144, aidSquare, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 640/32, 0, 262144, aidSquare, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 320/32, 262144, aidMultiply, ttUnitTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 640/32, 640/32, 262144, aidMultiply, ttUnitTest);
+  monMulBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 262144, aidMontgomerySquare, ttUnitTest);
+  monMulBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 262144, aidMontgomeryMultiply, ttUnitTest);
+  monMulBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 262144, aidMontgomeryRedchalf, ttUnitTest);
+  redcifyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 262144, aidRedcify, ttUnitTest);
+  monMulBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 262144, aidMontgomerySquare, ttUnitTest);
+  monMulBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 262144, aidMontgomeryMultiply, ttUnitTest);
+  monMulBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 262144, aidMontgomeryRedchalf, ttUnitTest);
+  redcifyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 262144, aidRedcify, ttUnitTest);
+  divideBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 262144, ttUnitTest);
+  divideBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 262144, ttUnitTest);
 
-  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 0, 262144, aidSquare, ttPerformanceTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 0, 262144, aidSquare, ttPerformanceTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 640/32, 0, 262144, aidSquare, ttPerformanceTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 320/32, 320/32, 262144, aidMultiply, ttPerformanceTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 352/32, 352/32, 262144, aidMultiply, ttPerformanceTest);
-  multiplyBenchmark(context, queue, program, computeUnits*4, 640/32, 640/32, 262144, aidMultiply, ttPerformanceTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 0, 262144, aidSquare, ttPerformanceTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 0, 262144, aidSquare, ttPerformanceTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 640/32, 0, 262144, aidSquare, ttPerformanceTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 320/32, 262144, aidMultiply, ttPerformanceTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 352/32, 262144, aidMultiply, ttPerformanceTest);
+  multiplyBenchmark(context, queue, programs.benchmarks, computeUnits*4, 640/32, 640/32, 262144, aidMultiply, ttPerformanceTest);
 
-  fermatTestBenchmark(context, queue, program, computeUnits*4, 320/32, 131072);
-  fermatTestBenchmark(context, queue, program, computeUnits*4, 352/32, 131072);
+  fermatTestBenchmark(context, queue, programs.benchmarks, computeUnits*4, 320/32, 131072);
+  fermatTestBenchmark(context, queue, programs.benchmarks, computeUnits*4, 352/32, 131072);
 
-  hashmodBenchmark(context, queue, program, defaultGroupSize, 0, allPrimorials, mPrimorial);
-  sieveTestBenchmark(context, queue, program, defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
-  sieveTestBenchmark(context, queue, program, defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);
+  hashmodBenchmark(context, queue, programs.sha256, defaultGroupSize, 0, allPrimorials, mPrimorial);
+  sieveTestBenchmark(context, queue, programs, defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, true);
+  sieveTestBenchmark(context, queue, programs, defaultGroupSize, computeUnits*4, allPrimorials, mPrimorial, *mConfig.HostData, depth, false);
 
   clReleaseCommandQueue(queue);
 }

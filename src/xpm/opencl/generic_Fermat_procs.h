@@ -1,13 +1,4 @@
-/*
- * fermat.cl
- *
- *  Created on: 26.12.2013
- *      Author: mad
- */
-
-#include "clcommon.h"
-#include "procs.h"
-#include "config.h"
+#include "generic_procs.h"
 
 __constant uint pow2[9] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
 
@@ -30,21 +21,6 @@ __constant uint32_t binvert_limb_table[128] = {
   0x11, 0x3B, 0x5D, 0xC7, 0x49, 0x33, 0x55, 0xFF
 };
 
-__kernel void getconfig(__global config_t* conf)
-{
-	config_t c;
-	c.N_ = N;
-	c.SIZE_ = SIZE;
-	c.STRIPES_ = STRIPES;
-	c.WIDTH_ = WIDTH;
-	c.PCOUNT_ = PCOUNT;
-	c.TARGET_ = TARGET;
-	c.LIMIT13_ = LIMIT13;
-	c.LIMIT14_ = LIMIT14;
-	c.LIMIT15_ = LIMIT15;
-	*conf = c;
-}
-
 void shr32(uint32_t *data, unsigned size)
 {
 #pragma unroll
@@ -58,7 +34,7 @@ void shl(uint32_t *data, unsigned size, unsigned bits)
   #pragma unroll
   for(int i = size-1; i > 0; i--)
     data[i] = (data[i] << bits) | (data[i-1] >> (32-bits));
-  
+
   data[0] = data[0] << bits;
 }
 
@@ -83,8 +59,8 @@ uint32_t getFromBitfield(const uint32_t *ptr, unsigned bitOffset, unsigned bitSi
   union {
     uint2 v32;
     ulong v64;
-  } data;  
-  
+  } data;
+
   unsigned lbitOffset = bitOffset & 0x1F;
   unsigned lLoLimb = bitOffset >> 5;
   unsigned lHiLimb = (bitOffset+bitSize) >> 5;
@@ -108,10 +84,10 @@ void redcify352(unsigned shiftCount,
   q[4] = quotient[4];
   q[5] = quotient[5];
   q[6] = quotient[6];
-  q[7] = quotient[7];  
+  q[7] = quotient[7];
 
-  const unsigned pow2ws = pow2[windowSize];  
-  
+  const unsigned pow2ws = pow2[windowSize];
+
   for (unsigned  i = 0, ie = (pow2ws-shiftCount)/32; i < ie; i++)
     shr32(q, 8);
   if ((pow2ws-shiftCount) % 32)
@@ -123,7 +99,7 @@ void redcify352(unsigned shiftCount,
     mulProductScan352to128(result, limbs, q);
   else if (windowSize == 7)
     mulProductScan352to192(result, limbs, q);
-  
+
   // substract 2^(384+shiftCount) - q*R
   for (unsigned i = 0; i < 11; i++)
     result[i] = ~result[i];
@@ -132,31 +108,31 @@ void redcify352(unsigned shiftCount,
 
 void FermatTest352(const uint32_t *restrict e, uint32_t *restrict redcl)
 {
-  const int windowSize = 7;    
-  uint32_t inverted = invert_limb(e[0]);  
+  const int windowSize = 7;
+  uint32_t inverted = invert_limb(e[0]);
   uint32_t q[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   int remaining = divide512to352reg(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                     e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10],
                     &q[0], &q[1], &q[2], &q[3], &q[4], &q[5], &q[6], &q[7]);
   remaining--;
 
-  
+
   // Retrieve of "2" in Montgomery representation
-  redcify352(1, q, e, redcl, windowSize);  
+  redcify352(1, q, e, redcl, windowSize);
 
   while (remaining > 0) {
     int size = min(remaining, windowSize);
     uint32_t index = getFromBitfield(e, remaining-size, size);
-    
+
     uint32_t m[12];
     for (unsigned i = 0; i < size; i++)
       monSqr352(redcl, e, inverted);
-    
-    redcify352(index, q, e, m, windowSize);    
+
+    redcify352(index, q, e, m, windowSize);
     monMul352(redcl, m, e, inverted);
     remaining -= windowSize;
   }
-  
+
   redcHalf352(redcl, e, inverted);
 }
 
@@ -174,21 +150,21 @@ void redcify320(unsigned shiftCount,
   q[4] = quotient[4];
   q[5] = quotient[5];
   q[6] = quotient[6];
-  q[7] = quotient[7];  
-  
-  const unsigned pow2ws = pow2[windowSize];   
+  q[7] = quotient[7];
+
+  const unsigned pow2ws = pow2[windowSize];
   for (unsigned  i = 0, ie = (pow2ws-shiftCount)/32; i < ie; i++)
     shr32(q, 8);
   if ((pow2ws-shiftCount) % 32)
     shr(q, 8, (pow2ws-shiftCount) % 32);
 
   if (windowSize == 5)
-    mulProductScan320to96(result, limbs, q);  
+    mulProductScan320to96(result, limbs, q);
   else if (windowSize == 6)
     mulProductScan320to128(result, limbs, q);
   else if (windowSize == 7)
     mulProductScan320to192(result, limbs, q);
-  
+
   // substract 2^(384+shiftCount) - q*R
   for (unsigned i = 0; i < 10; i++)
     result[i] = ~result[i];
@@ -197,8 +173,8 @@ void redcify320(unsigned shiftCount,
 
 void FermatTest320(const uint32_t *restrict e, uint32_t *restrict redcl)
 {
-  const int windowSize = 7;  
-  uint32_t inverted = invert_limb(e[0]);  
+  const int windowSize = 7;
+  uint32_t inverted = invert_limb(e[0]);
   uint32_t q[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   int remaining = divide480to320reg(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
                     e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9],
@@ -211,150 +187,14 @@ void FermatTest320(const uint32_t *restrict e, uint32_t *restrict redcl)
   while (remaining > 0) {
     int size = min(remaining, windowSize);
     uint32_t index = getFromBitfield(e, remaining-size, size);
-    
+
     uint32_t m[12];
     for (unsigned i = 0; i < size; i++)
-      monSqr320(redcl, e, inverted); 
+      monSqr320(redcl, e, inverted);
     redcify320(index, q, e, m, windowSize);
-    monMul320(redcl, m, e, inverted);     
+    monMul320(redcl, m, e, inverted);
     remaining -= windowSize;
   }
-  
+
   redcHalf320(redcl, e, inverted);
 }
-
-bool fermat352(const uint32_t *restrict p)
-{
-  uint32_t modpowl[11];
-  FermatTest352(p, modpowl);
-  
-  uint32_t result = modpowl[0] - 1;
-  result |= modpowl[1];
-  result |= modpowl[2];
-  result |= modpowl[3];
-  result |= modpowl[4];
-  result |= modpowl[5];
-  result |= modpowl[6];
-  result |= modpowl[7];
-  result |= modpowl[8];
-  result |= modpowl[9];
-  result |= modpowl[10];  
-  return result == 0;
-}
-
-bool fermat320(const uint32_t *restrict p)
-{
-  uint32_t modpowl[10];  
-  FermatTest320(p, modpowl);
-  
-  uint32_t result = modpowl[0] - 1;
-  result |= modpowl[1];
-  result |= modpowl[2];
-  result |= modpowl[3];
-  result |= modpowl[4];
-  result |= modpowl[5];
-  result |= modpowl[6];
-  result |= modpowl[7];
-  result |= modpowl[8];
-  result |= modpowl[9];
-  return result == 0;  
-}
-
-
-__kernel void setup_fermat(__global uint *fprimes,
-                           __global const fermat_t *info_all,
-                           __global uint *hash)
-{
-  const uint id = get_global_id(0);
-  const uint gsize = get_global_size(0);
-  const fermat_t info = info_all[id];
-  
-  uint h[11];
-  uint m[11];
-
-  __global uint *H = &hash[info.hashid*N]; 
-#pragma unroll
-  for (unsigned i = 0; i < 11; i++)
-    h[i] = H[i];
-
-  uint line = info.origin;
-  if(info.type < 2)
-    line += info.chainpos;
-  else
-    line += info.chainpos/2;
-
-  uint modifier = (info.type == 1 || (info.type == 2 && (info.chainpos & 1))) ? 1 : -1;
-
-  mulProductScan352to32(m, h, info.index);
-  if (line)
-    shl(m, 11, line);
-  m[0] += modifier;
-  
-#pragma unroll
-  for (unsigned i = 0; i < 11; i++)
-    fprimes[gsize*i + id] = m[i];
-}
-
-
-__kernel void fermat_kernel(__global uchar *result,
-                            __global const uint32_t *fprimes)
-{
-  const uint id = get_global_id(0);
-  const uint gsize = get_global_size(0);  
-  uint32_t e[11];
-  
-#pragma unroll
-  for (unsigned i = 0; i < 11; i++)
-    e[i] = fprimes[gsize*i + id];
-  
-  result[id] = fermat352(e);
-}
-
-__kernel void fermat_kernel320(__global uchar *result,
-                               __global const uint32_t *fprimes)
-{
-  const uint id = get_global_id(0);
-  const uint gsize = get_global_size(0);  
-  uint32_t e[10];
-  
-#pragma unroll
-  for (unsigned i = 0; i < 10; i++)
-    e[i] = fprimes[gsize*i + id];  
-  
-  result[id] = fermat320(e);
-}
-
-
-
-__kernel void check_fermat(	__global fermat_t* info_out,
-							__global uint* count,
-							__global fermat_t* info_fin_out,
-							__global uint* count_fin,
-							__global const uchar* results,
-							__global const fermat_t* info_in,
-							uint depth )
-{
-	
-	const uint id = get_global_id(0);
-	
-	if(results[id] == 1){
-		
-		fermat_t info = info_in[id];
-		info.chainpos++;
-		
-		if(info.chainpos < depth){
-			
-			const uint i = atomic_inc(count);
-			info_out[i] = info;
-			
-		}else{
-			
-			const uint i = atomic_inc(count_fin);
-			info_fin_out[i] = info;
-			
-		}
-		
-	}
-	
-}
-
