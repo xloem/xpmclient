@@ -1,9 +1,12 @@
 #!/bin/bash
+set -e
+VERSION="10.5-beta1"
+
 
 CUDA10_INSTALLER="cuda_10.1.168_425.25_win10.exe"
 
-if docker inspect --type=image xpmclient-10.3 > /dev/null 2> /dev/null; then
-  echo "xpmclient-10.3 image already exists"
+if docker inspect --type=image xpmclient-$VERSION > /dev/null 2> /dev/null; then
+  echo "xpmclient-$VERSION image already exists"
 else
   echo "FROM nvidia/cuda:10.1-devel-ubuntu18.04" > xpmclient.Dockerfile
   echo "ENV DEBIAN_FRONTEND=noninteractive" >> xpmclient.Dockerfile
@@ -31,11 +34,11 @@ else
   echo "WORKDIR /home/user" >> xpmclient.Dockerfile  
 
   echo "CMD [\"sleep\", \"infinity\"]" >> xpmclient.Dockerfile
-  docker build --pull -f xpmclient.Dockerfile -t xpmclient-10.3 .
+  docker build --pull -f xpmclient.Dockerfile -t xpmclient-$VERSION .
 fi
 
 # Create container and upload sources
-CONTAINER=`docker run -d xpmclient-10.3`
+CONTAINER=`docker run -d xpmclient-$VERSION`
 if [ $? != 0 ];
 then
   echo "Docker: container create error"
@@ -55,6 +58,13 @@ fi
 if [ ! -f libsodium-1.0.17.tar.gz ]; then
   wget https://download.libsodium.org/libsodium/releases/libsodium-1.0.17.tar.gz
 fi
+if [ ! -f libsodium-1.0.17.tar.gz ]; then
+  wget https://download.libsodium.org/libsodium/releases/libsodium-1.0.17.tar.gz
+fi
+if [ ! -d CLRX-mirror ]; then
+  git clone https://github.com/CLRX/CLRX-mirror
+  git checkout c5f9dd2ce7f9667715c74ae875bb52df6bbbf0ad
+fi
 
 docker exec $CONTAINER mkdir /home/user/build
 docker exec $CONTAINER mkdir /home/user/build/deps-linux
@@ -64,6 +74,7 @@ docker cp gmp-6.1.2.tar.lz $CONTAINER:/home/user/build
 docker cp zeromq-4.3.1.tar.gz $CONTAINER:/home/user/build
 docker cp protobuf-cpp-3.6.1.tar.gz $CONTAINER:/home/user/build
 docker cp libsodium-1.0.17.tar.gz $CONTAINER:/home/user/build
+docker cp CLRX-mirror $CONTAINER:/home/user/build
 docker cp ../src $CONTAINER:/home/user/build/xpmclient
 
 # Run build
@@ -73,8 +84,8 @@ docker exec $CONTAINER /home/user/build/build.sh
 
 # Grab artifacts
 rm -rf distr && mkdir distr && cd distr
-docker cp $CONTAINER:/home/user/build/xpmclient/x86_64-Linux/xpmclient-opencl-10.3-linux.tar.gz .
-docker cp $CONTAINER:/home/user/build/xpmclient/x86_64-Linux/xpmclient-cuda-10.3-linux.tar.gz .
-docker cp $CONTAINER:/home/user/build/xpmclient/x86_64-w64-mingw32/xpmclient-opencl-10.3-win64.zip .
-docker cp $CONTAINER:/home/user/build/xpmclient/x86_64-w64-mingw32/xpmclient-cuda-10.3-win64.zip .
-docker cp $CONTAINER:/home/user/build/xpmclient/xpmclient-10.3-sha256.txt .
+docker cp $CONTAINER:/home/user/build/xpmclient/x86_64-Linux/xpmclient-opencl-$VERSION-linux.tar.gz .
+docker cp $CONTAINER:/home/user/build/xpmclient/x86_64-Linux/xpmclient-cuda-$VERSION-linux.tar.gz .
+docker cp $CONTAINER:/home/user/build/xpmclient/x86_64-w64-mingw32/xpmclient-opencl-$VERSION-win64.zip .
+docker cp $CONTAINER:/home/user/build/xpmclient/x86_64-w64-mingw32/xpmclient-cuda-$VERSION-win64.zip .
+docker cp $CONTAINER:/home/user/build/xpmclient/xpmclient-$VERSION-sha256.txt .

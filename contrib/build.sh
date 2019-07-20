@@ -1,6 +1,6 @@
 #!/bin/bash
-
-export DIST_LANG="cpp"
+set -e
+VERSION="10.5-beta1"
 
 # Linux static build
 
@@ -38,29 +38,41 @@ cd protobuf-3.6.1
 make -j`nproc`
 make install
 
+# CLRX
+mkdir $HOME/build/deps-linux/CLRX
+cd $HOME/build/deps-linux/CLRX
+cmake $HOME/build/CLRX-mirror -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/install/x86_64-Linux
+make -j`nproc`
+make install
+rm $HOME/install/x86_64-Linux/lib64/libCLRX*.so*
+
 # xpmclient
 mkdir /home/user/build/xpmclient/x86_64-Linux
 cd /home/user/build/xpmclient/x86_64-Linux
-cmake ../src -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/home/user/install/x86_64-Linux -DSTATIC_BUILD=ON -DOpenCL_INCLUDE_DIR=/usr/local/cuda-10.1/include -DOpenCL_LIBRARY=/usr/local/cuda-10.1/lib64/libOpenCL.so -DCUDA_driver_LIBRARY=/usr/local/cuda-10.1/compat/libcuda.so
-make -j`nproc` xpmclient xpmclientnv
+cmake ../src -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/home/user/install/x86_64-Linux \
+  -DSTATIC_BUILD=ON \
+  -DOpenCL_INCLUDE_DIR=/usr/local/cuda-10.1/include \
+  -DOpenCL_LIBRARY=/usr/local/cuda-10.1/lib64/libOpenCL.so \
+  -DCUDA_driver_LIBRARY=/usr/local/cuda-10.1/compat/libcuda.so
+make -j`nproc`
 strip xpmclient
 strip xpmclientnv
 
 # make AMD(OpenCL) distr
-mkdir xpmclient-opencl-10.3-linux
-cd xpmclient-opencl-10.3-linux
+mkdir xpmclient-opencl-$VERSION-linux
+cd xpmclient-opencl-$VERSION-linux
 cp ../xpmclient .
 cp ../../src/xpm/opencl/config.txt .
 mkdir -p xpm/opencl
-cp ../../src/xpm/opencl/*.cl xpm/opencl
-cp ../../src/xpm/opencl/clcommon.h xpm/opencl
-cp ../../src/xpm/opencl/procs.h xpm/opencl
+cp ../../src/xpm/opencl/generic_* xpm/opencl
+cp ../../src/xpm/opencl/gcn_* xpm/opencl
 cd ..
-tar -czf xpmclient-opencl-10.3-linux.tar.gz xpmclient-opencl-10.3-linux
+tar -czf xpmclient-opencl-$VERSION-linux.tar.gz xpmclient-opencl-$VERSION-linux
 
 # make NVidia distr
-mkdir xpmclient-cuda-10.3-linux
-cd xpmclient-cuda-10.3-linux
+mkdir xpmclient-cuda-$VERSION-linux
+cd xpmclient-cuda-$VERSION-linux
 cp ../xpmclientnv ./miner
 echo "#/bin/bash" > xpmclientnv
 echo "DIR=\$(dirname \"\$0\")" >> xpmclientnv
@@ -72,7 +84,7 @@ cp ../../src/xpm/cuda/*.cu xpm/cuda
 cp /usr/local/cuda-10.1/lib64/libnvrtc.so.10.1 .
 cp /usr/local/cuda-10.1/lib64/libnvrtc-builtins.so .
 cd ..
-tar -czf xpmclient-cuda-10.3-linux.tar.gz xpmclient-cuda-10.3-linux
+tar -czf xpmclient-cuda-$VERSION-linux.tar.gz xpmclient-cuda-$VERSION-linux
 
 # Windows (MingGW) static build
 
@@ -108,33 +120,47 @@ cd protobuf-3.6.1
 make -j`nproc`
 make install
 
+# CLRX
+mkdir $HOME/build/deps-win32/CLRX
+cd $HOME/build/deps-win32/CLRX
+cmake $HOME/build/CLRX-mirror -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$HOME/build/xpmclient/src/cmake/Toolchain-x86_64-w64-mingw32.cmake -DCMAKE_INSTALL_PREFIX=$HOME/install/x86_64-w64-mingw32
+make -j`nproc`
+make install
+rm -f $HOME/install/x86_64-w64-mingw32/lib/libCLRX*.dll*
+
 # xpmclient
 mkdir /home/user/build/xpmclient/x86_64-w64-mingw32
 cd /home/user/build/xpmclient/x86_64-w64-mingw32
-cmake ../src -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../src/cmake/Toolchain-x86_64-w64-mingw32.cmake -DCMAKE_INSTALL_PREFIX=/home/user/install/x86_64-w64-mingw32 -DSTATIC_BUILD=ON -DProtobuf_PROTOC_EXECUTABLE=/home/user/install/x86_64-Linux/bin/protoc -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-win32 -DOpenCL_INCLUDE_DIR=/usr/local/cuda-win32/include -DOpenCL_LIBRARY=/usr/local/cuda-win32/lib/x64/OpenCL.lib
+cmake ../src -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=../src/cmake/Toolchain-x86_64-w64-mingw32.cmake \
+  -DCMAKE_INSTALL_PREFIX=/home/user/install/x86_64-w64-mingw32 \
+  -DSTATIC_BUILD=ON \
+  -DProtobuf_PROTOC_EXECUTABLE=/home/user/install/x86_64-Linux/bin/protoc \
+  -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-win32 \
+  -DOpenCL_INCLUDE_DIR=/usr/local/cuda-win32/include \
+  -DOpenCL_LIBRARY=/usr/local/cuda-win32/lib/x64/OpenCL.lib
 make -j`nproc` xpmclient xpmclientnv
 x86_64-w64-mingw32-strip xpmclient.exe
 x86_64-w64-mingw32-strip xpmclientnv.exe
 
 # make AMD(OpenCL) distr
-mkdir xpmclient-opencl-10.3-win64
-cd xpmclient-opencl-10.3-win64
+mkdir xpmclient-opencl-$VERSION-win64
+cd xpmclient-opencl-$VERSION-win64
 cp ../xpmclient.exe .
 cp ../../src/xpm/opencl/config.txt .
 mkdir -p xpm/opencl
-cp ../../src/xpm/opencl/*.cl xpm/opencl
-cp ../../src/xpm/opencl/clcommon.h xpm/opencl
-cp ../../src/xpm/opencl/procs.h xpm/opencl
+cp ../../src/xpm/opencl/generic_* xpm/opencl
+cp ../../src/xpm/opencl/gcn_* xpm/opencl
 cp /usr/lib/gcc/x86_64-w64-mingw32/7.3-posix/libgcc_s_seh-1.dll .
 cp /usr/lib/gcc/x86_64-w64-mingw32/7.3-posix/libstdc++-6.dll .
 cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll .
 cp /home/user/install/x86_64-w64-mingw32/bin/libzmq.dll .
 cd ..
-zip -9 -r xpmclient-opencl-10.3-win64.zip xpmclient-opencl-10.3-win64
+zip -9 -r xpmclient-opencl-$VERSION-win64.zip xpmclient-opencl-$VERSION-win64
 
 # make Nvidia distr
-mkdir xpmclient-cuda-10.3-win64
-cd xpmclient-cuda-10.3-win64
+mkdir xpmclient-cuda-$VERSION-win64
+cd xpmclient-cuda-$VERSION-win64
 cp ../xpmclientnv.exe .
 cp ../../src/xpm/cuda/config.txt .
 mkdir -p xpm/cuda
@@ -146,11 +172,11 @@ cp /home/user/install/x86_64-w64-mingw32/bin/libzmq.dll .
 cp /usr/local/cuda-win32/bin/nvrtc64_101_0.dll .
 cp /usr/local/cuda-win32/bin/nvrtc-builtins64_101.dll .
 cd ..
-zip -9 -r xpmclient-cuda-10.3-win64.zip xpmclient-cuda-10.3-win64
+zip -9 -r xpmclient-cuda-$VERSION-win64.zip xpmclient-cuda-$VERSION-win64
 
 # Calculate SHA256 checksum
 cd /home/user/build/xpmclient
-sha256sum /home/user/build/xpmclient/x86_64-Linux/xpmclient-opencl-10.3-linux.tar.gz > xpmclient-10.3-sha256.txt
-sha256sum /home/user/build/xpmclient/x86_64-Linux/xpmclient-cuda-10.3-linux.tar.gz >> xpmclient-10.3-sha256.txt
-sha256sum /home/user/build/xpmclient/x86_64-w64-mingw32/xpmclient-opencl-10.3-win64.zip >> xpmclient-10.3-sha256.txt
-sha256sum /home/user/build/xpmclient/x86_64-w64-mingw32/xpmclient-cuda-10.3-win64.zip >> xpmclient-10.3-sha256.txt
+sha256sum /home/user/build/xpmclient/x86_64-Linux/xpmclient-opencl-$VERSION-linux.tar.gz > xpmclient-$VERSION-sha256.txt
+sha256sum /home/user/build/xpmclient/x86_64-Linux/xpmclient-cuda-$VERSION-linux.tar.gz >> xpmclient-$VERSION-sha256.txt
+sha256sum /home/user/build/xpmclient/x86_64-w64-mingw32/xpmclient-opencl-$VERSION-win64.zip >> xpmclient-$VERSION-sha256.txt
+sha256sum /home/user/build/xpmclient/x86_64-w64-mingw32/xpmclient-cuda-$VERSION-win64.zip >> xpmclient-$VERSION-sha256.txt
