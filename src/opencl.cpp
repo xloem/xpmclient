@@ -173,6 +173,7 @@ bool clCompileGCNKernel(cl_context gContext,
 
       std::unique_ptr<CLRX::Assembler> assembler;
       assembler.reset(new CLRX::Assembler(filenames, flags, binFormat, deviceType));
+      assembler->setDriverVersion(223600);
       assembler->set64Bit(is64bit);
 
       assembler->addIncludeDir("xpm/opencl");

@@ -1156,10 +1156,14 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
   std::vector<cl_int> binstatus;
   binstatus.resize(gpus.size());	
 
-
+  std::set<std::string> knownDevices;
   for (size_t i = 0; i < gpus.size(); i++) {
     char deviceName[128];
     clGetDeviceInfo(gpus[i], CL_DEVICE_NAME, sizeof(deviceName), deviceName, nullptr);
+
+    // Force rebuild kernel if target chain length changed and we didn't compile kernel for current device before
+    bool needRebuild = (adjustedKernelTarget != 0) & knownDevices.insert(deviceName).second;
+
     openclPrograms &programs = gPrograms[i];
 
     char sha256KernelFile[128];
@@ -1175,35 +1179,35 @@ bool XPMClient::Initialize(Configuration* cfg, bool benchmarkOnly, unsigned adju
 
     {
       const char *sources[] = {"xpm/opencl/generic_sha256.cl"};
-      if (!clCompileKernel(gContext[i], gpus[i], sha256KernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.sha256, adjustedKernelTarget != 0))
+      if (!clCompileKernel(gContext[i], gpus[i], sha256KernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.sha256, needRebuild))
         return false;
     }
 
     {
       const char *sources[] = {"xpm/opencl/generic_sieve.cl"};
-      if (!clCompileKernel(gContext[i], gpus[i], sieveKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.sieve, adjustedKernelTarget != 0))
+      if (!clCompileKernel(gContext[i], gpus[i], sieveKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.sieve, needRebuild))
         return false;
     }
 
     {
       const char *sources[] = {"xpm/opencl/generic_sieve_utils.cl"};
-      if (!clCompileKernel(gContext[i], gpus[i], sieveUtilsKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.sieveUtils, adjustedKernelTarget != 0))
+      if (!clCompileKernel(gContext[i], gpus[i], sieveUtilsKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.sieveUtils, needRebuild))
         return false;
     }
 
     if (!useGCN) {
       const char *sources[] = {"xpm/opencl/generic_Fermat.cl"};
-      if (!clCompileKernel(gContext[i], gpus[i], FermatKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.Fermat, adjustedKernelTarget != 0))
+      if (!clCompileKernel(gContext[i], gpus[i], FermatKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.Fermat, needRebuild))
         return false;
     } else {
       const char *sources[] = {"xpm/opencl/gcn_Fermat.asm"};
-      if (!clCompileGCNKernel(gContext[i], gpus[i], FermatKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.Fermat, adjustedKernelTarget != 0))
+      if (!clCompileGCNKernel(gContext[i], gpus[i], FermatKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.Fermat, needRebuild))
         return false;
     }
 
     {
       const char *sources[] = {"xpm/opencl/generic_Fermat_utils.cl"};
-      if (!clCompileKernel(gContext[i], gpus[i], FermatUtilsKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.FermatUtils, adjustedKernelTarget != 0))
+      if (!clCompileKernel(gContext[i], gpus[i], FermatUtilsKernelFile, sources, 1, arguments.c_str(), &binstatus[i], &programs.FermatUtils, needRebuild))
         return false;
     }
 

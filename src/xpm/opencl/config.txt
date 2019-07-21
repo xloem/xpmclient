@@ -33,26 +33,32 @@ cpuload = "1";
 # Target Cunningham chain length, default = auto (adjust to difficulty)
 target = "auto";
 
-# Sieve size in stripes (1 stripe = 16384 bits), recommended:
-#   420 for Radeon RX 4xx/RX 5xx
-#   480 for Radeon RX Vega56/Vega64
-#   630 for Radeon R9 2xx/3xx
+# Sieve size in stripes (1 stripe = 16384 bits), recommended for asm kernel:
+#   Radeon R9 29x/39x (Hawaii) - ???
+#   Radeon Fury X/Nano - ???
+#   Radeon RX 4xx/RX 5xx - 480
+#   Radeon RX Vega & Radeon VII - 480
 # Big sieve size gives more candidates with less prime probability
-sieveSize = "420";
+sieveSize = "480";
 
-# Weave depth (primes number count using by sieve), recommended:
-#  36864 for Radeon RX Vega56/Vega64
-#  40960 for other cards
+# Weave depth (primes number count using by sieve), recommended for asm kernel:
+#  36864 for Radeon RX 4xx/RX 5xx (asm kernel), Vega56/64 (any kernel)
+#   Radeon R9 29x/39x (Hawaii) - ???
+#   Radeon Fury X/Nano - ???
+#   Radeon RX 4xx/RX 5xx - 36864
+#   Radeon RX Vega & Radeon VII - 36864
 # Big weave depth increases prime probability, but sieve generate less candidates
-weaveDepth = "40960";
+weaveDepth = "36864";
 
 # Sieve layers number, optimal value is target*2; default = auto (target*2)
 width = "auto";
 
 # Sieve window size. Recommended values:
-#   4096 for Radeon R9 2xx/3xx
-#   8192 for Radeon RX 4xx/RX 5xx, Vega56/64
-windowSize = "4096";
+#   Radeon R9 29x/39x (Hawaii) - 4096
+#   Radeon Fury X/Nano - 4096
+#   Radeon RX 4xx/RX 5xx - 8192
+#   Radeon RX Vega & Radeon VII - 8192
+windowSize = "8192";
 
 # Maximal bit size of multipliers using with primorials 13, 14 and 15;
 # Default values are 24, 31, 35
