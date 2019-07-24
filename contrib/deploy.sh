@@ -63,7 +63,7 @@ if [ ! -f libsodium-1.0.17.tar.gz ]; then
 fi
 if [ ! -d CLRX-mirror ]; then
   git clone https://github.com/CLRX/CLRX-mirror
-  git checkout c5f9dd2ce7f9667715c74ae875bb52df6bbbf0ad
+  cd CLRX-mirror && git checkout c5f9dd2ce7f9667715c74ae875bb52df6bbbf0ad && cd ..
 fi
 
 docker exec $CONTAINER mkdir /home/user/build
